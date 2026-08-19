@@ -7,12 +7,14 @@ import {
 } from '../whatsapp/types/whatsapp.types';
 import { BusinessRegistrationService } from './business-registration.service';
 import { ConversationStateService } from './conversation-state.service';
+import { MetaEmbeddedSignupService } from '../meta-embedded-signup/meta-embedded-signup.service';
 
 @Injectable()
 export class OnboardingService {
   constructor(
     private readonly conversationStateService: ConversationStateService,
     private readonly businessRegistrationService: BusinessRegistrationService,
+    private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService,
   ) {}
 
   handleIncomingMessage(message: IncomingWhatsAppMessage): OutgoingWhatsAppMessage | Promise<OutgoingWhatsAppMessage> {
@@ -54,6 +56,8 @@ export class OnboardingService {
         return this.handleTimezoneStep(whatsappId, normalizedMessage, message, currentState);
       case 'ASK_CONNECT_WHATSAPP':
         return this.handleConnectionStep(whatsappId, normalizedMessage, message, currentState);
+      case 'WAITING_FOR_EMBEDDED_SIGNUP':
+        return this.handleEmbeddedSignupWaitingStep(whatsappId, normalizedMessage, message, currentState);
       case 'ASK_LOGO':
         return this.handleLogoStep(normalizedMessage, message, currentState);
       case 'ASK_DESCRIPTION':
@@ -292,13 +296,13 @@ export class OnboardingService {
     }
 
     if (this.isConnectChoice(normalizedMessage)) {
-      const embeddedSignupResult = await this.businessRegistrationService.startEmbeddedSignup(
-        whatsappId,
+      const signupUrl = this.metaEmbeddedSignupService.createSignupUrl({
+        ownerWhatsappId: whatsappId,
         businessId,
-      );
+      });
 
       const nextState = this.updateState(currentState, {
-        step: 'ASK_LOGO',
+        step: 'WAITING_FOR_EMBEDDED_SIGNUP',
         connectionChoice: 'connect',
       });
 
@@ -306,7 +310,7 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: `Meta Embedded Signup would start here.\n\nPlaceholder connection created: ${embeddedSignupResult.wabaId} / ${embeddedSignupResult.phoneNumberId}\n\nUpload your business logo`,
+        message: `To connect your WhatsApp Business number, open this secure Meta signup link:\n\n${signupUrl}\n\nAfter you finish, return here and send "done".`,
       };
     }
 
@@ -327,6 +331,56 @@ export class OnboardingService {
     return {
       to: message.from,
       message: 'Please reply with 1 to Connect or 2 to Continue with this number.',
+    };
+  }
+
+  private handleEmbeddedSignupWaitingStep(
+    whatsappId: string,
+    normalizedMessage: string,
+    message: IncomingWhatsAppMessage,
+    currentState: ConversationState,
+  ): OutgoingWhatsAppMessage {
+    if (!this.isDoneMessage(normalizedMessage)) {
+      return {
+        to: message.from,
+        message:
+          "I'm still waiting for Meta to confirm your WhatsApp connection. Please finish the signup link first.",
+      };
+    }
+
+    const businessId = currentState.businessId;
+
+    if (!businessId) {
+      this.conversationStateService.reset(whatsappId);
+
+      return {
+        to: message.from,
+        message: 'Something went wrong with your onboarding. Please send "Hi" to start again.',
+      };
+    }
+
+    const embeddedSignupConnection = this.businessRegistrationService.getEmbeddedSignupConnection(
+      businessId,
+    );
+
+    if (!embeddedSignupConnection || embeddedSignupConnection.status !== 'connected') {
+      return {
+        to: message.from,
+        message:
+          "I'm still waiting for Meta to confirm your WhatsApp connection. Please finish the signup link first.",
+      };
+    }
+
+    const nextState = this.updateState(currentState, {
+      step: 'ASK_LOGO',
+      connectionChoice: 'connect',
+    });
+
+    this.conversationStateService.save(nextState);
+
+    return {
+      to: message.from,
+      message: 'Upload your business logo',
     };
   }
 
@@ -466,6 +520,10 @@ export class OnboardingService {
     const normalized = message.toLowerCase();
 
     return normalized === '2' || normalized === 'continue with this number';
+  }
+
+  private isDoneMessage(message: string): boolean {
+    return message.toLowerCase() === 'done';
   }
 
   private parseIndustryChoice(message: string): string | undefined {
