@@ -6,6 +6,7 @@ export type OnboardingStep =
   | 'ASK_PHONE'
   | 'ASK_TIMEZONE'
   | 'ASK_CONNECT_WHATSAPP'
+  | 'WAITING_FOR_EMBEDDED_SIGNUP'
   | 'ASK_LOGO'
   | 'ASK_DESCRIPTION'
   | 'ASK_OPENING_HOURS'

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { EmbeddedSignupPort, EmbeddedSignupResult } from './interfaces/embedded-signup.interface';
+import { EmbeddedSignupConnectionService } from '../meta-embedded-signup/embedded-signup-connection.service';
+import { EmbeddedSignupConnection } from '../meta-embedded-signup/types/meta-embedded-signup.types';
 import { Business, BusinessOwner } from '../whatsapp/types/whatsapp.types';
 
 interface RegisterBusinessInput {
@@ -12,10 +13,11 @@ interface RegisterBusinessInput {
 }
 
 @Injectable()
-export class BusinessRegistrationService implements EmbeddedSignupPort {
+export class BusinessRegistrationService {
   private readonly businesses = new Map<string, Business>();
   private readonly owners = new Map<string, BusinessOwner>();
-  private readonly embeddedSignupConnections = new Map<string, EmbeddedSignupResult>();
+
+  constructor(private readonly embeddedSignupConnectionService: EmbeddedSignupConnectionService) {}
 
   registerBusiness(input: RegisterBusinessInput): {
     owner: BusinessOwner;
@@ -50,20 +52,6 @@ export class BusinessRegistrationService implements EmbeddedSignupPort {
     return { owner, business };
   }
 
-  async startEmbeddedSignup(
-    _ownerWhatsappId: string,
-    businessId: string,
-  ): Promise<EmbeddedSignupResult> {
-    const result: EmbeddedSignupResult = {
-      wabaId: 'mock_waba_id',
-      phoneNumberId: 'mock_phone_number_id',
-    };
-
-    this.embeddedSignupConnections.set(businessId, result);
-
-    return result;
-  }
-
   getBusinessById(businessId: string): Business | undefined {
     return this.businesses.get(businessId);
   }
@@ -72,7 +60,11 @@ export class BusinessRegistrationService implements EmbeddedSignupPort {
     return [...this.owners.values()].find((owner) => owner.whatsapp_id === whatsappId);
   }
 
-  getEmbeddedSignupConnection(businessId: string): EmbeddedSignupResult | undefined {
-    return this.embeddedSignupConnections.get(businessId);
+  saveEmbeddedSignupConnection(connection: EmbeddedSignupConnection): EmbeddedSignupConnection {
+    return this.embeddedSignupConnectionService.saveEmbeddedSignupConnection(connection);
+  }
+
+  getEmbeddedSignupConnection(businessId: string): EmbeddedSignupConnection | undefined {
+    return this.embeddedSignupConnectionService.getEmbeddedSignupConnection(businessId);
   }
 }

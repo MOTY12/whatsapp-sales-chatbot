@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { OnboardingModule } from '../onboarding/onboarding.module';
+import { AssistantModule } from '../assistant/assistant.module';
 import {
   MockWhatsAppCloudApiClient,
   WHATSAPP_CLOUD_API_CLIENT,
@@ -8,7 +9,7 @@ import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
-  imports: [OnboardingModule],
+  imports: [OnboardingModule, AssistantModule],
   controllers: [WhatsAppWebhookController],
   providers: [
     WhatsAppService,

@@ -1,5 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { IncomingWhatsAppMessage, OutgoingWhatsAppMessage } from './types/whatsapp.types';
+import type { IncomingWhatsAppMessage, OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('webhooks')
