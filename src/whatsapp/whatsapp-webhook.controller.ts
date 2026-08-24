@@ -1,5 +1,4 @@
 import { Body, Controller, ForbiddenException, Get, Post, Query } from '@nestjs/common';
-import type { IncomingWhatsAppMessage, OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('webhooks')
@@ -20,9 +19,10 @@ export class WhatsAppWebhookController {
   }
 
   @Post('whatsapp')
-  async handleWhatsAppWebhook(
-    @Body() body: IncomingWhatsAppMessage,
-  ): Promise<OutgoingWhatsAppMessage> {
-    return this.whatsappService.processIncomingMessage(body);
+  async handleWhatsAppWebhook(@Body() body: unknown): Promise<{ received: true }> {
+    console.log('Received WhatsApp webhook payload:', body);
+    await this.whatsappService.handleWebhookPayload(body);
+
+    return { received: true };
   }
 }
