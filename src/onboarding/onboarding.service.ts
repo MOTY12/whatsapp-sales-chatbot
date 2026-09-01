@@ -230,12 +230,12 @@ export class OnboardingService {
     };
   }
 
-  private handleTimezoneStep(
+  private async handleTimezoneStep(
     whatsappId: string,
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!normalizedMessage) {
       return {
         to: message.from,
@@ -254,7 +254,7 @@ export class OnboardingService {
       'name' | 'industry' | 'phone' | 'timezone' | 'whatsapp_number'
     >;
 
-    const { business, owner } = this.businessRegistrationService.registerBusiness({
+    const { business, owner } = await this.businessRegistrationService.registerBusiness({
       ownerWhatsappId: whatsappId,
       draftBusiness,
     });
