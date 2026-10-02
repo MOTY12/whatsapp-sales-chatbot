@@ -33,7 +33,7 @@ export class User {
   @Column({ nullable: true })
   lastName: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   whatsappId: string | null;
 
   @Column()

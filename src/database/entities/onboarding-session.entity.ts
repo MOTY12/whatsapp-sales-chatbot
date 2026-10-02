@@ -26,13 +26,13 @@ export class OnboardingSession {
   @Column({ type: 'jsonb', default: {} })
   profile: Record<string, unknown>;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   businessId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   ownerId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   connectionChoice: 'connect' | 'current' | null;
 
   @CreateDateColumn()

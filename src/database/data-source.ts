@@ -22,7 +22,7 @@ export default new DataSource({
   port: Number(process.env.DATABASE_PORT || 5432),
   username: process.env.DATABASE_USER || 'postgres',
   password: process.env.DATABASE_PASSWORD,
-  database: process.env.DATABASE_NAME || 'kleva_db',
+  database: process.env.DATABASE_NAME || 'klevadb',
   ssl:
     process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
