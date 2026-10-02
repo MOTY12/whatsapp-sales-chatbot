@@ -30,7 +30,8 @@ export class WhatsAppService {
   ): Promise<OutgoingWhatsAppMessage> {
     const whatsappId = message.from.trim();
 
-    const currentState = this.conversationStateService.getOrCreate(whatsappId);
+    const currentState =
+      await this.conversationStateService.getOrCreate(whatsappId);
 
     // If onboarding complete or the message looks like an assistant command, route to assistant
     const parsed = this.assistantParser.parse(message.message || '');
@@ -49,6 +50,18 @@ export class WhatsAppService {
   }
 
   async processWebhookMessage(message: IncomingWhatsAppMessage): Promise<void> {
+    const onboardingState = await this.conversationStateService.get(
+      message.from.trim(),
+    );
+    if (
+      onboardingState &&
+      onboardingState.step !== 'IDLE' &&
+      onboardingState.step !== 'DONE'
+    ) {
+      await this.processOnboardingMessage(message);
+      return;
+    }
+
     const disposition = await this.leadCapture.capture(message);
 
     if (disposition.kind === 'owner_command') {
@@ -70,6 +83,20 @@ export class WhatsAppService {
         disposition.businessId,
       );
     }
+
+    if (
+      disposition.kind === 'unknown_business' &&
+      message.message.trim().toLowerCase() === 'hi'
+    ) {
+      await this.processOnboardingMessage(message);
+    }
+  }
+
+  private async processOnboardingMessage(
+    message: IncomingWhatsAppMessage,
+  ): Promise<void> {
+    const reply = await this.onboardingService.handleIncomingMessage(message);
+    await this.cloudApiClient.sendTextMessage(reply);
   }
 
   async handleWebhookPayload(payload: unknown): Promise<void> {

@@ -17,6 +17,7 @@ import { CustomerRepository } from './repositories/customer.repository';
 import { FollowUpRepository } from './repositories/follow-up.repository';
 import { ConversationRepository } from './repositories/conversation.repository';
 import { MessageRepository } from './repositories/message.repository';
+import { OnboardingSessionRepository } from './repositories/onboarding-session.repository';
 
 const entities = [
   Business,
@@ -39,6 +40,7 @@ const repositories = [
   FollowUpRepository,
   ConversationRepository,
   MessageRepository,
+  OnboardingSessionRepository,
 ];
 
 @Module({
