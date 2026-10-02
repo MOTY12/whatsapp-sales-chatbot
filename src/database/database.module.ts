@@ -10,10 +10,13 @@ import { FollowUp } from './entities/follow-up.entity';
 import { Task } from './entities/task.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Notification } from './entities/notification.entity';
+import { OnboardingSession } from './entities/onboarding-session.entity';
 import { BusinessRepository } from './repositories/business.repository';
 import { UserRepository } from './repositories/user.repository';
 import { CustomerRepository } from './repositories/customer.repository';
 import { FollowUpRepository } from './repositories/follow-up.repository';
+import { ConversationRepository } from './repositories/conversation.repository';
+import { MessageRepository } from './repositories/message.repository';
 
 const entities = [
   Business,
@@ -26,6 +29,7 @@ const entities = [
   Task,
   AuditLog,
   Notification,
+  OnboardingSession,
 ];
 
 const repositories = [
@@ -33,6 +37,8 @@ const repositories = [
   UserRepository,
   CustomerRepository,
   FollowUpRepository,
+  ConversationRepository,
+  MessageRepository,
 ];
 
 @Module({
@@ -47,7 +53,10 @@ const repositories = [
       entities: entities,
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.DATABASE_LOGGING === 'true',
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      ssl:
+        process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : false,
     }),
     TypeOrmModule.forFeature(entities),
   ],
@@ -55,4 +64,3 @@ const repositories = [
   exports: [TypeOrmModule, ...repositories],
 })
 export class DatabaseModule {}
-

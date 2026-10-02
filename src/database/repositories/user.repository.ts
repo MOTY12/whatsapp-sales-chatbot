@@ -23,6 +23,10 @@ export class UserRepository {
     return this.repository.findOne({ where: { email } });
   }
 
+  async findByWhatsappId(whatsappId: string): Promise<User | null> {
+    return this.repository.findOne({ where: { whatsappId } });
+  }
+
   async findByBusinessId(businessId: string): Promise<User[]> {
     return this.repository.find({
       where: { businessId },

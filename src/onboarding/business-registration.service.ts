@@ -37,8 +37,8 @@ export class BusinessRegistrationService {
       industry: input.draftBusiness.industry,
       phone: input.draftBusiness.phone,
       whatsappNumber: input.draftBusiness.whatsapp_number,
-      phoneNumberId: `temp_${businessId}`, // Will be updated during embedded signup
-      accessToken: '', // Will be updated during embedded signup
+      phoneNumberId: null,
+      accessToken: null,
       timezone: input.draftBusiness.timezone,
       status: 'active',
       config: { ownerWhatsappId: input.ownerWhatsappId },
@@ -51,6 +51,7 @@ export class BusinessRegistrationService {
       email: ownerEmail,
       password: '', // Can be set later
       firstName: 'Owner',
+      whatsappId: input.ownerWhatsappId,
       businessId: businessId,
       status: 'active',
       roles: ['owner'],
@@ -64,7 +65,7 @@ export class BusinessRegistrationService {
       industry: dbBusiness.industry,
       phone: dbBusiness.phone,
       whatsapp_number: dbBusiness.whatsappNumber,
-      timezone: dbBusiness.timezone,
+      timezone: dbBusiness.timezone ?? '',
       owner_whatsapp_id: input.ownerWhatsappId,
       status: 'active',
       created_at: createdAt,
@@ -90,25 +91,40 @@ export class BusinessRegistrationService {
       industry: dbBusiness.industry,
       phone: dbBusiness.phone,
       whatsapp_number: dbBusiness.whatsappNumber,
-      timezone: dbBusiness.timezone,
+      timezone: dbBusiness.timezone ?? '',
       owner_whatsapp_id: dbBusiness.config?.ownerWhatsappId || '',
       status: 'active',
       created_at: dbBusiness.createdAt.toISOString(),
     };
   }
 
-  async getOwnerByWhatsappId(whatsappId: string): Promise<BusinessOwner | undefined> {
-    // Query user by metadata whatsappId
-    // For now, we'll need to search through users
-    // This is a limitation - we should add an index for this
-    return undefined; // TODO: Implement after adding metadata search
+  async getOwnerByWhatsappId(
+    whatsappId: string,
+  ): Promise<BusinessOwner | undefined> {
+    const user = await this.userRepository.findByWhatsappId(whatsappId);
+    if (!user) return undefined;
+
+    return {
+      id: user.id,
+      whatsapp_id: whatsappId,
+      business_ids: [user.businessId],
+      created_at: user.createdAt.toISOString(),
+    };
   }
 
-  saveEmbeddedSignupConnection(connection: EmbeddedSignupConnection): EmbeddedSignupConnection {
-    return this.embeddedSignupConnectionService.saveEmbeddedSignupConnection(connection);
+  async saveEmbeddedSignupConnection(
+    connection: EmbeddedSignupConnection,
+  ): Promise<EmbeddedSignupConnection> {
+    return this.embeddedSignupConnectionService.saveEmbeddedSignupConnection(
+      connection,
+    );
   }
 
-  getEmbeddedSignupConnection(businessId: string): EmbeddedSignupConnection | undefined {
-    return this.embeddedSignupConnectionService.getEmbeddedSignupConnection(businessId);
+  async getEmbeddedSignupConnection(
+    businessId: string,
+  ): Promise<EmbeddedSignupConnection | undefined> {
+    return this.embeddedSignupConnectionService.getEmbeddedSignupConnection(
+      businessId,
+    );
   }
 }

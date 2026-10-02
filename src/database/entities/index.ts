@@ -8,3 +8,4 @@ export { FollowUp } from './follow-up.entity';
 export { Task } from './task.entity';
 export { AuditLog } from './audit-log.entity';
 export { Notification } from './notification.entity';
+export { OnboardingSession } from './onboarding-session.entity';

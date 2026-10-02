@@ -16,6 +16,7 @@ import { AuditLog } from './audit-log.entity';
 
 @Entity('users')
 @Index(['businessId', 'email'], { unique: true })
+@Index(['whatsappId'], { unique: true })
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -31,6 +32,9 @@ export class User {
 
   @Column({ nullable: true })
   lastName: string;
+
+  @Column({ nullable: true })
+  whatsappId: string | null;
 
   @Column()
   businessId: string;
@@ -50,7 +54,9 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.users, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.users, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
   @OneToMany(() => Customer, (customer) => customer.owner)

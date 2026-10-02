@@ -9,6 +9,7 @@ import { OnboardingService } from '../onboarding/onboarding.service';
 import { ConversationStateService } from '../onboarding/conversation-state.service';
 import { AssistantService } from '../assistant/assistant.service';
 import { AssistantCommandParserService } from '../assistant/assistant-command-parser.service';
+import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
 
 @Injectable()
 export class WhatsAppService {
@@ -19,6 +20,7 @@ export class WhatsAppService {
     private readonly conversationStateService: ConversationStateService,
     private readonly assistantService: AssistantService,
     private readonly assistantParser: AssistantCommandParserService,
+    private readonly leadCapture: WebhookLeadCaptureService,
     @Inject(WHATSAPP_CLOUD_API_CLIENT)
     private readonly cloudApiClient: WhatsAppCloudApiClient,
   ) {}
@@ -38,24 +40,50 @@ export class WhatsAppService {
       return reply;
     }
 
-    const botReply = await this.onboardingService.handleIncomingMessage(message);
+    const botReply =
+      await this.onboardingService.handleIncomingMessage(message);
 
     await this.cloudApiClient.sendTextMessage(botReply);
 
     return botReply;
   }
 
+  async processWebhookMessage(message: IncomingWhatsAppMessage): Promise<void> {
+    const disposition = await this.leadCapture.capture(message);
+
+    if (disposition.kind === 'owner_command') {
+      const reply = await this.assistantService.handleIncomingMessage(message);
+      await this.cloudApiClient.sendTextMessage(reply, disposition.businessId);
+      return;
+    }
+
+    if (
+      disposition.kind === 'customer_message' &&
+      disposition.isNewLead &&
+      disposition.ownerWhatsappId
+    ) {
+      await this.cloudApiClient.sendTextMessage(
+        {
+          to: disposition.ownerWhatsappId,
+          message: `New lead: ${disposition.customerName} sent you a WhatsApp message.`,
+        },
+        disposition.businessId,
+      );
+    }
+  }
+
   async handleWebhookPayload(payload: unknown): Promise<void> {
     const messages = this.extractIncomingMessages(payload);
 
     if (!messages.length) {
-      this.logger.debug('Received WhatsApp webhook payload without user text messages.');
+      this.logger.debug(
+        'Received WhatsApp webhook payload without user text messages.',
+      );
       return;
     }
 
     for (const message of messages) {
-      this.logger.log(`Incoming WhatsApp message from ${message.from}: ${message.message}`);
-      await this.processIncomingMessage(message);
+      await this.processWebhookMessage(message);
     }
   }
 
@@ -86,23 +114,52 @@ export class WhatsAppService {
           ? change.value.messages
           : [];
 
+        const phoneNumberId = this.readNestedString(change.value, [
+          'metadata',
+          'phone_number_id',
+        ]);
+        const contacts = Array.isArray(change.value.contacts)
+          ? change.value.contacts
+          : [];
         return metaMessages
-          .map((metaMessage) => this.toIncomingMessage(metaMessage))
-          .filter((message): message is IncomingWhatsAppMessage => Boolean(message));
+          .map((metaMessage) =>
+            this.toIncomingMessage(metaMessage, phoneNumberId, contacts),
+          )
+          .filter((message): message is IncomingWhatsAppMessage =>
+            Boolean(message),
+          );
       });
     });
   }
 
-  private toIncomingMessage(metaMessage: unknown): IncomingWhatsAppMessage | undefined {
+  private toIncomingMessage(
+    metaMessage: unknown,
+    phoneNumberId?: string,
+    contacts: unknown[] = [],
+  ): IncomingWhatsAppMessage | undefined {
     if (!this.isRecord(metaMessage)) {
       return undefined;
     }
 
-    const from = typeof metaMessage.from === 'string' ? metaMessage.from : undefined;
-    const type = typeof metaMessage.type === 'string' ? metaMessage.type : 'unknown';
+    const from =
+      typeof metaMessage.from === 'string' ? metaMessage.from : undefined;
+    const type =
+      typeof metaMessage.type === 'string' ? metaMessage.type : 'unknown';
     const textBody = this.readNestedString(metaMessage, ['text', 'body']);
+    const providerMessageId =
+      typeof metaMessage.id === 'string' ? metaMessage.id : undefined;
+    const timestamp =
+      typeof metaMessage.timestamp === 'string'
+        ? new Date(Number(metaMessage.timestamp) * 1000)
+        : undefined;
+    const contact = contacts.find(
+      (item) => this.isRecord(item) && item.wa_id === from,
+    );
+    const profileName = this.isRecord(contact)
+      ? this.readNestedString(contact, ['profile', 'name'])
+      : undefined;
 
-    if (!from || !textBody) {
+    if (!from || !textBody || !providerMessageId || !phoneNumberId) {
       return undefined;
     }
 
@@ -110,10 +167,17 @@ export class WhatsAppService {
       from,
       message: textBody,
       type,
+      providerMessageId,
+      phoneNumberId,
+      profileName,
+      timestamp:
+        timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp : undefined,
     };
   }
 
-  private isSimplifiedIncomingMessage(payload: unknown): payload is IncomingWhatsAppMessage {
+  private isSimplifiedIncomingMessage(
+    payload: unknown,
+  ): payload is IncomingWhatsAppMessage {
     if (!this.isRecord(payload)) {
       return false;
     }
@@ -125,7 +189,10 @@ export class WhatsAppService {
     );
   }
 
-  private readNestedString(payload: Record<string, unknown>, path: string[]): string | undefined {
+  private readNestedString(
+    payload: Record<string, unknown>,
+    path: string[],
+  ): string | undefined {
     let current: unknown = payload;
 
     for (const key of path) {

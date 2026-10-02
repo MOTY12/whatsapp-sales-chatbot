@@ -1,3 +1,55 @@
+# Kleva WhatsApp Sales Assistant
+
+Kleva is a NestJS and PostgreSQL backend for handling WhatsApp business onboarding, capturing WhatsApp leads, and routing a business owner's messages to the assistant. WhatsApp is the product interface; this repository intentionally does not include a dashboard.
+
+## Local setup
+
+```bash
+npm install
+cp .env.example .env
+npm run migration:run
+npm run start:dev
+```
+
+Required environment variables:
+
+```env
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USER=postgres
+DATABASE_PASSWORD=replace_me
+DATABASE_NAME=kleva_db
+WHATSAPP_VERIFY_TOKEN=replace_me
+META_APP_SECRET=replace_me
+META_APP_ID=replace_me
+META_REDIRECT_URI=https://your-public-url/meta/embedded-signup/callback
+WHATSAPP_BUSINESS_CONFIG_ID=replace_me
+WHATSAPP_API_VERSION=v25.0
+```
+
+`WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are only needed for a development fallback. Connected businesses use their own persisted Meta access token and phone-number ID.
+
+## Webhook configuration
+
+Configure Meta's callback URL as `https://your-public-url/webhooks/whatsapp`. Use `WHATSAPP_VERIFY_TOKEN` for the GET verification challenge. POST events must include Meta's `X-Hub-Signature-256`; Kleva verifies it against `META_APP_SECRET` using the unmodified raw request body.
+
+Inbound text events are resolved by Meta `phone_number_id`. Each provider message ID is unique in PostgreSQL, so webhook retries do not create duplicate messages. New customer senders create a tenant-scoped customer, open conversation, and inbound message. A business owner is identified from the persisted `users.whatsappId` field and is routed to the assistant instead.
+
+## Database and migrations
+
+```bash
+npm run migration:run
+npm run migration:revert
+```
+
+The migration adds business connection fields, indexed owner WhatsApp IDs, unique provider message IDs, and onboarding-session storage. For local development only, the application retains TypeORM schema synchronization; production disables it.
+
+## MVP boundary
+
+No web dashboard, payments, inventory, broadcasts, or public CRM API is included. Meta embedded signup credentials and a PostgreSQL database are required for real onboarding and message delivery.
+
+<!-- Legacy Nest starter notes retained below. -->
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>

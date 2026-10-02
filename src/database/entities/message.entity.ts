@@ -14,6 +14,7 @@ export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed';
 @Entity('messages')
 @Index(['conversationId', 'createdAt'])
 @Index(['businessId'])
+@Index(['whatsappMessageId'], { unique: true })
 export class Message {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -34,7 +35,7 @@ export class Message {
   status: MessageStatus;
 
   @Column({ nullable: true })
-  whatsappMessageId: string;
+  whatsappMessageId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;

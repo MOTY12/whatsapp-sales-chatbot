@@ -33,14 +33,23 @@ export class Business {
   @Column()
   whatsappNumber: string;
 
-  @Column({ unique: true })
-  phoneNumberId: string;
+  @Column({ nullable: true, unique: true })
+  phoneNumberId: string | null;
 
-  @Column()
-  accessToken: string;
+  @Column({ type: 'text', nullable: true })
+  accessToken: string | null;
 
   @Column({ nullable: true })
-  timezone: string;
+  wabaId: string | null;
+
+  @Column({ nullable: true })
+  displayPhoneNumber: string | null;
+
+  @Column({ nullable: true })
+  connectedAt: Date | null;
+
+  @Column({ nullable: true })
+  timezone: string | null;
 
   @Column({ default: 'active' })
   status: 'active' | 'inactive' | 'suspended';
@@ -60,7 +69,9 @@ export class Business {
   @OneToMany(() => Customer, (customer) => customer.business, { cascade: true })
   customers: Customer[];
 
-  @OneToMany(() => Conversation, (conversation) => conversation.business, { cascade: true })
+  @OneToMany(() => Conversation, (conversation) => conversation.business, {
+    cascade: true,
+  })
   conversations: Conversation[];
 
   @OneToMany(() => FollowUp, (followUp) => followUp.business, { cascade: true })

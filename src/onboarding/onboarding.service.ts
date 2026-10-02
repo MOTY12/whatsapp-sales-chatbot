@@ -17,20 +17,26 @@ export class OnboardingService {
     private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService,
   ) {}
 
-  handleIncomingMessage(message: IncomingWhatsAppMessage): OutgoingWhatsAppMessage | Promise<OutgoingWhatsAppMessage> {
+  handleIncomingMessage(
+    message: IncomingWhatsAppMessage,
+  ): OutgoingWhatsAppMessage | Promise<OutgoingWhatsAppMessage> {
     const whatsappId = message.from.trim();
     const normalizedMessage = this.normalizeMessage(message.message);
 
     if (!normalizedMessage && message.type === 'text') {
       return {
         to: message.from,
-        message: 'Please send a message so I can continue with your Kleva onboarding.',
+        message:
+          'Please send a message so I can continue with your Kleva onboarding.',
       };
     }
 
     const currentState = this.conversationStateService.getOrCreate(whatsappId);
 
-    if (this.isHiMessage(normalizedMessage) && this.canRestartFlow(currentState.step)) {
+    if (
+      this.isHiMessage(normalizedMessage) &&
+      this.canRestartFlow(currentState.step)
+    ) {
       const nextState = this.conversationStateService.reset(whatsappId);
       nextState.step = 'ASK_REGISTER';
       this.conversationStateService.save(nextState);
@@ -45,25 +51,60 @@ export class OnboardingService {
       case 'IDLE':
         return this.handleIdleState(message, normalizedMessage, currentState);
       case 'ASK_REGISTER':
-        return this.handleRegisterPrompt(whatsappId, normalizedMessage, message);
+        return this.handleRegisterPrompt(
+          whatsappId,
+          normalizedMessage,
+          message,
+        );
       case 'ASK_BUSINESS_NAME':
-        return this.handleBusinessNameStep(normalizedMessage, message, currentState);
+        return this.handleBusinessNameStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_INDUSTRY':
-        return this.handleIndustryStep(normalizedMessage, message, currentState);
+        return this.handleIndustryStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_PHONE':
         return this.handlePhoneStep(normalizedMessage, message, currentState);
       case 'ASK_TIMEZONE':
-        return this.handleTimezoneStep(whatsappId, normalizedMessage, message, currentState);
+        return this.handleTimezoneStep(
+          whatsappId,
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_CONNECT_WHATSAPP':
-        return this.handleConnectionStep(whatsappId, normalizedMessage, message, currentState);
+        return this.handleConnectionStep(
+          whatsappId,
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'WAITING_FOR_EMBEDDED_SIGNUP':
-        return this.handleEmbeddedSignupWaitingStep(whatsappId, normalizedMessage, message, currentState);
+        return this.handleEmbeddedSignupWaitingStep(
+          whatsappId,
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_LOGO':
         return this.handleLogoStep(normalizedMessage, message, currentState);
       case 'ASK_DESCRIPTION':
-        return this.handleDescriptionStep(normalizedMessage, message, currentState);
+        return this.handleDescriptionStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_OPENING_HOURS':
-        return this.handleOpeningHoursStep(normalizedMessage, message, currentState);
+        return this.handleOpeningHoursStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'DONE':
       default:
         return this.handleIdleState(message, normalizedMessage, currentState);
@@ -134,7 +175,8 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: 'No problem. Message me "Hi" whenever you are ready to register your business.',
+        message:
+          'No problem. Message me "Hi" whenever you are ready to register your business.',
       };
     }
 
@@ -198,7 +240,8 @@ export class OnboardingService {
 
     return {
       to: message.from,
-      message: 'What phone number should customers use to contact your business?',
+      message:
+        'What phone number should customers use to contact your business?',
     };
   }
 
@@ -210,7 +253,8 @@ export class OnboardingService {
     if (!normalizedMessage) {
       return {
         to: message.from,
-        message: 'What phone number should customers use to contact your business?',
+        message:
+          'What phone number should customers use to contact your business?',
       };
     }
 
@@ -226,7 +270,8 @@ export class OnboardingService {
 
     return {
       to: message.from,
-      message: 'What timezone is your business located in?\n\nExample: Africa/Lagos',
+      message:
+        'What timezone is your business located in?\n\nExample: Africa/Lagos',
     };
   }
 
@@ -239,7 +284,8 @@ export class OnboardingService {
     if (!normalizedMessage) {
       return {
         to: message.from,
-        message: 'What timezone is your business located in?\n\nExample: Africa/Lagos',
+        message:
+          'What timezone is your business located in?\n\nExample: Africa/Lagos',
       };
     }
 
@@ -254,10 +300,11 @@ export class OnboardingService {
       'name' | 'industry' | 'phone' | 'timezone' | 'whatsapp_number'
     >;
 
-    const { business, owner } = await this.businessRegistrationService.registerBusiness({
-      ownerWhatsappId: whatsappId,
-      draftBusiness,
-    });
+    const { business, owner } =
+      await this.businessRegistrationService.registerBusiness({
+        ownerWhatsappId: whatsappId,
+        draftBusiness,
+      });
 
     const nextState = this.updateState(currentState, {
       step: 'ASK_CONNECT_WHATSAPP',
@@ -291,7 +338,8 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: 'Something went wrong with your onboarding. Please send "Hi" to start again.',
+        message:
+          'Something went wrong with your onboarding. Please send "Hi" to start again.',
       };
     }
 
@@ -324,22 +372,24 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: 'Using your current WhatsApp number for the business.\n\nUpload your business logo',
+        message:
+          'Using your current WhatsApp number for the business.\n\nUpload your business logo',
       };
     }
 
     return {
       to: message.from,
-      message: 'Please reply with 1 to Connect or 2 to Continue with this number.',
+      message:
+        'Please reply with 1 to Connect or 2 to Continue with this number.',
     };
   }
 
-  private handleEmbeddedSignupWaitingStep(
+  private async handleEmbeddedSignupWaitingStep(
     whatsappId: string,
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!this.isDoneMessage(normalizedMessage)) {
       return {
         to: message.from,
@@ -355,15 +405,20 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: 'Something went wrong with your onboarding. Please send "Hi" to start again.',
+        message:
+          'Something went wrong with your onboarding. Please send "Hi" to start again.',
       };
     }
 
-    const embeddedSignupConnection = this.businessRegistrationService.getEmbeddedSignupConnection(
-      businessId,
-    );
+    const embeddedSignupConnection =
+      await this.businessRegistrationService.getEmbeddedSignupConnection(
+        businessId,
+      );
 
-    if (!embeddedSignupConnection || embeddedSignupConnection.status !== 'connected') {
+    if (
+      !embeddedSignupConnection ||
+      embeddedSignupConnection.status !== 'connected'
+    ) {
       return {
         to: message.from,
         message:
