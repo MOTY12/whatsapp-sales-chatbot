@@ -8,12 +8,7 @@ import {
 } from 'typeorm';
 
 export type PipelineStageType =
-  | 'New Lead'
-  | 'Interested'
-  | 'Negotiating'
-  | 'Paid'
-  | 'Delivered'
-  | 'Lost';
+  'New Lead' | 'Interested' | 'Negotiating' | 'Paid' | 'Delivered' | 'Lost';
 
 @Entity('pipeline_stages')
 @Index(['businessId', 'name'], { unique: true })

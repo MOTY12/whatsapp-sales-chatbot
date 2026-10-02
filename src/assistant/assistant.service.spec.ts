@@ -29,13 +29,25 @@ describe('AssistantService flows', () => {
   });
 
   it('create customer flow', async () => {
-    const askName = await assistant.handleIncomingMessage({ from: seller, message: 'Create customer', type: 'text' });
+    const askName = await assistant.handleIncomingMessage({
+      from: seller,
+      message: 'Create customer',
+      type: 'text',
+    });
     expect(askName.message).toContain('what is the customer name');
 
-    const askPhone = await assistant.handleIncomingMessage({ from: seller, message: 'Alice', type: 'text' });
+    const askPhone = await assistant.handleIncomingMessage({
+      from: seller,
+      message: 'Alice',
+      type: 'text',
+    });
     expect(askPhone.message).toContain('phone');
 
-    const done = await assistant.handleIncomingMessage({ from: seller, message: '+2348000000000', type: 'text' });
+    const done = await assistant.handleIncomingMessage({
+      from: seller,
+      message: '+2348000000000',
+      type: 'text',
+    });
     expect(done.message).toContain('Customer Alice created');
 
     const found = customers.findByName(seller, 'Alice');
@@ -45,15 +57,27 @@ describe('AssistantService flows', () => {
 
   it('add note flow', async () => {
     // ensure customer exists
-    const c = customers.create(seller, 'Bob', '+2348111111111');
+    customers.create(seller, 'Bob', '+2348111111111');
 
-    const askForCustomer = await assistant.handleIncomingMessage({ from: seller, message: 'Add note', type: 'text' });
+    const askForCustomer = await assistant.handleIncomingMessage({
+      from: seller,
+      message: 'Add note',
+      type: 'text',
+    });
     expect(askForCustomer.message).toContain('Which customer');
 
-    const askNote = await assistant.handleIncomingMessage({ from: seller, message: 'Bob', type: 'text' });
+    const askNote = await assistant.handleIncomingMessage({
+      from: seller,
+      message: 'Bob',
+      type: 'text',
+    });
     expect(askNote.message).toContain('What note');
 
-    const done = await assistant.handleIncomingMessage({ from: seller, message: 'Called and interested', type: 'text' });
+    const done = await assistant.handleIncomingMessage({
+      from: seller,
+      message: 'Called and interested',
+      type: 'text',
+    });
     expect(done.message).toContain('Note added to Bob');
 
     const found = customers.findByName(seller, 'Bob');

@@ -1,13 +1,12 @@
 /** @type {import('jest').Config} */
 const tsJestOptions = {
-  isolatedModules: true,
   tsconfig: {
     module: 'commonjs',
     moduleResolution: 'node',
+    resolvePackageJsonExports: false,
     esModuleInterop: true,
     emitDecoratorMetadata: true,
     experimentalDecorators: true,
-    allowJs: true,
     strictNullChecks: true,
     skipLibCheck: true,
   },
@@ -20,8 +19,9 @@ module.exports = {
   transform: {
     '^.+\\.(t|j)s$': ['ts-jest', tsJestOptions],
   },
-  // @nestjs/typeorm 12 ships ESM; transform it so Jest can load repository tests.
-  transformIgnorePatterns: ['node_modules/(?!(@nestjs/typeorm)/)'],
+  moduleNameMapper: {
+    '^@nestjs/typeorm$': '<rootDir>/testing/typeorm-jest.mock.ts',
+  },
   collectCoverageFrom: ['**/*.(t|j)s'],
   coverageDirectory: '../coverage',
   testEnvironment: 'node',

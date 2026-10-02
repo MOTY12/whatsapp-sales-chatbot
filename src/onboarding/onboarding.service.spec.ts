@@ -152,6 +152,7 @@ describe('OnboardingService', () => {
     await send('Food');
     await send('+2348011111111');
     await send('Africa/Lagos');
+    await send('Connect');
 
     const response = await send('done');
 
@@ -168,6 +169,7 @@ describe('OnboardingService', () => {
     await send('Food');
     await send('+2348011111111');
     await send('Africa/Lagos');
+    await send('Connect');
 
     const state = await conversationStateService.get(sender);
     const businessId = state?.businessId;
@@ -254,7 +256,9 @@ describe('OnboardingService', () => {
 
     const response = await send('invalid-industry');
 
-    expect(response.message).toContain('Please choose a valid industry option.');
+    expect(response.message).toContain(
+      'Please choose a valid industry option.',
+    );
     expect((await conversationStateService.get(sender))?.step).toBe(
       'ASK_INDUSTRY',
     );

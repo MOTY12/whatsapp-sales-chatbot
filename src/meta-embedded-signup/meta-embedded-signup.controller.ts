@@ -5,7 +5,9 @@ import { MetaEmbeddedSignupService } from './meta-embedded-signup.service';
 
 @Controller('meta/embedded-signup')
 export class MetaEmbeddedSignupController {
-  constructor(private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService) {}
+  constructor(
+    private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService,
+  ) {}
 
   @Get('callback')
   async callback(

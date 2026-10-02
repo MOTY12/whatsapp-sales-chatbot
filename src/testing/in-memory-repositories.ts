@@ -21,12 +21,19 @@ export function createInMemoryBusinessRepository() {
     async findById(id: string): Promise<Business | null> {
       return items.get(id) ?? null;
     },
-    async update(id: string, data: Partial<Business>): Promise<Business | null> {
+    async update(
+      id: string,
+      data: Partial<Business>,
+    ): Promise<Business | null> {
       const existing = items.get(id);
       if (!existing) {
         return null;
       }
-      const updated = { ...existing, ...data, updatedAt: new Date() } as Business;
+      const updated = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      } as Business;
       items.set(id, updated);
       return updated;
     },

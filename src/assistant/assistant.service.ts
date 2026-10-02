@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { IncomingWhatsAppMessage, OutgoingWhatsAppMessage } from '../whatsapp/types/whatsapp.types';
+import {
+  IncomingWhatsAppMessage,
+  OutgoingWhatsAppMessage,
+} from '../whatsapp/types/whatsapp.types';
 import { AssistantCommandParserService } from './assistant-command-parser.service';
 import { AssistantStateService } from './assistant-state.service';
 import { CustomerService } from './customer.service';
@@ -16,7 +19,10 @@ export class AssistantService {
     private readonly reminders: ReminderService,
   ) {}
 
-  async handleIncomingMessage(message: IncomingWhatsAppMessage): Promise<OutgoingWhatsAppMessage> {
+  async handleIncomingMessage(
+    message: IncomingWhatsAppMessage,
+  ): Promise<OutgoingWhatsAppMessage> {
+    await Promise.resolve();
     const seller = message.from.trim();
     const text = (message.message || '').trim();
 
@@ -46,7 +52,11 @@ export class AssistantService {
         const name = parsed.entities?.name;
         const stage = parsed.entities?.stage;
         if (!name || !stage) {
-          return { to: seller, message: 'Who should I move and to what stage? Example: Move John to Negotiating' };
+          return {
+            to: seller,
+            message:
+              'Who should I move and to what stage? Example: Move John to Negotiating',
+          };
         }
         const cust = this.customers.findByName(seller, name);
         if (!cust) {
@@ -57,23 +67,47 @@ export class AssistantService {
       }
       case 'add_note': {
         this.state.set(seller, { type: 'add_note', step: 1, draft: {} });
-        return { to: seller, message: 'Which customer is the note for? Please provide customer name.' };
+        return {
+          to: seller,
+          message:
+            'Which customer is the note for? Please provide customer name.',
+        };
       }
       case 'mark_paid': {
-        this.state.set(seller, { type: 'add_note', step: 1, draft: { markPaid: true } });
-        return { to: seller, message: 'Which customer should be marked paid? Please provide customer name.' };
+        this.state.set(seller, {
+          type: 'add_note',
+          step: 1,
+          draft: { markPaid: true },
+        });
+        return {
+          to: seller,
+          message:
+            'Which customer should be marked paid? Please provide customer name.',
+        };
       }
       case 'todays_followups': {
         const today = this.reminders.listForDate(seller, new Date());
-        if (today.length === 0) return { to: seller, message: "No follow-ups due today." };
-        const lines = today.map((r) => `- ${r.text} (${new Date(r.when).toLocaleTimeString()})`);
-        return { to: seller, message: ['Today\'s follow-ups:', '', ...lines].join('\n') };
+        if (today.length === 0)
+          return { to: seller, message: 'No follow-ups due today.' };
+        const lines = today.map(
+          (r) => `- ${r.text} (${new Date(r.when).toLocaleTimeString()})`,
+        );
+        return {
+          to: seller,
+          message: ["Today's follow-ups:", '', ...lines].join('\n'),
+        };
       }
       case 'todays_leads': {
-        const leads = this.customers.list(seller).filter((c) => c.stage.toLowerCase() === 'new');
-        if (leads.length === 0) return { to: seller, message: 'No leads for today.' };
+        const leads = this.customers
+          .list(seller)
+          .filter((c) => c.stage.toLowerCase() === 'new');
+        if (leads.length === 0)
+          return { to: seller, message: 'No leads for today.' };
         const lines = leads.map((l) => `- ${l.name} ${l.phone ?? ''}`);
-        return { to: seller, message: ['Today\'s leads:', '', ...lines].join('\n') };
+        return {
+          to: seller,
+          message: ["Today's leads:", '', ...lines].join('\n'),
+        };
       }
       case 'count_customers': {
         const count = this.customers.list(seller).length;
@@ -81,34 +115,59 @@ export class AssistantService {
       }
       case 'what_sold_today': {
         const sold = this.sales.listForDate(seller, new Date());
-        if (sold.length === 0) return { to: seller, message: 'No sales recorded today.' };
-        const lines = sold.map((s) => `- ${s.product ?? 'sale'} ${s.amount ? `NGN ${s.amount}` : ''}`);
-        return { to: seller, message: ['Sales today:', '', ...lines].join('\n') };
+        if (sold.length === 0)
+          return { to: seller, message: 'No sales recorded today.' };
+        const lines = sold.map(
+          (s) =>
+            `- ${s.product ?? 'sale'} ${s.amount ? `NGN ${s.amount}` : ''}`,
+        );
+        return {
+          to: seller,
+          message: ['Sales today:', '', ...lines].join('\n'),
+        };
       }
       case 'show_overdue': {
         const overdue = this.reminders.listOverdue(seller, new Date());
-        if (overdue.length === 0) return { to: seller, message: 'No overdue customers/reminders.' };
-        const lines = overdue.map((r) => `- ${r.text} (was ${new Date(r.when).toLocaleDateString()})`);
+        if (overdue.length === 0)
+          return { to: seller, message: 'No overdue customers/reminders.' };
+        const lines = overdue.map(
+          (r) => `- ${r.text} (was ${new Date(r.when).toLocaleDateString()})`,
+        );
         return { to: seller, message: ['Overdue:', '', ...lines].join('\n') };
       }
       case 'create_reminder': {
         this.state.set(seller, { type: 'create_reminder', step: 1, draft: {} });
-        return { to: seller, message: 'What should the reminder say for tomorrow?' };
+        return {
+          to: seller,
+          message: 'What should the reminder say for tomorrow?',
+        };
       }
       case 'find_customer': {
         const name = parsed.entities?.name;
         if (!name) return { to: seller, message: 'Who are you looking for?' };
         const cust = this.customers.findByName(seller, name);
-        if (!cust) return { to: seller, message: `No customer found for ${name}.` };
-        const lines = [`Name: ${cust.name}`, `Phone: ${cust.phone ?? '-'}`, `Stage: ${cust.stage}`, `Notes: ${cust.notes.length}`];
+        if (!cust)
+          return { to: seller, message: `No customer found for ${name}.` };
+        const lines = [
+          `Name: ${cust.name}`,
+          `Phone: ${cust.phone ?? '-'}`,
+          `Stage: ${cust.stage}`,
+          `Notes: ${cust.notes.length}`,
+        ];
         return { to: seller, message: lines.join('\n') };
       }
       case 'search_customer': {
         const phone = parsed.entities?.phone;
-        if (!phone) return { to: seller, message: 'Which phone should I search for?' };
+        if (!phone)
+          return { to: seller, message: 'Which phone should I search for?' };
         const cust = this.customers.findByPhone(seller, phone);
-        if (!cust) return { to: seller, message: `No customer found for ${phone}.` };
-        const lines = [`Name: ${cust.name}`, `Phone: ${cust.phone ?? '-'}`, `Stage: ${cust.stage}`];
+        if (!cust)
+          return { to: seller, message: `No customer found for ${phone}.` };
+        const lines = [
+          `Name: ${cust.name}`,
+          `Phone: ${cust.phone ?? '-'}`,
+          `Stage: ${cust.stage}`,
+        ];
         return { to: seller, message: lines.join('\n') };
       }
       default:
@@ -135,11 +194,22 @@ export class AssistantService {
         pending.draft.name = text;
         pending.step = 2;
         this.state.set(seller, pending);
-        return { to: seller, message: 'Got it. What is the customer phone number?' };
+        return {
+          to: seller,
+          message: 'Got it. What is the customer phone number?',
+        };
       }
       if (pending.step === 2) {
         const phone = text;
-        const cust = this.customers.create(seller, pending.draft.name, phone);
+        const name: unknown = pending.draft.name;
+        if (typeof name !== 'string') {
+          this.state.clear(seller);
+          return {
+            to: seller,
+            message: 'Please provide a customer name first.',
+          };
+        }
+        const cust = this.customers.create(seller, name, phone);
         this.state.clear(seller);
         return { to: seller, message: `Customer ${cust.name} created.` };
       }
@@ -153,7 +223,14 @@ export class AssistantService {
         return { to: seller, message: 'What note should I add?' };
       }
       if (pending.step === 2) {
-        const name = pending.draft.name;
+        const name: unknown = pending.draft.name;
+        if (typeof name !== 'string') {
+          this.state.clear(seller);
+          return {
+            to: seller,
+            message: 'Please provide a customer name first.',
+          };
+        }
         const cust = this.customers.findByName(seller, name);
         if (!cust) {
           this.state.clear(seller);

@@ -41,8 +41,5 @@ export default new DataSource({
     Notification,
     OnboardingSession,
   ],
-  migrations: [
-    InitialSchema1759999999999,
-    AddWebhookPersistence1760000000000,
-  ],
+  migrations: [InitialSchema1759999999999, AddWebhookPersistence1760000000000],
 });

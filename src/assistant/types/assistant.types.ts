@@ -20,7 +20,8 @@ export interface AssistantParseResult {
   entities?: Record<string, string>;
 }
 
-export type AssistantPendingFlowType = 'create_customer' | 'add_note' | 'create_reminder';
+export type AssistantPendingFlowType =
+  'create_customer' | 'add_note' | 'create_reminder';
 
 export interface AssistantPendingFlow {
   type: AssistantPendingFlowType;

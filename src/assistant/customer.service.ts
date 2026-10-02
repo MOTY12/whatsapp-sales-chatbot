@@ -42,7 +42,9 @@ export class CustomerService {
 
   findByPhone(ownerWhatsappId: string, phone: string): Customer | undefined {
     const list = this.store.get(ownerWhatsappId) ?? [];
-    return list.find((c) => c.phone === phone || c.phone === phone.replace(/[^\d+]/g, ''));
+    return list.find(
+      (c) => c.phone === phone || c.phone === phone.replace(/[^\d+]/g, ''),
+    );
   }
 
   list(ownerWhatsappId: string): Customer[] {

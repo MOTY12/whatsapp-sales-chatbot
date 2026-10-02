@@ -7,19 +7,20 @@
     "^.+\\.(t|j)s$": [
       "ts-jest",
       {
-        "isolatedModules": true,
         "tsconfig": {
           "module": "commonjs",
           "moduleResolution": "node",
+          "resolvePackageJsonExports": false,
           "esModuleInterop": true,
           "emitDecoratorMetadata": true,
           "experimentalDecorators": true,
-          "allowJs": true,
           "strictNullChecks": true,
           "skipLibCheck": true
         }
       }
     ]
   },
-  "transformIgnorePatterns": ["node_modules/(?!(@nestjs/typeorm)/)"]
+  "moduleNameMapper": {
+    "^@nestjs/typeorm$": "<rootDir>/../src/testing/typeorm-jest.mock.ts"
+  }
 }
