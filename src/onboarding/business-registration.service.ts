@@ -26,6 +26,29 @@ export class BusinessRegistrationService {
     owner: BusinessOwner;
     business: Business;
   }> {
+    const existingOwner = await this.userRepository.findByWhatsappId(
+      input.ownerWhatsappId,
+    );
+    if (existingOwner) {
+      const existingBusiness = await this.businessRepository.findById(
+        existingOwner.businessId,
+      );
+      if (existingBusiness) {
+        return {
+          owner: {
+            id: existingOwner.id,
+            whatsapp_id: input.ownerWhatsappId,
+            business_ids: [existingBusiness.id],
+            created_at: existingOwner.createdAt.toISOString(),
+          },
+          business: this.toLegacyBusiness(
+            existingBusiness,
+            input.ownerWhatsappId,
+          ),
+        };
+      }
+    }
+
     const businessId = randomUUID();
     const ownerId = randomUUID();
     const createdAt = new Date().toISOString();
@@ -59,17 +82,7 @@ export class BusinessRegistrationService {
     });
 
     // Return in legacy format for backward compatibility
-    const business: Business = {
-      id: dbBusiness.id,
-      name: dbBusiness.name,
-      industry: dbBusiness.industry,
-      phone: dbBusiness.phone,
-      whatsapp_number: dbBusiness.whatsappNumber,
-      timezone: dbBusiness.timezone ?? '',
-      owner_whatsapp_id: input.ownerWhatsappId,
-      status: 'active',
-      created_at: createdAt,
-    };
+    const business = this.toLegacyBusiness(dbBusiness, input.ownerWhatsappId);
 
     const owner: BusinessOwner = {
       id: dbUser.id,
@@ -85,17 +98,10 @@ export class BusinessRegistrationService {
     const dbBusiness = await this.businessRepository.findById(businessId);
     if (!dbBusiness) return undefined;
 
-    return {
-      id: dbBusiness.id,
-      name: dbBusiness.name,
-      industry: dbBusiness.industry,
-      phone: dbBusiness.phone,
-      whatsapp_number: dbBusiness.whatsappNumber,
-      timezone: dbBusiness.timezone ?? '',
-      owner_whatsapp_id: dbBusiness.config?.ownerWhatsappId || '',
-      status: 'active',
-      created_at: dbBusiness.createdAt.toISOString(),
-    };
+    return this.toLegacyBusiness(
+      dbBusiness,
+      String(dbBusiness.config?.ownerWhatsappId ?? ''),
+    );
   }
 
   async getOwnerByWhatsappId(
@@ -126,5 +132,47 @@ export class BusinessRegistrationService {
     return this.embeddedSignupConnectionService.getEmbeddedSignupConnection(
       businessId,
     );
+  }
+
+  async saveProfile(
+    businessId: string,
+    profile: {
+      description?: string;
+      openingHours?: string;
+      logoUploaded?: boolean;
+    },
+  ): Promise<void> {
+    const business = await this.businessRepository.findById(businessId);
+    if (!business) {
+      throw new Error('The onboarding business no longer exists.');
+    }
+    await this.businessRepository.update(businessId, {
+      config: { ...business.config, profile },
+    });
+  }
+
+  private toLegacyBusiness(
+    business: {
+      id: string;
+      name: string;
+      industry: string;
+      phone: string;
+      whatsappNumber: string;
+      timezone: string | null;
+      createdAt: Date;
+    },
+    ownerWhatsappId: string,
+  ): Business {
+    return {
+      id: business.id,
+      name: business.name,
+      industry: business.industry,
+      phone: business.phone,
+      whatsapp_number: business.whatsappNumber,
+      timezone: business.timezone ?? '',
+      owner_whatsapp_id: ownerWhatsappId,
+      status: 'active',
+      created_at: business.createdAt.toISOString(),
+    };
   }
 }

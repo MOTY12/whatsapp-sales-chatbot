@@ -17,9 +17,9 @@ export class OnboardingService {
     private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService,
   ) {}
 
-  handleIncomingMessage(
+  async handleIncomingMessage(
     message: IncomingWhatsAppMessage,
-  ): OutgoingWhatsAppMessage | Promise<OutgoingWhatsAppMessage> {
+  ): Promise<OutgoingWhatsAppMessage> {
     const whatsappId = message.from.trim();
     const normalizedMessage = this.normalizeMessage(message.message);
 
@@ -31,15 +31,16 @@ export class OnboardingService {
       };
     }
 
-    const currentState = this.conversationStateService.getOrCreate(whatsappId);
+    const currentState =
+      await this.conversationStateService.getOrCreate(whatsappId);
 
     if (
       this.isHiMessage(normalizedMessage) &&
       this.canRestartFlow(currentState.step)
     ) {
-      const nextState = this.conversationStateService.reset(whatsappId);
+      const nextState = await this.conversationStateService.reset(whatsappId);
       nextState.step = 'ASK_REGISTER';
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -49,79 +50,95 @@ export class OnboardingService {
 
     switch (currentState.step) {
       case 'IDLE':
-        return this.handleIdleState(message, normalizedMessage, currentState);
+        return await this.handleIdleState(
+          message,
+          normalizedMessage,
+          currentState,
+        );
       case 'ASK_REGISTER':
-        return this.handleRegisterPrompt(
+        return await this.handleRegisterPrompt(
           whatsappId,
           normalizedMessage,
           message,
         );
       case 'ASK_BUSINESS_NAME':
-        return this.handleBusinessNameStep(
+        return await this.handleBusinessNameStep(
           normalizedMessage,
           message,
           currentState,
         );
       case 'ASK_INDUSTRY':
-        return this.handleIndustryStep(
+        return await this.handleIndustryStep(
           normalizedMessage,
           message,
           currentState,
         );
       case 'ASK_PHONE':
-        return this.handlePhoneStep(normalizedMessage, message, currentState);
+        return await this.handlePhoneStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_TIMEZONE':
-        return this.handleTimezoneStep(
+        return await this.handleTimezoneStep(
           whatsappId,
           normalizedMessage,
           message,
           currentState,
         );
       case 'ASK_CONNECT_WHATSAPP':
-        return this.handleConnectionStep(
+        return await this.handleConnectionStep(
           whatsappId,
           normalizedMessage,
           message,
           currentState,
         );
       case 'WAITING_FOR_EMBEDDED_SIGNUP':
-        return this.handleEmbeddedSignupWaitingStep(
+        return await this.handleEmbeddedSignupWaitingStep(
           whatsappId,
           normalizedMessage,
           message,
           currentState,
         );
       case 'ASK_LOGO':
-        return this.handleLogoStep(normalizedMessage, message, currentState);
+        return await this.handleLogoStep(
+          normalizedMessage,
+          message,
+          currentState,
+        );
       case 'ASK_DESCRIPTION':
-        return this.handleDescriptionStep(
+        return await this.handleDescriptionStep(
           normalizedMessage,
           message,
           currentState,
         );
       case 'ASK_OPENING_HOURS':
-        return this.handleOpeningHoursStep(
+        return await this.handleOpeningHoursStep(
           normalizedMessage,
           message,
           currentState,
         );
       case 'DONE':
       default:
-        return this.handleIdleState(message, normalizedMessage, currentState);
+        return await this.handleIdleState(
+          message,
+          normalizedMessage,
+          currentState,
+        );
     }
   }
 
-  private handleIdleState(
+  private async handleIdleState(
     message: IncomingWhatsAppMessage,
     normalizedMessage: string,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (this.isHiMessage(normalizedMessage)) {
       const nextState = this.updateState(currentState, {
         step: 'ASK_REGISTER',
       });
 
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -134,7 +151,7 @@ export class OnboardingService {
         step: 'ASK_BUSINESS_NAME',
       });
 
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -142,7 +159,7 @@ export class OnboardingService {
       };
     }
 
-    this.conversationStateService.save(currentState);
+    await this.conversationStateService.save(currentState);
 
     return {
       to: message.from,
@@ -150,19 +167,20 @@ export class OnboardingService {
     };
   }
 
-  private handleRegisterPrompt(
+  private async handleRegisterPrompt(
     whatsappId: string,
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
-  ): OutgoingWhatsAppMessage {
-    const currentState = this.conversationStateService.getOrCreate(whatsappId);
+  ): Promise<OutgoingWhatsAppMessage> {
+    const currentState =
+      await this.conversationStateService.getOrCreate(whatsappId);
 
     if (this.isAffirmative(normalizedMessage)) {
       const nextState = this.updateState(currentState, {
         step: 'ASK_BUSINESS_NAME',
       });
 
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -171,7 +189,7 @@ export class OnboardingService {
     }
 
     if (this.isNegative(normalizedMessage)) {
-      this.conversationStateService.reset(whatsappId);
+      await this.conversationStateService.reset(whatsappId);
 
       return {
         to: message.from,
@@ -186,11 +204,11 @@ export class OnboardingService {
     };
   }
 
-  private handleBusinessNameStep(
+  private async handleBusinessNameStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!normalizedMessage) {
       return {
         to: message.from,
@@ -206,7 +224,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -214,11 +232,11 @@ export class OnboardingService {
     };
   }
 
-  private handleIndustryStep(
+  private async handleIndustryStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     const industry = this.parseIndustryChoice(normalizedMessage);
 
     if (!industry) {
@@ -236,7 +254,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -245,11 +263,11 @@ export class OnboardingService {
     };
   }
 
-  private handlePhoneStep(
+  private async handlePhoneStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!normalizedMessage) {
       return {
         to: message.from,
@@ -266,7 +284,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -317,7 +335,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -334,7 +352,7 @@ export class OnboardingService {
     const businessId = currentState.businessId;
 
     if (!businessId) {
-      this.conversationStateService.reset(whatsappId);
+      await this.conversationStateService.reset(whatsappId);
 
       return {
         to: message.from,
@@ -354,7 +372,7 @@ export class OnboardingService {
         connectionChoice: 'connect',
       });
 
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -368,7 +386,7 @@ export class OnboardingService {
         connectionChoice: 'current',
       });
 
-      this.conversationStateService.save(nextState);
+      await this.conversationStateService.save(nextState);
 
       return {
         to: message.from,
@@ -401,7 +419,7 @@ export class OnboardingService {
     const businessId = currentState.businessId;
 
     if (!businessId) {
-      this.conversationStateService.reset(whatsappId);
+      await this.conversationStateService.reset(whatsappId);
 
       return {
         to: message.from,
@@ -431,7 +449,7 @@ export class OnboardingService {
       connectionChoice: 'connect',
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -439,11 +457,11 @@ export class OnboardingService {
     };
   }
 
-  private handleLogoStep(
+  private async handleLogoStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     const hasNonTextAttachment = message.type !== 'text';
     const hasTextContent = Boolean(normalizedMessage);
 
@@ -462,7 +480,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -470,11 +488,11 @@ export class OnboardingService {
     };
   }
 
-  private handleDescriptionStep(
+  private async handleDescriptionStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!normalizedMessage) {
       return {
         to: message.from,
@@ -491,7 +509,7 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
 
     return {
       to: message.from,
@@ -499,11 +517,11 @@ export class OnboardingService {
     };
   }
 
-  private handleOpeningHoursStep(
+  private async handleOpeningHoursStep(
     normalizedMessage: string,
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
-  ): OutgoingWhatsAppMessage {
+  ): Promise<OutgoingWhatsAppMessage> {
     if (!normalizedMessage) {
       return {
         to: message.from,
@@ -521,7 +539,15 @@ export class OnboardingService {
       },
     });
 
-    this.conversationStateService.save(nextState);
+    await this.conversationStateService.save(nextState);
+
+    if (nextState.businessId) {
+      await this.businessRegistrationService.saveProfile(nextState.businessId, {
+        description: nextState.profile.description,
+        openingHours: nextState.profile.openingHours,
+        logoUploaded: nextState.profile.logoUploaded,
+      });
+    }
 
     return {
       to: message.from,
