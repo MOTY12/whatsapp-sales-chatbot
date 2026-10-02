@@ -16,14 +16,22 @@ export class MetaEmbeddedSignupService {
   private readonly metaAppId = this.requireEnv('META_APP_ID');
   private readonly metaAppSecret = this.requireEnv('META_APP_SECRET');
   private readonly metaRedirectUri = this.requireEnv('META_REDIRECT_URI');
-  private readonly whatsappBusinessConfigId = this.requireEnv('WHATSAPP_BUSINESS_CONFIG_ID');
+  private readonly whatsappBusinessConfigId = this.requireEnv(
+    'WHATSAPP_BUSINESS_CONFIG_ID',
+  );
   private readonly whatsappApiVersion = this.requireEnv('WHATSAPP_API_VERSION');
-  private readonly graphBaseUrl = process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com';
+  private readonly graphBaseUrl =
+    process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com';
   private readonly facebookBaseUrl = 'https://www.facebook.com';
 
-  constructor(private readonly connectionService: EmbeddedSignupConnectionService) {}
+  constructor(
+    private readonly connectionService: EmbeddedSignupConnectionService,
+  ) {}
 
-  createSignupUrl(input: { ownerWhatsappId: string; businessId: string }): string {
+  createSignupUrl(input: {
+    ownerWhatsappId: string;
+    businessId: string;
+  }): string {
     const state = this.signState({
       ownerWhatsappId: input.ownerWhatsappId,
       businessId: input.businessId,
@@ -37,7 +45,9 @@ export class MetaEmbeddedSignupService {
       },
     };
 
-    const url = new URL(`${this.facebookBaseUrl}/${this.whatsappApiVersion}/dialog/oauth`);
+    const url = new URL(
+      `${this.facebookBaseUrl}/${this.whatsappApiVersion}/dialog/oauth`,
+    );
 
     url.searchParams.set('client_id', this.metaAppId);
     url.searchParams.set('redirect_uri', this.metaRedirectUri);
@@ -70,16 +80,22 @@ export class MetaEmbeddedSignupService {
       actualSignatureBuffer.length !== expectedSignatureBuffer.length ||
       !timingSafeEqual(actualSignatureBuffer, expectedSignatureBuffer)
     ) {
-      throw new Error('The embedded signup state signature could not be verified.');
+      throw new Error(
+        'The embedded signup state signature could not be verified.',
+      );
     }
 
-    const payloadJson = Buffer.from(encodedPayload, 'base64url').toString('utf8');
+    const payloadJson = Buffer.from(encodedPayload, 'base64url').toString(
+      'utf8',
+    );
 
     try {
       const payload = JSON.parse(payloadJson) as MetaEmbeddedSignupStatePayload;
 
       if (!payload.ownerWhatsappId || !payload.businessId) {
-        throw new Error('The embedded signup state is missing required fields.');
+        throw new Error(
+          'The embedded signup state is missing required fields.',
+        );
       }
 
       return payload;
@@ -96,7 +112,9 @@ export class MetaEmbeddedSignupService {
         statusCode: 400,
         html: this.buildErrorHtml(
           'Meta returned an error during WhatsApp Embedded Signup.',
-          [query.error, query.error_reason, query.error_description].filter(Boolean).join(' - '),
+          [query.error, query.error_reason, query.error_description]
+            .filter(Boolean)
+            .join(' - '),
         ),
       };
     }
@@ -113,7 +131,9 @@ export class MetaEmbeddedSignupService {
     if (!query.state) {
       return {
         statusCode: 400,
-        html: this.buildErrorHtml('The embedded signup callback is missing its signed state.'),
+        html: this.buildErrorHtml(
+          'The embedded signup callback is missing its signed state.',
+        ),
       };
     }
 
@@ -139,18 +159,22 @@ export class MetaEmbeddedSignupService {
         status: 'connected',
       };
 
-      this.connectionService.saveEmbeddedSignupConnection(connection);
+      await this.connectionService.saveEmbeddedSignupConnection(connection);
 
       return {
         statusCode: 200,
         html: this.buildSuccessHtml(),
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown callback failure.';
+      const message =
+        error instanceof Error ? error.message : 'Unknown callback failure.';
 
       return {
         statusCode: 400,
-        html: this.buildErrorHtml('WhatsApp Embedded Signup could not be completed.', message),
+        html: this.buildErrorHtml(
+          'WhatsApp Embedded Signup could not be completed.',
+          message,
+        ),
       };
     }
   }
@@ -171,16 +195,24 @@ export class MetaEmbeddedSignupService {
     return this.readAccessToken(response.data);
   }
 
-  async getOwnedWhatsAppBusinessAccounts(accessToken: string): Promise<MetaWaba[]> {
-    const businessesResponse = await this.fetchGraphJson(accessToken, '/me/businesses', {
-      fields: 'id,name',
-    });
-    const businesses = this.extractItems<{ id?: string; name?: string }>(businessesResponse).filter(
-      (item) => Boolean(item.id),
+  async getOwnedWhatsAppBusinessAccounts(
+    accessToken: string,
+  ): Promise<MetaWaba[]> {
+    const businessesResponse = await this.fetchGraphJson(
+      accessToken,
+      '/me/businesses',
+      {
+        fields: 'id,name',
+      },
     );
+    const businesses = this.extractItems<{ id?: string; name?: string }>(
+      businessesResponse,
+    ).filter((item) => Boolean(item.id));
 
     if (!businesses.length) {
-      throw new Error('Meta did not return any businesses for the connected account.');
+      throw new Error(
+        'Meta did not return any businesses for the connected account.',
+      );
     }
 
     const collectedWabas: MetaWaba[] = [];
@@ -192,26 +224,41 @@ export class MetaEmbeddedSignupService {
         { fields: 'id,name' },
       );
 
-      collectedWabas.push(...this.normalizeWabas(this.extractItems<unknown>(wabasResponse)));
+      collectedWabas.push(
+        ...this.normalizeWabas(this.extractItems<unknown>(wabasResponse)),
+      );
     }
 
     const uniqueWabas = this.uniqueById(collectedWabas);
 
     if (!uniqueWabas.length) {
-      throw new Error('No owned WhatsApp Business Account was returned by Meta.');
+      throw new Error(
+        'No owned WhatsApp Business Account was returned by Meta.',
+      );
     }
 
     return uniqueWabas;
   }
 
-  async getPhoneNumbers(accessToken: string, wabaId: string): Promise<MetaPhoneNumber[]> {
-    const response = await this.fetchGraphJson(accessToken, `/${wabaId}/phone_numbers`, {
-      fields: 'id,display_phone_number,verified_name',
-    });
-    const phoneNumbers = this.normalizePhoneNumbers(this.extractItems<unknown>(response));
+  async getPhoneNumbers(
+    accessToken: string,
+    wabaId: string,
+  ): Promise<MetaPhoneNumber[]> {
+    const response = await this.fetchGraphJson(
+      accessToken,
+      `/${wabaId}/phone_numbers`,
+      {
+        fields: 'id,display_phone_number,verified_name',
+      },
+    );
+    const phoneNumbers = this.normalizePhoneNumbers(
+      this.extractItems<unknown>(response),
+    );
 
     if (!phoneNumbers.length) {
-      throw new Error('No phone number was returned for the selected WhatsApp Business Account.');
+      throw new Error(
+        'No phone number was returned for the selected WhatsApp Business Account.',
+      );
     }
 
     return phoneNumbers;
@@ -222,18 +269,24 @@ export class MetaEmbeddedSignupService {
     path: string,
     params: Record<string, string>,
   ): Promise<unknown> {
-    const response = await axios.get(`${this.graphBaseUrl}/${this.whatsappApiVersion}${path}`, {
-      params: {
-        ...params,
-        access_token: accessToken,
+    const response = await axios.get(
+      `${this.graphBaseUrl}/${this.whatsappApiVersion}${path}`,
+      {
+        params: {
+          ...params,
+          access_token: accessToken,
+        },
       },
-    });
+    );
 
     return response.data;
   }
 
   private signState(payload: MetaEmbeddedSignupStatePayload): string {
-    const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const encodedPayload = Buffer.from(
+      JSON.stringify(payload),
+      'utf8',
+    ).toString('base64url');
     const signature = createHmac('sha256', this.metaAppSecret)
       .update(encodedPayload)
       .digest('base64url');
@@ -242,7 +295,10 @@ export class MetaEmbeddedSignupService {
   }
 
   private readAccessToken(payload: unknown): string {
-    const accessToken = this.readString(payload, ['access_token', 'accessToken']);
+    const accessToken = this.readString(payload, [
+      'access_token',
+      'accessToken',
+    ]);
 
     if (!accessToken) {
       throw new Error('Meta did not return an access token.');
@@ -279,7 +335,11 @@ export class MetaEmbeddedSignupService {
         return undefined;
       }
 
-      const id = this.readString(item, ['id', 'waba_id', 'whatsapp_business_account_id']);
+      const id = this.readString(item, [
+        'id',
+        'waba_id',
+        'whatsapp_business_account_id',
+      ]);
 
       if (!id) {
         return undefined;
@@ -295,42 +355,57 @@ export class MetaEmbeddedSignupService {
   }
 
   private normalizePhoneNumbers(items: unknown[]): MetaPhoneNumber[] {
-    const normalizedPhoneNumbers: Array<MetaPhoneNumber | undefined> = items.map((item) => {
-      if (!this.isRecord(item)) {
-        return undefined;
-      }
+    const normalizedPhoneNumbers: Array<MetaPhoneNumber | undefined> =
+      items.map((item) => {
+        if (!this.isRecord(item)) {
+          return undefined;
+        }
 
-      const id = this.readString(item, ['id', 'phone_number_id']);
+        const id = this.readString(item, ['id', 'phone_number_id']);
 
-      if (!id) {
-        return undefined;
-      }
+        if (!id) {
+          return undefined;
+        }
 
-      return {
-        id,
-        displayPhoneNumber: this.readString(item, ['display_phone_number', 'displayPhoneNumber']),
-        verifiedName: this.readString(item, ['verified_name', 'verifiedName']),
-      };
-    });
+        return {
+          id,
+          displayPhoneNumber: this.readString(item, [
+            'display_phone_number',
+            'displayPhoneNumber',
+          ]),
+          verifiedName: this.readString(item, [
+            'verified_name',
+            'verifiedName',
+          ]),
+        };
+      });
 
-    return normalizedPhoneNumbers.filter((item): item is MetaPhoneNumber => Boolean(item));
+    return normalizedPhoneNumbers.filter((item): item is MetaPhoneNumber =>
+      Boolean(item),
+    );
   }
 
   private pickFirstWaba(wabas: MetaWaba[]): MetaWaba {
     const waba = wabas[0];
 
     if (!waba) {
-      throw new Error('No owned WhatsApp Business Account was returned by Meta.');
+      throw new Error(
+        'No owned WhatsApp Business Account was returned by Meta.',
+      );
     }
 
     return waba;
   }
 
-  private pickFirstPhoneNumber(phoneNumbers: MetaPhoneNumber[]): MetaPhoneNumber {
+  private pickFirstPhoneNumber(
+    phoneNumbers: MetaPhoneNumber[],
+  ): MetaPhoneNumber {
     const phoneNumber = phoneNumbers[0];
 
     if (!phoneNumber) {
-      throw new Error('No phone number was returned for the selected WhatsApp Business Account.');
+      throw new Error(
+        'No phone number was returned for the selected WhatsApp Business Account.',
+      );
     }
 
     return phoneNumber;

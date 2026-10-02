@@ -16,6 +16,10 @@ export interface IncomingWhatsAppMessage {
   from: string;
   message: string;
   type: string;
+  providerMessageId?: string;
+  phoneNumberId?: string;
+  profileName?: string;
+  timestamp?: Date;
 }
 
 export interface OutgoingWhatsAppMessage {
