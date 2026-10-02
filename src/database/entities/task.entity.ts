@@ -50,9 +50,14 @@ export class Task {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.tasks, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.tasks, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
-  @ManyToOne(() => User, (user) => user.tasks, { nullable: true, onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.tasks, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
   owner: User;
 }

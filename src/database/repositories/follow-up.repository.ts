@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { FollowUp, ReminderStatus } from '../entities/follow-up.entity';
-import { LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { FollowUp } from '../entities/follow-up.entity';
+import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 
 @Injectable()
 export class FollowUpRepository {
@@ -96,7 +96,7 @@ export class FollowUpRepository {
       where: {
         businessId,
         status: 'pending',
-        dueDate: MoreThanOrEqual(startDate),
+        dueDate: Between(startDate, endDate),
       },
       relations: { customer: true, owner: true },
       order: { dueDate: 'ASC' },

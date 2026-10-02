@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface Customer {
   id: string;
@@ -18,7 +18,7 @@ export class CustomerService {
 
   create(ownerWhatsappId: string, name: string, phone?: string): Customer {
     const customer: Customer = {
-      id: uuidv4(),
+      id: randomUUID(),
       name,
       phone,
       ownerWhatsappId,
@@ -42,7 +42,9 @@ export class CustomerService {
 
   findByPhone(ownerWhatsappId: string, phone: string): Customer | undefined {
     const list = this.store.get(ownerWhatsappId) ?? [];
-    return list.find((c) => c.phone === phone || c.phone === phone.replace(/[^\d+]/g, ''));
+    return list.find(
+      (c) => c.phone === phone || c.phone === phone.replace(/[^\d+]/g, ''),
+    );
   }
 
   list(ownerWhatsappId: string): Customer[] {

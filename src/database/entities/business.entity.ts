@@ -33,22 +33,22 @@ export class Business {
   @Column()
   whatsappNumber: string;
 
-  @Column({ nullable: true, unique: true })
+  @Column({ type: 'varchar', nullable: true, unique: true })
   phoneNumberId: string | null;
 
   @Column({ type: 'text', nullable: true })
   accessToken: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   wabaId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   displayPhoneNumber: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   connectedAt: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   timezone: string | null;
 
   @Column({ default: 'active' })

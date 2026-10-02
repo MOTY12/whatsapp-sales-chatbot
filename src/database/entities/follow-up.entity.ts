@@ -12,7 +12,8 @@ import { Customer } from './customer.entity';
 import { User } from './user.entity';
 
 export type ReminderType = 'due_today' | 'tomorrow' | 'overdue' | 'scheduled';
-export type ReminderStatus = 'pending' | 'completed' | 'rescheduled' | 'skipped';
+export type ReminderStatus =
+  'pending' | 'completed' | 'rescheduled' | 'skipped';
 
 @Entity('follow_ups')
 @Index(['businessId', 'status', 'dueDate'])
@@ -54,12 +55,19 @@ export class FollowUp {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.followUps, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.followUps, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
-  @ManyToOne(() => Customer, (customer) => customer.followUps, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Customer, (customer) => customer.followUps, {
+    onDelete: 'CASCADE',
+  })
   customer: Customer;
 
-  @ManyToOne(() => User, (user) => user.followUps, { nullable: true, onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.followUps, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
   owner: User;
 }

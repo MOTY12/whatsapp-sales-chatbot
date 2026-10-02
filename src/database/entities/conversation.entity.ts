@@ -37,12 +37,18 @@ export class Conversation {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.conversations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.conversations, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
-  @ManyToOne(() => Customer, (customer) => customer.conversations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Customer, (customer) => customer.conversations, {
+    onDelete: 'CASCADE',
+  })
   customer: Customer;
 
-  @OneToMany(() => Message, (message) => message.conversation, { cascade: true })
+  @OneToMany(() => Message, (message) => message.conversation, {
+    cascade: true,
+  })
   messages: Message[];
 }

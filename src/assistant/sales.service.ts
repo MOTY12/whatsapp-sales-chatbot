@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface Sale {
   id: string;
@@ -16,7 +16,7 @@ export class SalesService {
 
   recordSale(ownerWhatsappId: string, sale: Partial<Sale>): Sale {
     const s: Sale = {
-      id: uuidv4(),
+      id: randomUUID(),
       ownerWhatsappId,
       customerId: sale.customerId,
       amount: sale.amount,

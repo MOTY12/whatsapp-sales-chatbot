@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Customer, CustomerLeadStage } from '../entities/customer.entity';
 
 @Injectable()
@@ -19,19 +19,28 @@ export class CustomerRepository {
     return this.repository.findOne({ where: { id } });
   }
 
-  async findByPhoneAndBusiness(phone: string, businessId: string): Promise<Customer | null> {
+  async findByPhoneAndBusiness(
+    phone: string,
+    businessId: string,
+  ): Promise<Customer | null> {
     return this.repository.findOne({
       where: { phone, businessId },
     });
   }
 
-  async findByWhatsappIdAndBusiness(whatsappId: string, businessId: string): Promise<Customer | null> {
+  async findByWhatsappIdAndBusiness(
+    whatsappId: string,
+    businessId: string,
+  ): Promise<Customer | null> {
     return this.repository.findOne({
       where: { whatsappId, businessId },
     });
   }
 
-  async findByNameAndBusiness(name: string, businessId: string): Promise<Customer | null> {
+  async findByNameAndBusiness(
+    name: string,
+    businessId: string,
+  ): Promise<Customer | null> {
     return this.repository.findOne({
       where: { name, businessId },
     });
@@ -54,14 +63,20 @@ export class CustomerRepository {
     });
   }
 
-  async findByOwnerAndBusiness(ownerId: string, businessId: string): Promise<Customer[]> {
+  async findByOwnerAndBusiness(
+    ownerId: string,
+    businessId: string,
+  ): Promise<Customer[]> {
     return this.repository.find({
       where: { ownerId, businessId },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findRecentByBusiness(businessId: string, limit: number = 10): Promise<Customer[]> {
+  async findRecentByBusiness(
+    businessId: string,
+    limit: number = 10,
+  ): Promise<Customer[]> {
     return this.repository.find({
       where: { businessId },
       order: { createdAt: 'DESC' },
@@ -103,7 +118,7 @@ export class CustomerRepository {
       .createQueryBuilder('customer')
       .select('SUM(customer.lifetimeValue)', 'total')
       .where('customer.businessId = :businessId', { businessId })
-      .getRawOne();
-    return parseFloat(result?.total || 0);
+      .getRawOne<{ total?: string | null }>();
+    return Number.parseFloat(result?.total ?? '0');
   }
 }

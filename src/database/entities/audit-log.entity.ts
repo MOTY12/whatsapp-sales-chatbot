@@ -57,9 +57,14 @@ export class AuditLog {
   @CreateDateColumn()
   createdAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.auditLogs, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.auditLogs, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
-  @ManyToOne(() => User, (user) => user.auditLogs, { nullable: true, onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.auditLogs, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
   user: User;
 }

@@ -1,6 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { EmbeddedSignupConnectionService } from '../meta-embedded-signup/embedded-signup-connection.service';
 import { MetaEmbeddedSignupService } from '../meta-embedded-signup/meta-embedded-signup.service';
+import { BusinessRepository } from '../database/repositories/business.repository';
+import { OnboardingSessionRepository } from '../database/repositories/onboarding-session.repository';
+import { UserRepository } from '../database/repositories/user.repository';
+import {
+  createInMemoryBusinessRepository,
+  createInMemoryOnboardingSessionRepository,
+  createInMemoryUserRepository,
+} from '../testing/in-memory-repositories';
 import { BusinessRegistrationService } from './business-registration.service';
 import { ConversationStateService } from './conversation-state.service';
 import { OnboardingService } from './onboarding.service';
@@ -13,6 +21,13 @@ describe('OnboardingService', () => {
   const createSignupUrl = jest.fn(() => 'https://facebook.example/signup');
 
   const sender = '+2348012345678';
+
+  const send = (message: string, type = 'text') =>
+    onboardingService.handleIncomingMessage({
+      from: sender,
+      message,
+      type,
+    });
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -27,86 +42,85 @@ describe('OnboardingService', () => {
             createSignupUrl,
           },
         },
+        {
+          provide: BusinessRepository,
+          useValue: createInMemoryBusinessRepository(),
+        },
+        {
+          provide: UserRepository,
+          useValue: createInMemoryUserRepository(),
+        },
+        {
+          provide: OnboardingSessionRepository,
+          useValue: createInMemoryOnboardingSessionRepository(),
+        },
       ],
     }).compile();
 
     onboardingService = moduleRef.get(OnboardingService);
     conversationStateService = moduleRef.get(ConversationStateService);
     businessRegistrationService = moduleRef.get(BusinessRegistrationService);
-    embeddedSignupConnectionService = moduleRef.get(EmbeddedSignupConnectionService);
+    embeddedSignupConnectionService = moduleRef.get(
+      EmbeddedSignupConnectionService,
+    );
     createSignupUrl.mockClear();
   });
 
-  it('Hi starts registration prompt', () => {
-    const response = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Hi',
-      type: 'text',
-    });
+  it('Hi starts registration prompt', async () => {
+    const response = await send('Hi');
 
     expect(response).toEqual({
       to: sender,
       message: expect.stringContaining('Welcome to Kleva'),
     });
-    expect(conversationStateService.get(sender)?.step).toBe('ASK_REGISTER');
+    expect((await conversationStateService.get(sender))?.step).toBe(
+      'ASK_REGISTER',
+    );
   });
 
-  it('Yes starts business name step', () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
+  it('Yes starts business name step', async () => {
+    await send('Hi');
 
-    const response = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Yes',
-      type: 'text',
-    });
+    const response = await send('Yes');
 
     expect(response.message).toBe('What is your business name?');
-    expect(conversationStateService.get(sender)?.step).toBe('ASK_BUSINESS_NAME');
+    expect((await conversationStateService.get(sender))?.step).toBe(
+      'ASK_BUSINESS_NAME',
+    );
   });
 
   it('Connect returns a Meta signup link and waits for callback completion', async () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: '1', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '+2348011111111',
-      type: 'text',
-    });
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
+    await send('1');
+    await send('+2348011111111');
 
-    const connectPrompt = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Africa/Lagos',
-      type: 'text',
-    });
+    const connectPrompt = await send('Africa/Lagos');
 
-    expect(connectPrompt.message).toContain('Do you want to connect your business WhatsApp number?');
+    expect(connectPrompt.message).toContain(
+      'Do you want to connect your business WhatsApp number?',
+    );
 
-    const connectChoice = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Connect',
-      type: 'text',
-    });
+    const connectChoice = await send('Connect');
 
-    expect(connectChoice.message).toContain('To connect your WhatsApp Business number');
+    expect(connectChoice.message).toContain(
+      'To connect your WhatsApp Business number',
+    );
     expect(connectChoice.message).toContain('https://facebook.example/signup');
-    expect(conversationStateService.get(sender)?.step).toBe('WAITING_FOR_EMBEDDED_SIGNUP');
-    expect(createSignupUrl).toHaveBeenCalledWith({ ownerWhatsappId: sender, businessId: expect.any(String) });
-
-    const waitingResponse = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'done',
-      type: 'text',
+    expect((await conversationStateService.get(sender))?.step).toBe(
+      'WAITING_FOR_EMBEDDED_SIGNUP',
+    );
+    expect(createSignupUrl).toHaveBeenCalledWith({
+      ownerWhatsappId: sender,
+      businessId: expect.any(String),
     });
+
+    const waitingResponse = await send('done');
 
     expect(waitingResponse.message).toContain('still waiting for Meta');
 
-    const stateAfterConnect = conversationStateService.get(sender);
+    const stateAfterConnect = await conversationStateService.get(sender);
     const businessId = stateAfterConnect?.businessId;
 
     expect(businessId).toBeDefined();
@@ -115,7 +129,7 @@ describe('OnboardingService', () => {
       return;
     }
 
-    embeddedSignupConnectionService.saveEmbeddedSignupConnection({
+    await embeddedSignupConnectionService.saveEmbeddedSignupConnection({
       businessId,
       ownerWhatsappId: sender,
       wabaId: 'waba_123',
@@ -125,69 +139,39 @@ describe('OnboardingService', () => {
       status: 'connected',
     });
 
-    const doneResponse = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'done',
-      type: 'text',
-    });
+    const doneResponse = await send('done');
 
     expect(doneResponse.message).toContain('Upload your business logo');
-    expect(conversationStateService.get(sender)?.step).toBe('ASK_LOGO');
+    expect((await conversationStateService.get(sender))?.step).toBe('ASK_LOGO');
   });
 
   it('Done before callback keeps waiting for Meta confirmation', async () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Food', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '+2348011111111',
-      type: 'text',
-    });
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
+    await send('Food');
+    await send('+2348011111111');
+    await send('Africa/Lagos');
+    await send('Connect');
 
-    await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Africa/Lagos',
-      type: 'text',
-    });
-
-    const response = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'done',
-      type: 'text',
-    });
+    const response = await send('done');
 
     expect(response.message).toContain('still waiting for Meta');
-    expect(conversationStateService.get(sender)?.step).toBe('WAITING_FOR_EMBEDDED_SIGNUP');
+    expect((await conversationStateService.get(sender))?.step).toBe(
+      'WAITING_FOR_EMBEDDED_SIGNUP',
+    );
   });
 
   it('Done after callback continues to logo upload', async () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Food', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '+2348011111111',
-      type: 'text',
-    });
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
+    await send('Food');
+    await send('+2348011111111');
+    await send('Africa/Lagos');
+    await send('Connect');
 
-    await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Africa/Lagos',
-      type: 'text',
-    });
-
-    const state = conversationStateService.get(sender);
+    const state = await conversationStateService.get(sender);
     const businessId = state?.businessId;
 
     expect(businessId).toBeDefined();
@@ -196,7 +180,7 @@ describe('OnboardingService', () => {
       return;
     }
 
-    businessRegistrationService.saveEmbeddedSignupConnection({
+    await businessRegistrationService.saveEmbeddedSignupConnection({
       businessId,
       ownerWhatsappId: sender,
       wabaId: 'waba_123',
@@ -206,72 +190,54 @@ describe('OnboardingService', () => {
       status: 'connected',
     });
 
-    const response = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'done',
-      type: 'text',
-    });
+    const response = await send('done');
 
     expect(response.message).toContain('Upload your business logo');
-    expect(conversationStateService.get(sender)?.step).toBe('ASK_LOGO');
+    expect((await conversationStateService.get(sender))?.step).toBe('ASK_LOGO');
   });
 
   it('Full successful registration path with current WhatsApp number still works', async () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: '1', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '+2348011111111',
-      type: 'text',
-    });
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
+    await send('1');
+    await send('+2348011111111');
 
-    const connectPrompt = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Africa/Lagos',
-      type: 'text',
-    });
+    const connectPrompt = await send('Africa/Lagos');
 
-    expect(connectPrompt.message).toContain('Do you want to connect your business WhatsApp number?');
+    expect(connectPrompt.message).toContain(
+      'Do you want to connect your business WhatsApp number?',
+    );
 
-    const connectChoice = await onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '2',
-      type: 'text',
-    });
+    const connectChoice = await send('2');
 
-    expect(connectChoice.message).toContain('Using your current WhatsApp number for the business.');
+    expect(connectChoice.message).toContain(
+      'Using your current WhatsApp number for the business.',
+    );
 
-    onboardingService.handleIncomingMessage({ from: sender, message: 'logo-placeholder', type: 'image' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'We help small businesses sell on WhatsApp',
-      type: 'text',
-    });
+    await send('logo-placeholder', 'image');
+    await send('We help small businesses sell on WhatsApp');
 
-    const doneResponse = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Mon-Fri 9am-5pm',
-      type: 'text',
-    });
+    const doneResponse = await send('Mon-Fri 9am-5pm');
 
-    expect(doneResponse.message).toContain('Your business is now registered with Kleva');
+    expect(doneResponse.message).toContain(
+      'Your business is now registered with Kleva',
+    );
 
-    const state = conversationStateService.get(sender);
+    const state = await conversationStateService.get(sender);
     expect(state?.step).toBe('DONE');
     expect(state?.profile.logoUploaded).toBe(true);
-    expect(state?.profile.description).toBe('We help small businesses sell on WhatsApp');
+    expect(state?.profile.description).toBe(
+      'We help small businesses sell on WhatsApp',
+    );
     expect(state?.profile.openingHours).toBe('Mon-Fri 9am-5pm');
 
     const businessId = state?.businessId;
     expect(businessId).toBeDefined();
 
-    const business = businessId ? businessRegistrationService.getBusinessById(businessId) : undefined;
+    const business = businessId
+      ? await businessRegistrationService.getBusinessById(businessId)
+      : undefined;
     expect(business).toMatchObject({
       name: 'Kleva Foods',
       industry: 'Food',
@@ -283,52 +249,42 @@ describe('OnboardingService', () => {
     });
   });
 
-  it('Invalid industry input asks the user to retry', () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
+  it('Invalid industry input asks the user to retry', async () => {
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
 
-    const response = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'invalid-industry',
-      type: 'text',
-    });
+    const response = await send('invalid-industry');
 
-    expect(response.message).toContain('Please choose a valid industry option.');
-    expect(conversationStateService.get(sender)?.step).toBe('ASK_INDUSTRY');
+    expect(response.message).toContain(
+      'Please choose a valid industry option.',
+    );
+    expect((await conversationStateService.get(sender))?.step).toBe(
+      'ASK_INDUSTRY',
+    );
   });
 
-  it('Choosing Continue with this number uses sender WhatsApp number', () => {
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Hi', type: 'text' });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Yes', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Kleva Foods',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Food', type: 'text' });
-    onboardingService.handleIncomingMessage({
-      from: sender,
-      message: '+2348011111111',
-      type: 'text',
-    });
-    onboardingService.handleIncomingMessage({ from: sender, message: 'Africa/Lagos', type: 'text' });
+  it('Choosing Continue with this number uses sender WhatsApp number', async () => {
+    await send('Hi');
+    await send('Yes');
+    await send('Kleva Foods');
+    await send('Food');
+    await send('+2348011111111');
+    await send('Africa/Lagos');
 
-    const response = onboardingService.handleIncomingMessage({
-      from: sender,
-      message: 'Continue with this number',
-      type: 'text',
-    });
+    const response = await send('Continue with this number');
 
-    expect(response.message).toContain('Using your current WhatsApp number for the business.');
-    expect(conversationStateService.get(sender)?.connectionChoice).toBe('current');
+    expect(response.message).toContain(
+      'Using your current WhatsApp number for the business.',
+    );
+    expect((await conversationStateService.get(sender))?.connectionChoice).toBe(
+      'current',
+    );
 
-    const state = conversationStateService.get(sender);
-    const business = state?.businessId ? businessRegistrationService.getBusinessById(state.businessId) : undefined;
+    const state = await conversationStateService.get(sender);
+    const business = state?.businessId
+      ? await businessRegistrationService.getBusinessById(state.businessId)
+      : undefined;
 
     expect(business?.whatsapp_number).toBe(sender);
   });

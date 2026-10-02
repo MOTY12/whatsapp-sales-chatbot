@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kleva_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: kleva_ci
+      WHATSAPP_VERIFY_TOKEN: ci-verify-token
+      META_APP_SECRET: ci-app-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint:check
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npm test -- --runInBand
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - name: Migration check (apply, revert, re-apply)
+        run: |
+          npm run migration:run
+          npm run migration:revert
+          npm run migration:revert
+          npm run migration:run

@@ -64,9 +64,8 @@ export class ConversationStateService {
     return {
       whatsappId: session.whatsappId,
       step: session.step,
-      draftBusiness:
-        session.draftBusiness as ConversationState['draftBusiness'],
-      profile: session.profile as ConversationState['profile'],
+      draftBusiness: session.draftBusiness,
+      profile: session.profile,
       businessId: session.businessId ?? undefined,
       ownerId: session.ownerId ?? undefined,
       connectionChoice: session.connectionChoice ?? undefined,
