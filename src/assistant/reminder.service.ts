@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface Reminder {
   id: string;
@@ -15,7 +15,7 @@ export class ReminderService {
 
   create(ownerWhatsappId: string, text: string, when: Date): Reminder {
     const r: Reminder = {
-      id: uuidv4(),
+      id: randomUUID(),
       ownerWhatsappId,
       text,
       when: when.toISOString(),

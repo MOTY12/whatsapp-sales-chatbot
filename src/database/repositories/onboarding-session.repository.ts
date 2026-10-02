@@ -17,6 +17,16 @@ export class OnboardingSessionRepository {
   }
 
   async save(data: Partial<OnboardingSession>): Promise<OnboardingSession> {
-    return this.repository.save(this.repository.create(data));
+    const existing = data.whatsappId
+      ? await this.findByWhatsappId(data.whatsappId)
+      : null;
+
+    return this.repository.save(
+      this.repository.create({
+        ...existing,
+        ...data,
+        id: existing?.id ?? data.id,
+      }),
+    );
   }
 }

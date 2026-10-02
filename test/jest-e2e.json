@@ -4,6 +4,22 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "isolatedModules": true,
+        "tsconfig": {
+          "module": "commonjs",
+          "moduleResolution": "node",
+          "esModuleInterop": true,
+          "emitDecoratorMetadata": true,
+          "experimentalDecorators": true,
+          "allowJs": true,
+          "strictNullChecks": true,
+          "skipLibCheck": true
+        }
+      }
+    ]
+  },
+  "transformIgnorePatterns": ["node_modules/(?!(@nestjs/typeorm)/)"]
 }

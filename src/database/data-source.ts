@@ -13,6 +13,7 @@ import {
   Task,
   User,
 } from './entities';
+import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
 import { AddWebhookPersistence1760000000000 } from './migrations/1760000000000-AddWebhookPersistence';
 
 export default new DataSource({
@@ -40,5 +41,8 @@ export default new DataSource({
     Notification,
     OnboardingSession,
   ],
-  migrations: [AddWebhookPersistence1760000000000],
+  migrations: [
+    InitialSchema1759999999999,
+    AddWebhookPersistence1760000000000,
+  ],
 });
