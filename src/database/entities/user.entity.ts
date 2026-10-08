@@ -13,6 +13,7 @@ import { Customer } from './customer.entity';
 import { FollowUp } from './follow-up.entity';
 import { Task } from './task.entity';
 import { AuditLog } from './audit-log.entity';
+import { Sale } from './sale.entity';
 
 @Entity('users')
 @Index(['businessId', 'email'], { unique: true })
@@ -70,4 +71,7 @@ export class User {
 
   @OneToMany(() => AuditLog, (auditLog) => auditLog.user)
   auditLogs: AuditLog[];
+
+  @OneToMany(() => Sale, (sale) => sale.owner)
+  sales: Sale[];
 }

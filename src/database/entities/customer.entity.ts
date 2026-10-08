@@ -12,6 +12,7 @@ import { Business } from './business.entity';
 import { User } from './user.entity';
 import { Conversation } from './conversation.entity';
 import { FollowUp } from './follow-up.entity';
+import { Sale } from './sale.entity';
 
 export type CustomerLeadStage =
   'New Lead' | 'Interested' | 'Negotiating' | 'Paid' | 'Delivered' | 'Lost';
@@ -87,4 +88,7 @@ export class Customer {
 
   @OneToMany(() => FollowUp, (followUp) => followUp.customer, { cascade: true })
   followUps: FollowUp[];
+
+  @OneToMany(() => Sale, (sale) => sale.customer)
+  sales: Sale[];
 }

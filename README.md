@@ -45,9 +45,9 @@ npm run migration:run
 npm run migration:revert
 ```
 
-Migrations create the baseline schema and then add webhook/onboarding persistence fields (nullable WhatsApp connection columns, indexed owner WhatsApp IDs, unique provider message IDs, and `onboarding_sessions`).
+Migrations create the baseline schema, webhook/onboarding persistence fields, and Milestone 1 assistant persistence (`sales` and `assistant_sessions`).
 
-Local development still allows TypeORM `synchronize` when `NODE_ENV` is not `production`. Production must run migrations and keep synchronize disabled.
+TypeORM synchronization is disabled in every environment. Run migrations before starting the application whenever the schema changes.
 
 See `DATABASE_SETUP.md` for PostgreSQL details.
 
@@ -68,4 +68,4 @@ npm run migration:run
 
 ## MVP boundary
 
-No web dashboard, payments, inventory, broadcasts, or public CRM API. Assistant CRM, reminders, and sales stores are still in-memory and will be replaced in later milestones.
+No web dashboard, payments, inventory, broadcasts, public CRM API, background workers, or OpenAI integration are included. Assistant CRM, follow-ups, sales, and multi-step command state are persisted in PostgreSQL.

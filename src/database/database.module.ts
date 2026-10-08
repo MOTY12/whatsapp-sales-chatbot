@@ -11,6 +11,8 @@ import { Task } from './entities/task.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { Notification } from './entities/notification.entity';
 import { OnboardingSession } from './entities/onboarding-session.entity';
+import { AssistantSession } from './entities/assistant-session.entity';
+import { Sale } from './entities/sale.entity';
 import { BusinessRepository } from './repositories/business.repository';
 import { UserRepository } from './repositories/user.repository';
 import { CustomerRepository } from './repositories/customer.repository';
@@ -18,6 +20,8 @@ import { FollowUpRepository } from './repositories/follow-up.repository';
 import { ConversationRepository } from './repositories/conversation.repository';
 import { MessageRepository } from './repositories/message.repository';
 import { OnboardingSessionRepository } from './repositories/onboarding-session.repository';
+import { AssistantSessionRepository } from './repositories/assistant-session.repository';
+import { SaleRepository } from './repositories/sale.repository';
 
 const entities = [
   Business,
@@ -31,6 +35,8 @@ const entities = [
   AuditLog,
   Notification,
   OnboardingSession,
+  AssistantSession,
+  Sale,
 ];
 
 const repositories = [
@@ -41,6 +47,8 @@ const repositories = [
   ConversationRepository,
   MessageRepository,
   OnboardingSessionRepository,
+  AssistantSessionRepository,
+  SaleRepository,
 ];
 
 @Module({
@@ -53,7 +61,7 @@ const repositories = [
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME || 'kleva_db',
       entities: entities,
-      synchronize: process.env.NODE_ENV !== 'production',
+      synchronize: false,
       logging: process.env.DATABASE_LOGGING === 'true',
       ssl:
         process.env.NODE_ENV === 'production'

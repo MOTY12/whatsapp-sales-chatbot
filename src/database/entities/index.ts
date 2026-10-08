@@ -9,3 +9,5 @@ export { Task } from './task.entity';
 export { AuditLog } from './audit-log.entity';
 export { Notification } from './notification.entity';
 export { OnboardingSession } from './onboarding-session.entity';
+export { AssistantSession } from './assistant-session.entity';
+export { Sale } from './sale.entity';

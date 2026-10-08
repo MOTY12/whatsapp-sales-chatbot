@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { FollowUp } from '../entities/follow-up.entity';
-import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Between, LessThan, Repository } from 'typeorm';
 
 @Injectable()
 export class FollowUpRepository {
@@ -55,32 +54,35 @@ export class FollowUpRepository {
     });
   }
 
-  async findDueToday(businessId: string): Promise<FollowUp[]> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
+  async findDueForBusinessAndOwnerInRange(
+    businessId: string,
+    ownerId: string,
+    start: Date,
+    end: Date,
+  ): Promise<FollowUp[]> {
     return this.repository.find({
       where: {
         businessId,
+        ownerId,
         status: 'pending',
-        dueDate: MoreThanOrEqual(today),
+        dueDate: Between(start, end),
       },
       relations: { customer: true, owner: true },
       order: { dueDate: 'ASC' },
     });
   }
 
-  async findOverdue(businessId: string): Promise<FollowUp[]> {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
+  async findOverdueForBusinessAndOwner(
+    businessId: string,
+    ownerId: string,
+    before: Date,
+  ): Promise<FollowUp[]> {
     return this.repository.find({
       where: {
         businessId,
+        ownerId,
         status: 'pending',
-        dueDate: LessThanOrEqual(now),
+        dueDate: LessThan(before),
       },
       relations: { customer: true, owner: true },
       order: { dueDate: 'ASC' },

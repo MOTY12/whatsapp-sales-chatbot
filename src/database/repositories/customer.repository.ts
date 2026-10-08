@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { Customer, CustomerLeadStage } from '../entities/customer.entity';
 
 @Injectable()
@@ -44,6 +44,43 @@ export class CustomerRepository {
     return this.repository.findOne({
       where: { name, businessId },
     });
+  }
+
+  async findByNameForOwner(
+    name: string,
+    businessId: string,
+    ownerId: string,
+  ): Promise<Customer | null> {
+    return this.repository.findOne({
+      where: { name: ILike(name), businessId, ownerId },
+    });
+  }
+
+  async findByPhoneForOwner(
+    phone: string,
+    businessId: string,
+    ownerId: string,
+  ): Promise<Customer | null> {
+    return this.repository.findOne({
+      where: { phone, businessId, ownerId },
+    });
+  }
+
+  async findByBusinessAndOwner(
+    businessId: string,
+    ownerId: string,
+  ): Promise<Customer[]> {
+    return this.repository.find({
+      where: { businessId, ownerId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async countByBusinessAndOwner(
+    businessId: string,
+    ownerId: string,
+  ): Promise<number> {
+    return this.repository.count({ where: { businessId, ownerId } });
   }
 
   async findByBusinessId(businessId: string): Promise<Customer[]> {

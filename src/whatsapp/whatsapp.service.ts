@@ -10,6 +10,8 @@ import { ConversationStateService } from '../onboarding/conversation-state.servi
 import { AssistantService } from '../assistant/assistant.service';
 import { AssistantCommandParserService } from '../assistant/assistant-command-parser.service';
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
+import { BusinessRepository } from '../database/repositories/business.repository';
+import { UserRepository } from '../database/repositories/user.repository';
 
 @Injectable()
 export class WhatsAppService {
@@ -21,6 +23,8 @@ export class WhatsAppService {
     private readonly assistantService: AssistantService,
     private readonly assistantParser: AssistantCommandParserService,
     private readonly leadCapture: WebhookLeadCaptureService,
+    private readonly users: UserRepository,
+    private readonly businesses: BusinessRepository,
     @Inject(WHATSAPP_CLOUD_API_CLIENT)
     private readonly cloudApiClient: WhatsAppCloudApiClient,
   ) {}
@@ -36,7 +40,17 @@ export class WhatsAppService {
     // If onboarding complete or the message looks like an assistant command, route to assistant
     const parsed = this.assistantParser.parse(message.message || '');
     if (currentState.step === 'DONE' || parsed.intent !== 'unknown') {
-      const reply = await this.assistantService.handleIncomingMessage(message);
+      const context = await this.getAssistantContext(whatsappId);
+      if (!context) {
+        const botReply =
+          await this.onboardingService.handleIncomingMessage(message);
+        await this.cloudApiClient.sendTextMessage(botReply);
+        return botReply;
+      }
+      const reply = await this.assistantService.handleIncomingMessage(
+        message,
+        context,
+      );
       await this.cloudApiClient.sendTextMessage(reply);
       return reply;
     }
@@ -65,7 +79,11 @@ export class WhatsAppService {
     const disposition = await this.leadCapture.capture(message);
 
     if (disposition.kind === 'owner_command') {
-      const reply = await this.assistantService.handleIncomingMessage(message);
+      const reply = await this.assistantService.handleIncomingMessage(message, {
+        businessId: disposition.businessId,
+        ownerId: disposition.ownerId,
+        timezone: disposition.timezone,
+      });
       await this.cloudApiClient.sendTextMessage(reply, disposition.businessId);
       return;
     }
@@ -97,6 +115,18 @@ export class WhatsAppService {
   ): Promise<void> {
     const reply = await this.onboardingService.handleIncomingMessage(message);
     await this.cloudApiClient.sendTextMessage(reply);
+  }
+
+  private async getAssistantContext(whatsappId: string) {
+    const owner = await this.users.findByWhatsappId(whatsappId);
+    if (!owner) return undefined;
+    const business = await this.businesses.findById(owner.businessId);
+    if (!business) return undefined;
+    return {
+      businessId: business.id,
+      ownerId: owner.id,
+      timezone: business.timezone ?? 'UTC',
+    };
   }
 
   async handleWebhookPayload(payload: unknown): Promise<void> {

@@ -19,6 +19,10 @@ export class AssistantCommandParserService {
       return { intent: 'show_sales_today' };
     }
 
+    if (/record sale|add sale|new sale/.test(lower)) {
+      return { intent: 'record_sale' };
+    }
+
     if (/create (a )?customer|new customer/.test(lower)) {
       return { intent: 'create_customer' };
     }

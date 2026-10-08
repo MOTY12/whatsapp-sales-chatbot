@@ -8,7 +8,12 @@ import { IncomingWhatsAppMessage } from './types/whatsapp.types';
 
 export type WebhookMessageDisposition =
   | { kind: 'duplicate' | 'unsupported' | 'unknown_business' }
-  | { kind: 'owner_command'; businessId: string }
+  | {
+      kind: 'owner_command';
+      businessId: string;
+      ownerId: string;
+      timezone: string;
+    }
   | {
       kind: 'customer_message';
       businessId: string;
@@ -57,7 +62,12 @@ export class WebhookLeadCaptureService {
 
     const owner = await this.users.findByWhatsappId(message.from);
     if (owner?.businessId === business.id) {
-      return { kind: 'owner_command', businessId: business.id };
+      return {
+        kind: 'owner_command',
+        businessId: business.id,
+        ownerId: owner.id,
+        timezone: business.timezone ?? 'UTC',
+      };
     }
 
     const normalizedPhone = normalizePhone(message.from);

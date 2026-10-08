@@ -1,42 +1,56 @@
 import { Injectable } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-
-export interface Reminder {
-  id: string;
-  ownerWhatsappId: string;
-  text: string;
-  when: string; // ISO
-  done?: boolean;
-}
+import { Customer } from '../database/entities/customer.entity';
+import { FollowUp } from '../database/entities/follow-up.entity';
+import { FollowUpRepository } from '../database/repositories/follow-up.repository';
+import { businessDayRange } from './business-date-range';
 
 @Injectable()
 export class ReminderService {
-  private readonly store = new Map<string, Reminder[]>();
+  constructor(private readonly followUps: FollowUpRepository) {}
 
-  create(ownerWhatsappId: string, text: string, when: Date): Reminder {
-    const r: Reminder = {
-      id: randomUUID(),
-      ownerWhatsappId,
-      text,
-      when: when.toISOString(),
-      done: false,
-    };
-
-    const list = this.store.get(ownerWhatsappId) ?? [];
-    list.push(r);
-    this.store.set(ownerWhatsappId, list);
-
-    return r;
+  async create(
+    businessId: string,
+    ownerId: string,
+    customer: Customer,
+    title: string,
+    dueDate: Date,
+  ): Promise<FollowUp> {
+    return this.followUps.create({
+      businessId,
+      ownerId,
+      customerId: customer.id,
+      title: title.trim(),
+      dueDate,
+      status: 'pending',
+    });
   }
 
-  listForDate(ownerWhatsappId: string, date: Date): Reminder[] {
-    const list = this.store.get(ownerWhatsappId) ?? [];
-    const day = date.toISOString().slice(0, 10);
-    return list.filter((r) => r.when.slice(0, 10) === day && !r.done);
+  async listForToday(
+    businessId: string,
+    ownerId: string,
+    timezone: string,
+    now: Date = new Date(),
+  ): Promise<FollowUp[]> {
+    const { start, end } = businessDayRange(now, timezone);
+    return this.followUps.findDueForBusinessAndOwnerInRange(
+      businessId,
+      ownerId,
+      start,
+      end,
+    );
   }
 
-  listOverdue(ownerWhatsappId: string, now: Date): Reminder[] {
-    const list = this.store.get(ownerWhatsappId) ?? [];
-    return list.filter((r) => new Date(r.when) < now && !r.done);
+  async listOverdue(
+    businessId: string,
+    ownerId: string,
+    timezone: string,
+    now: Date = new Date(),
+  ): Promise<FollowUp[]> {
+    const { start } = businessDayRange(now, timezone);
+    return this.followUps.findOverdueForBusinessAndOwner(
+      businessId,
+      ownerId,
+      start,
+    );
   }
 }

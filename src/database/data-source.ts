@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import {
   AuditLog,
+  AssistantSession,
   Business,
   Conversation,
   Customer,
@@ -10,11 +11,13 @@ import {
   Notification,
   OnboardingSession,
   PipelineStage,
+  Sale,
   Task,
   User,
 } from './entities';
 import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
 import { AddWebhookPersistence1760000000000 } from './migrations/1760000000000-AddWebhookPersistence';
+import { AddAssistantPersistence1760000000001 } from './migrations/1760000000001-AddAssistantPersistence';
 
 export default new DataSource({
   type: 'postgres',
@@ -40,6 +43,12 @@ export default new DataSource({
     AuditLog,
     Notification,
     OnboardingSession,
+    AssistantSession,
+    Sale,
   ],
-  migrations: [InitialSchema1759999999999, AddWebhookPersistence1760000000000],
+  migrations: [
+    InitialSchema1759999999999,
+    AddWebhookPersistence1760000000000,
+    AddAssistantPersistence1760000000001,
+  ],
 });

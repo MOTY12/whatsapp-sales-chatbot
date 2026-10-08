@@ -13,6 +13,7 @@ import { Conversation } from './conversation.entity';
 import { FollowUp } from './follow-up.entity';
 import { Task } from './task.entity';
 import { AuditLog } from './audit-log.entity';
+import { Sale } from './sale.entity';
 
 @Entity('businesses')
 @Index(['whatsappNumber'], { unique: true })
@@ -82,4 +83,7 @@ export class Business {
 
   @OneToMany(() => AuditLog, (auditLog) => auditLog.business, { cascade: true })
   auditLogs: AuditLog[];
+
+  @OneToMany(() => Sale, (sale) => sale.business, { cascade: true })
+  sales: Sale[];
 }
