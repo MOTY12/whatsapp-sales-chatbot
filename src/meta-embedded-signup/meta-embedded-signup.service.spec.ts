@@ -1,5 +1,7 @@
 import { Test } from '@nestjs/testing';
 import axios from 'axios';
+import { BusinessRepository } from '../database/repositories/business.repository';
+import { createInMemoryBusinessRepository } from '../testing/in-memory-repositories';
 import { EmbeddedSignupConnectionService } from './embedded-signup-connection.service';
 import { MetaEmbeddedSignupService } from './meta-embedded-signup.service';
 
@@ -9,6 +11,7 @@ describe('MetaEmbeddedSignupService', () => {
   const mockedAxios = axios as jest.Mocked<typeof axios>;
   let service: MetaEmbeddedSignupService;
   let connectionService: EmbeddedSignupConnectionService;
+  let businesses: ReturnType<typeof createInMemoryBusinessRepository>;
 
   beforeEach(async () => {
     process.env.META_APP_ID = 'app-123';
@@ -18,8 +21,16 @@ describe('MetaEmbeddedSignupService', () => {
     process.env.WHATSAPP_API_VERSION = 'v20.0';
     process.env.META_GRAPH_BASE_URL = 'https://graph.example.com';
 
+    businesses = createInMemoryBusinessRepository();
     const moduleRef = await Test.createTestingModule({
-      providers: [EmbeddedSignupConnectionService, MetaEmbeddedSignupService],
+      providers: [
+        EmbeddedSignupConnectionService,
+        MetaEmbeddedSignupService,
+        {
+          provide: BusinessRepository,
+          useValue: businesses,
+        },
+      ],
     }).compile();
 
     service = moduleRef.get(MetaEmbeddedSignupService);
@@ -38,12 +49,16 @@ describe('MetaEmbeddedSignupService', () => {
     expect(parsed.origin).toBe('https://www.facebook.com');
     expect(parsed.pathname).toBe('/v20.0/dialog/oauth');
     expect(parsed.searchParams.get('client_id')).toBe('app-123');
-    expect(parsed.searchParams.get('redirect_uri')).toBe('https://example.com/meta/callback');
+    expect(parsed.searchParams.get('redirect_uri')).toBe(
+      'https://example.com/meta/callback',
+    );
     expect(parsed.searchParams.get('response_type')).toBe('code');
     expect(parsed.searchParams.get('scope')).toBe(
       'whatsapp_business_management,whatsapp_business_messaging,business_management',
     );
-    expect(parsed.searchParams.get('extras')).toContain('whatsapp_embedded_signup');
+    expect(parsed.searchParams.get('extras')).toContain(
+      'whatsapp_embedded_signup',
+    );
 
     const state = parsed.searchParams.get('state');
 
@@ -80,13 +95,18 @@ describe('MetaEmbeddedSignupService', () => {
       throw new Error('Expected state with payload and signature.');
     }
 
-    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8'),
+    ) as {
       ownerWhatsappId: string;
       businessId: string;
     };
     payload.businessId = 'business-2';
 
-    const tamperedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const tamperedPayload = Buffer.from(
+      JSON.stringify(payload),
+      'utf8',
+    ).toString('base64url');
     const tamperedState = `${tamperedPayload}.${signature}`;
 
     expect(() => service.verifyAndDecodeState(tamperedState)).toThrow(
@@ -95,6 +115,14 @@ describe('MetaEmbeddedSignupService', () => {
   });
 
   it('callback exchanges code and saves the connection', async () => {
+    await businesses.create({
+      id: 'business-1',
+      name: 'Kleva',
+      phone: '+2348012345678',
+      whatsappNumber: '+2348012345678',
+      config: { ownerWhatsappId: 'whatsapp-owner' },
+    });
+
     const signupUrl = service.createSignupUrl({
       ownerWhatsappId: 'whatsapp-owner',
       businessId: 'business-1',
@@ -111,11 +139,15 @@ describe('MetaEmbeddedSignupService', () => {
       }
 
       if (url.endsWith('/me/businesses')) {
-        return { data: { data: [{ id: 'business-meta-1', name: 'Kleva' }] } } as never;
+        return {
+          data: { data: [{ id: 'business-meta-1', name: 'Kleva' }] },
+        } as never;
       }
 
       if (url.endsWith('/owned_whatsapp_business_accounts')) {
-        return { data: { data: [{ id: 'waba-1', name: 'Kleva WABA' }] } } as never;
+        return {
+          data: { data: [{ id: 'waba-1', name: 'Kleva WABA' }] },
+        } as never;
       }
 
       if (url.endsWith('/phone_numbers')) {
@@ -143,7 +175,9 @@ describe('MetaEmbeddedSignupService', () => {
     expect(result.statusCode).toBe(200);
     expect(result.html).toContain('WhatsApp Business connected successfully');
 
-    expect(connectionService.getEmbeddedSignupConnection('business-1')).toEqual({
+    await expect(
+      connectionService.getEmbeddedSignupConnection('business-1'),
+    ).resolves.toEqual({
       businessId: 'business-1',
       ownerWhatsappId: 'whatsapp-owner',
       wabaId: 'waba-1',

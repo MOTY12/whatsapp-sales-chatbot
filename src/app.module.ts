@@ -7,7 +7,12 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 
 @Module({
-  imports: [DatabaseModule, WhatsAppModule, OnboardingModule, MetaEmbeddedSignupModule],
+  imports: [
+    DatabaseModule,
+    WhatsAppModule,
+    OnboardingModule,
+    MetaEmbeddedSignupModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -12,8 +12,15 @@ export class AssistantCommandParserService {
       return { intent: 'show_pipeline' };
     }
 
-    if (/show.*sales|what did i sell|sales today/.test(lower) || /show today's sales/.test(lower)) {
+    if (
+      /show.*sales|what did i sell|sales today/.test(lower) ||
+      /show today's sales/.test(lower)
+    ) {
       return { intent: 'show_sales_today' };
+    }
+
+    if (/record sale|add sale|new sale/.test(lower)) {
+      return { intent: 'record_sale' };
     }
 
     if (/create (a )?customer|new customer/.test(lower)) {
@@ -31,12 +38,17 @@ export class AssistantCommandParserService {
     if (/move .* to /.test(lower)) {
       const match = lower.match(/move\s+(.*?)\s+to\s+(.*)/);
       if (match) {
-        return { intent: 'move_stage', entities: { name: match[1].trim(), stage: match[2].trim() } };
+        return {
+          intent: 'move_stage',
+          entities: { name: match[1].trim(), stage: match[2].trim() },
+        };
       }
       return { intent: 'move_stage' };
     }
 
-    if (/today('s)? follow-?ups|todays followups|today follow-ups/.test(lower)) {
+    if (
+      /today('s)? follow-?ups|todays followups|today follow-ups/.test(lower)
+    ) {
       return { intent: 'todays_followups' };
     }
 
@@ -44,7 +56,11 @@ export class AssistantCommandParserService {
       return { intent: 'todays_leads' };
     }
 
-    if (/how many customers|number of customers|how many customers do i have/.test(lower)) {
+    if (
+      /how many customers|number of customers|how many customers do i have/.test(
+        lower,
+      )
+    ) {
       return { intent: 'count_customers' };
     }
 
@@ -56,18 +72,31 @@ export class AssistantCommandParserService {
       return { intent: 'show_overdue' };
     }
 
-    if (/create reminder for tomorrow|reminder for tomorrow|create reminder tomorrow/.test(lower)) {
+    if (
+      /create reminder for tomorrow|reminder for tomorrow|create reminder tomorrow/.test(
+        lower,
+      )
+    ) {
       return { intent: 'create_reminder' };
     }
 
     if (/find customer (.+)/.test(lower)) {
       const match = lower.match(/find customer (.+)/);
-      return { intent: 'find_customer', entities: { name: (match && match[1])?.trim() ?? '' } };
+      return {
+        intent: 'find_customer',
+        entities: { name: (match && match[1])?.trim() ?? '' },
+      };
     }
 
-    if (/search customer (\+?\d+)/.test(lower) || /search customer (\d+)/.test(lower)) {
+    if (
+      /search customer (\+?\d+)/.test(lower) ||
+      /search customer (\d+)/.test(lower)
+    ) {
       const match = lower.match(/search customer (\+?\d+)/);
-      return { intent: 'search_customer', entities: { phone: (match && match[1]) ?? '' } };
+      return {
+        intent: 'search_customer',
+        entities: { phone: (match && match[1]) ?? '' },
+      };
     }
 
     return { intent: 'unknown' };

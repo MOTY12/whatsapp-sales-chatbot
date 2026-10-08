@@ -1,39 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-
-export interface Sale {
-  id: string;
-  ownerWhatsappId: string;
-  customerId?: string;
-  amount?: number;
-  product?: string;
-  createdAt: string;
-}
+import { Sale } from '../database/entities/sale.entity';
+import { SaleRepository } from '../database/repositories/sale.repository';
+import { businessDayRange } from './business-date-range';
 
 @Injectable()
 export class SalesService {
-  private readonly store = new Map<string, Sale[]>();
+  constructor(private readonly sales: SaleRepository) {}
 
-  recordSale(ownerWhatsappId: string, sale: Partial<Sale>): Sale {
-    const s: Sale = {
-      id: uuidv4(),
-      ownerWhatsappId,
-      customerId: sale.customerId,
-      amount: sale.amount,
-      product: sale.product,
-      createdAt: new Date().toISOString(),
-    };
-
-    const list = this.store.get(ownerWhatsappId) ?? [];
-    list.push(s);
-    this.store.set(ownerWhatsappId, list);
-
-    return s;
+  async recordSale(
+    businessId: string,
+    ownerId: string,
+    sale: Pick<Sale, 'amount' | 'product' | 'customerId'>,
+  ): Promise<Sale> {
+    return this.sales.create({ ...sale, businessId, ownerId });
   }
 
-  listForDate(ownerWhatsappId: string, date: Date): Sale[] {
-    const list = this.store.get(ownerWhatsappId) ?? [];
-    const day = date.toISOString().slice(0, 10);
-    return list.filter((s) => s.createdAt.slice(0, 10) === day);
+  async listForToday(
+    businessId: string,
+    ownerId: string,
+    timezone: string,
+    now: Date = new Date(),
+  ): Promise<Sale[]> {
+    const { start, end } = businessDayRange(now, timezone);
+    return this.sales.findByBusinessAndOwnerForDateRange(
+      businessId,
+      ownerId,
+      start,
+      end,
+    );
   }
 }

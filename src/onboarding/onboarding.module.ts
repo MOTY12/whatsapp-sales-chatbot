@@ -7,7 +7,15 @@ import { MetaEmbeddedSignupModule } from '../meta-embedded-signup/meta-embedded-
 
 @Module({
   imports: [DatabaseModule, MetaEmbeddedSignupModule],
-  providers: [ConversationStateService, BusinessRegistrationService, OnboardingService],
-  exports: [ConversationStateService, BusinessRegistrationService, OnboardingService],
+  providers: [
+    ConversationStateService,
+    BusinessRegistrationService,
+    OnboardingService,
+  ],
+  exports: [
+    ConversationStateService,
+    BusinessRegistrationService,
+    OnboardingService,
+  ],
 })
 export class OnboardingModule {}

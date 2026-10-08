@@ -1,19 +1,39 @@
 import { Injectable } from '@nestjs/common';
 import { AssistantPendingFlow } from './types/assistant.types';
+import { AssistantSessionRepository } from '../database/repositories/assistant-session.repository';
 
 @Injectable()
 export class AssistantStateService {
-  private readonly pending = new Map<string, AssistantPendingFlow>();
+  constructor(private readonly sessions: AssistantSessionRepository) {}
 
-  get(sellerId: string): AssistantPendingFlow | undefined {
-    return this.pending.get(sellerId);
+  async get(
+    businessId: string,
+    ownerId: string,
+  ): Promise<AssistantPendingFlow | undefined> {
+    const session = await this.sessions.findByBusinessAndOwner(
+      businessId,
+      ownerId,
+    );
+    return session
+      ? {
+          type: session.flow as AssistantPendingFlow['type'],
+          step: session.step,
+          draft: session.draft,
+        }
+      : undefined;
   }
 
-  set(sellerId: string, flow: AssistantPendingFlow) {
-    this.pending.set(sellerId, flow);
+  async set(businessId: string, ownerId: string, flow: AssistantPendingFlow) {
+    await this.sessions.save({
+      businessId,
+      ownerId,
+      flow: flow.type,
+      step: flow.step,
+      draft: flow.draft,
+    });
   }
 
-  clear(sellerId: string) {
-    this.pending.delete(sellerId);
+  async clear(businessId: string, ownerId: string) {
+    await this.sessions.clear(businessId, ownerId);
   }
 }

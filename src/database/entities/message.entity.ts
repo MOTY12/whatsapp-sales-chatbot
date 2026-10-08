@@ -34,7 +34,7 @@ export class Message {
   @Column({ default: 'sent' })
   status: MessageStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   whatsappMessageId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

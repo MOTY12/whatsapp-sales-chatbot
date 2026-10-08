@@ -13,6 +13,7 @@ import { Conversation } from './conversation.entity';
 import { FollowUp } from './follow-up.entity';
 import { Task } from './task.entity';
 import { AuditLog } from './audit-log.entity';
+import { Sale } from './sale.entity';
 
 @Entity('businesses')
 @Index(['whatsappNumber'], { unique: true })
@@ -33,22 +34,22 @@ export class Business {
   @Column()
   whatsappNumber: string;
 
-  @Column({ nullable: true, unique: true })
+  @Column({ type: 'varchar', nullable: true, unique: true })
   phoneNumberId: string | null;
 
   @Column({ type: 'text', nullable: true })
   accessToken: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   wabaId: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   displayPhoneNumber: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   connectedAt: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   timezone: string | null;
 
   @Column({ default: 'active' })
@@ -82,4 +83,7 @@ export class Business {
 
   @OneToMany(() => AuditLog, (auditLog) => auditLog.business, { cascade: true })
   auditLogs: AuditLog[];
+
+  @OneToMany(() => Sale, (sale) => sale.business, { cascade: true })
+  sales: Sale[];
 }

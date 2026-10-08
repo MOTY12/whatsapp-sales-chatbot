@@ -5,3 +5,5 @@ export { FollowUpRepository } from './follow-up.repository';
 export { ConversationRepository } from './conversation.repository';
 export { MessageRepository } from './message.repository';
 export { OnboardingSessionRepository } from './onboarding-session.repository';
+export { AssistantSessionRepository } from './assistant-session.repository';
+export { SaleRepository } from './sale.repository';

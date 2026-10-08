@@ -12,14 +12,10 @@ import { Business } from './business.entity';
 import { User } from './user.entity';
 import { Conversation } from './conversation.entity';
 import { FollowUp } from './follow-up.entity';
+import { Sale } from './sale.entity';
 
 export type CustomerLeadStage =
-  | 'New Lead'
-  | 'Interested'
-  | 'Negotiating'
-  | 'Paid'
-  | 'Delivered'
-  | 'Lost';
+  'New Lead' | 'Interested' | 'Negotiating' | 'Paid' | 'Delivered' | 'Lost';
 
 @Entity('customers')
 @Index(['businessId', 'phone'], { unique: true })
@@ -74,15 +70,25 @@ export class Customer {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Business, (business) => business.customers, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Business, (business) => business.customers, {
+    onDelete: 'CASCADE',
+  })
   business: Business;
 
-  @ManyToOne(() => User, (user) => user.customers, { nullable: true, onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.customers, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
   owner: User;
 
-  @OneToMany(() => Conversation, (conversation) => conversation.customer, { cascade: true })
+  @OneToMany(() => Conversation, (conversation) => conversation.customer, {
+    cascade: true,
+  })
   conversations: Conversation[];
 
   @OneToMany(() => FollowUp, (followUp) => followUp.customer, { cascade: true })
   followUps: FollowUp[];
+
+  @OneToMany(() => Sale, (sale) => sale.customer)
+  sales: Sale[];
 }
