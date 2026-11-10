@@ -38,7 +38,6 @@ export class WhatsAppWebhookController {
     @Headers('x-hub-signature-256') signature?: string,
     @Req() request?: Request & { rawBody?: Buffer },
   ): Promise<{ received: true }> {
-    
     this.assertValidSignature(body, signature, request?.rawBody);
     await this.whatsappService.handleWebhookPayload(body);
 

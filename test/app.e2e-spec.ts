@@ -9,12 +9,13 @@ import { WhatsAppService } from './../src/whatsapp/whatsapp.service';
 
 describe('HTTP (e2e)', () => {
   let app: INestApplication<App>;
-  const previousVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
-  const previousAppSecret = process.env.META_APP_SECRET;
 
   beforeEach(async () => {
-    process.env.WHATSAPP_VERIFY_TOKEN = 'e2e-verify-token';
-    process.env.META_APP_SECRET = 'e2e-app-secret';
+    jest.replaceProperty(process, 'env', {
+      ...process.env,
+      WHATSAPP_VERIFY_TOKEN: 'e2e-verify-token',
+      META_APP_SECRET: 'e2e-app-secret',
+    });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AppController, WhatsAppWebhookController],
@@ -34,9 +35,11 @@ describe('HTTP (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
-    process.env.WHATSAPP_VERIFY_TOKEN = previousVerifyToken;
-    process.env.META_APP_SECRET = previousAppSecret;
+    try {
+      await app?.close();
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 
   it('/ (GET)', () => {
@@ -69,4 +72,3 @@ describe('HTTP (e2e)', () => {
       .expect(403);
   });
 });
-
