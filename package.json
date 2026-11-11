@@ -21,6 +21,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "jest --config test/jest-integration.config.cjs --runInBand",
+    "auth:grant": "npm run build && node dist/database/grant-merchant.js",
     "tenant:preflight": "npm run build && node dist/database/tenant-preflight.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js"
@@ -40,6 +41,7 @@
     "dayjs": "^1.11.21",
     "dotenv": "^17.4.2",
     "ioredis": "^5.11.1",
+    "openid-client": "^6.8.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.23.0",

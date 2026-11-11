@@ -25,11 +25,13 @@ npm run migration:revert
 3. `AddAssistantPersistence` — persisted sales and assistant command sessions.
 4. `AddOutboxOperations` — durable job intent, status, lease and retry tracking.
 5. `AddTenantIntegrity` — account and membership tables, legacy membership backfill, and same-business foreign keys.
+6. `AddMerchantAuth` — merchant sessions, login attempts, scoped SQL functions, and forced row-level security.
 
 CI applies, reverts, and reapplies all migrations in disposable databases on PostgreSQL 16. To run the same checks locally, use the integration suite below. For manual CLI verification, start with an empty disposable database.
 
 ```bash
 npm run migration:run
+npm run migration:revert
 npm run migration:revert
 npm run migration:revert
 npm run migration:revert
@@ -54,9 +56,27 @@ The command prints issue names, counts and blocking flags. It exits nonzero for 
 
 Each legacy user gets one membership tied to their existing business and user ID. Explicit legacy owners map to `owner` and other legacy users to `staff`. Memberships start unclaimed, with neither an account link nor a verified WhatsApp binding. The legacy user trigger creates memberships for new users and keeps role and status synchronized while the membership is unclaimed. If deployment roles use explicit grants, grant legacy user writers `SELECT`, `INSERT`, and `UPDATE` on `business_members` before resuming writes. Account linkage requires a future verified claim. The migration uses no phone or synthetic email as proof of identity.
 
-The foreign keys enforce matching business IDs across conversation and message, customer and owner, follow-up, task, sale, audit, assistant, and onboarding relationships. Existing nullable CRM references still clear when their parent is deleted. Deleting a legacy user cascades to the membership tied to that legacy user. These constraints protect persisted links. Authorization and row-level read isolation remain TENANT-002 work.
+The foreign keys enforce matching business IDs across conversation and message, customer and owner, follow-up, task, sale, audit, assistant, and onboarding relationships. Existing nullable CRM references still clear when their parent is deleted. Deleting a legacy user cascades to the membership tied to that legacy user. These constraints protect persisted links. Merchant read isolation is described in the next section.
 
 Reverting removes the membership schema and restores the original text column types while preserving legacy row IDs. A revert is blocked once account data exists. Reverting before account creation discards generated membership IDs and any membership-only changes. Prefer a forward migration after identity rollout. Older application binaries can still use the legacy IDs, but use the TENANT-001 build or newer for lead capture so senders linked to another business are left unassigned.
+
+## Merchant database roles and RLS
+
+After applying the migrations, use the database administrator to provision two dedicated login roles. The names must start with `kleva_merchant_` and `kleva_identity_` respectively. The API validates both logins and rejects roles with elevated privileges, role memberships, schema creation privileges, or database or table ownership. Use separate secrets for each login and for the legacy runtime.
+
+```sql
+CREATE ROLE kleva_merchant_app LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
+CREATE ROLE kleva_identity_app LOGIN NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION NOBYPASSRLS;
+GRANT CONNECT ON DATABASE kleva_db TO kleva_merchant_app, kleva_identity_app;
+GRANT USAGE ON SCHEMA public TO kleva_merchant_app, kleva_identity_app;
+```
+
+Set each password through your database administrator or the interactive `psql` command `\password`. Run `npm run auth:grant` with the migration-owner database settings and both role names in `MERCHANT_DATABASE_USER` and `IDENTITY_DATABASE_USER`. Run the API with its normal legacy runtime credentials and the two new role credentials in the corresponding `*_DATABASE_PASSWORD` settings.
+
+- The identity pool can create and consume login attempts and issue sessions after OIDC verification. Its database role has no business-table reads.
+- The merchant pool can resolve and revoke its sessions and list their memberships. It cannot issue sessions. Its table grants cover only selected business and membership columns. The scoped transaction sets both business ID and session digest transaction-locally on its manager. RLS checks the current session, active business, and active role on each scoped query.
+- RLS is enabled and forced on the tenant tables. Merchant policies allow only the business profile and the caller's own membership within the authorized scope. CRM, conversations, messages, outbox and other legacy tables have no merchant grants or exposure. The legacy runtime policy preserves existing webhook and worker access. Keep those credentials separate from merchant code paths.
+- Expired rows are inaccessible. The migration owner can periodically delete expired rows from `merchant_login_attempts` and `merchant_sessions`. Reverting this migration removes session and login state, ends active merchant sessions, and removes the installed policies and business-column grants. Disable merchant auth before reverting.
 
 ## Schema synchronization
 
@@ -121,3 +141,5 @@ The seeded upgrade uses records from the initial migration. If historical messag
 - `outbox_operations`
 - `accounts`
 - `business_members`
+- `merchant_login_attempts`
+- `merchant_sessions`

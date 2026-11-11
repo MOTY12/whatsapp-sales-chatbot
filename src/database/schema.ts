@@ -24,6 +24,8 @@ import { AddOutboxOperations1760000000002 } from './migrations/1760000000002-Add
 
 import { AddTenantIntegrity1760000000003 } from './migrations/1760000000003-AddTenantIntegrity';
 
+import { AddMerchantAuth1760000000004 } from './migrations/1760000000004-AddMerchantAuth';
+
 export const databaseEntities = [
   Business,
   User,
@@ -49,4 +51,5 @@ export const databaseMigrations = [
   AddAssistantPersistence1760000000001,
   AddOutboxOperations1760000000002,
   AddTenantIntegrity1760000000003,
+  AddMerchantAuth1760000000004,
 ];

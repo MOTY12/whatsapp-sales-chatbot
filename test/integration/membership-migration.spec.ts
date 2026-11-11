@@ -24,7 +24,7 @@ describe('tenant integrity migration', () => {
 
   beforeEach(async () => {
     database = await createIntegrationDatabase();
-    source = await database.migrator(databaseMigrations.slice(0, -1));
+    source = await database.migrator(databaseMigrations.slice(0, -2));
     await applyMigrations(source);
     first = await seedTenant(source, 1);
     second = await seedTenant(source, 2);
@@ -36,7 +36,7 @@ describe('tenant integrity migration', () => {
 
   async function upgrade() {
     await source.destroy();
-    source = await database.migrator();
+    source = await database.migrator(databaseMigrations.slice(0, -1));
     await applyMigrations(source);
   }
 

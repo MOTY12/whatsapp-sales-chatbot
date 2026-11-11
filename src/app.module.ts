@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from './Auth/auth.module';
 import {
   DatabaseReadiness,
   HealthController,
@@ -13,6 +14,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
     WhatsAppModule,
     OnboardingModule,
     MetaEmbeddedSignupModule,

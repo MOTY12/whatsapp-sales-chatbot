@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { grantMerchantAccess } from '../../src/database/merchant-access';
 import { databaseConfig } from '../../src/config/env';
 import { DataSource, Migration } from 'typeorm';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
@@ -69,6 +70,7 @@ export async function createIntegrationDatabase() {
   let createdDatabase = false;
   let createdMigrationRole = false;
   let createdRuntimeRole = false;
+  const merchantRoles: string[] = [];
 
   async function close() {
     const cleanupErrors: unknown[] = [];
@@ -90,6 +92,9 @@ export async function createIntegrationDatabase() {
         await attempt(() =>
           control.query(`DROP DATABASE "${database}" WITH (FORCE)`),
         );
+      }
+      for (const role of merchantRoles) {
+        await attempt(() => control.query(`DROP ROLE "${role}"`));
       }
       if (createdRuntimeRole) {
         await attempt(() => control.query(`DROP ROLE "${runtimeRole}"`));
@@ -173,6 +178,40 @@ export async function createIntegrationDatabase() {
           password: runtimePassword,
           entities: databaseEntities,
         });
+      },
+      async merchantCredentials(migrator: DataSource) {
+        const username = 'kleva_merchant_' + suffix;
+        const identityUsername = 'kleva_identity_' + suffix;
+        const password = randomBytes(24).toString('hex');
+        const identityPassword = randomBytes(24).toString('hex');
+        const admin = await connect({});
+        try {
+          for (const [role, secret] of [
+            [username, password],
+            [identityUsername, identityPassword],
+          ]) {
+            await control.query(
+              `CREATE ROLE "${role}" LOGIN PASSWORD '${secret}'`,
+            );
+            merchantRoles.push(role);
+            await control.query(
+              `GRANT CONNECT ON DATABASE "${database}" TO "${role}"`,
+            );
+            await admin.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
+          }
+        } finally {
+          await admin.destroy();
+        }
+        await grantMerchantAccess(migrator, username, identityUsername);
+        return {
+          host: config.host,
+          port: config.port,
+          database,
+          username,
+          password,
+          identityUsername,
+          identityPassword,
+        };
       },
       async grantRuntimeAccess(migrator: DataSource) {
         const names = migrator.entityMetadatas.map(

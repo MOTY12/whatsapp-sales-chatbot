@@ -52,6 +52,24 @@ TypeORM synchronization is disabled in every environment. Run migrations before 
 
 See `DATABASE_SETUP.md` for PostgreSQL details.
 
+## Merchant sign-in
+
+Register a confidential OIDC client with Authorization Code, S256 PKCE, `client_secret_basic`, and RS256 ID tokens. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and the exact `OIDC_REDIRECT_URI` ending in `/auth/callback`. Register that same URI with the provider. Use HTTPS in production and loopback HTTP for local development. Set the two dedicated database credentials after applying migrations and grants. Leaving all merchant settings empty disables merchant auth. [Database role setup](DATABASE_SETUP.md#merchant-database-roles-and-rls)
+
+- `GET /auth/login` starts sign-in. `GET /auth/callback` consumes the browser-bound attempt and redirects to `/auth/me`.
+- `GET /auth/me` returns the account ID and active memberships. `GET /auth/businesses` lists those memberships. `GET /auth/businesses/:businessId` checks current membership and permissions before returning a minimal business profile.
+- `POST /auth/logout` revokes the session. Send the configured callback origin in `Origin` and the value of the CSRF cookie in `X-CSRF-Token`. HTTPS cookie names have the `__Host-` prefix. The CSRF cookie is readable by same-origin code. The session and login binding cookies are HttpOnly and all use SameSite=Lax.
+- Sessions last eight hours and rotate on successful sign-in. Login attempts expire after ten minutes and can be consumed once. PostgreSQL stores session and CSRF digests. Provider tokens stay out of cookies and responses.
+
+| Role | Business profile | Team management permission | Knowledge permission | Inbox permission |
+| --- | --- | --- | --- | --- |
+| Owner | Yes | Yes | Yes | Yes |
+| Editor | Yes | | Yes | |
+| Agent | Yes | | | Yes |
+| Legacy staff | | | | |
+
+The permission helper defines team, knowledge and inbox access for later feature routes. Staff can see their own membership list. Signing in creates an issuer/subject account and does not claim a legacy membership.
+
 ## Workers
 
 Apply the database migrations, then start the worker separately. The migration command also builds the application.
@@ -79,7 +97,7 @@ npm run test:integration
 npm run migration:run
 ```
 
-The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 and Redis to verify migrations, repository behavior, TLS, health endpoints, and outbox recovery. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
+The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 and Redis to verify migrations, repository behavior, TLS, health endpoints, outbox recovery, and merchant OIDC and RLS. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
 
 ## Health and logs
 

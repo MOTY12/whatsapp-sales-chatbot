@@ -286,3 +286,83 @@ export function appConfig(env = process.env) {
     },
   };
 }
+
+export const merchantRolePattern = /^kleva_merchant_[a-z0-9_]{1,48}$/;
+export const identityRolePattern = /^kleva_identity_[a-z0-9_]{1,48}$/;
+
+export function merchantAuthConfig(env = process.env) {
+  const keys = [
+    'OIDC_ISSUER',
+    'OIDC_CLIENT_ID',
+    'OIDC_CLIENT_SECRET',
+    'OIDC_REDIRECT_URI',
+    'MERCHANT_DATABASE_USER',
+    'MERCHANT_DATABASE_PASSWORD',
+    'IDENTITY_DATABASE_USER',
+    'IDENTITY_DATABASE_PASSWORD',
+  ] as const;
+  if (keys.every((key) => !env[key]?.trim())) return undefined;
+  const production = applicationEnvironment(env) === 'production';
+  const values = required(env, keys, production);
+  const protocols = production ? ['https:'] : ['http:', 'https:'];
+  const issuer = validatedUrl(values.OIDC_ISSUER, 'OIDC_ISSUER', protocols);
+  const redirect = validatedUrl(
+    values.OIDC_REDIRECT_URI,
+    'OIDC_REDIRECT_URI',
+    protocols,
+  );
+  for (const url of [issuer, redirect]) {
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (url.protocol === 'http:' &&
+        !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    ) {
+      throw new Error(
+        'OIDC URLs must use HTTPS or local development HTTP, without credentials, query strings or fragments.',
+      );
+    }
+  }
+  if (redirect.pathname !== '/auth/callback') {
+    throw new Error(
+      'OIDC_REDIRECT_URI must point to /auth/callback on the merchant origin.',
+    );
+  }
+  if (
+    !merchantRolePattern.test(values.MERCHANT_DATABASE_USER) ||
+    values.MERCHANT_DATABASE_USER === env.DATABASE_USER?.trim()
+  ) {
+    throw new Error(
+      'MERCHANT_DATABASE_USER must be a separate kleva_merchant_* login.',
+    );
+  }
+  if (
+    !identityRolePattern.test(values.IDENTITY_DATABASE_USER) ||
+    values.IDENTITY_DATABASE_USER === env.DATABASE_USER?.trim()
+  ) {
+    throw new Error(
+      'IDENTITY_DATABASE_USER must be a separate kleva_identity_* login.',
+    );
+  }
+  return {
+    issuer,
+    redirect,
+    secureCookies: redirect.protocol === 'https:',
+    clientId: values.OIDC_CLIENT_ID,
+    clientSecret: values.OIDC_CLIENT_SECRET,
+    identityDatabase: databaseConfig({
+      ...env,
+      DATABASE_USER: values.IDENTITY_DATABASE_USER,
+      DATABASE_PASSWORD: env.IDENTITY_DATABASE_PASSWORD,
+      DATABASE_LOGGING: 'false',
+    }),
+    database: databaseConfig({
+      ...env,
+      DATABASE_USER: values.MERCHANT_DATABASE_USER,
+      DATABASE_PASSWORD: env.MERCHANT_DATABASE_PASSWORD,
+      DATABASE_LOGGING: 'false',
+    }),
+  };
+}
