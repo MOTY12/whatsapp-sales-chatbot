@@ -226,33 +226,60 @@ export function signupConfig(env = process.env) {
   };
 }
 
+export function logLevelsConfig(env = process.env) {
+  const level = env.LOG_LEVEL?.trim() || 'log';
+  const levelIndex = logLevels.findIndex((candidate) => candidate === level);
+  if (levelIndex < 0) {
+    throw new Error(
+      'LOG_LEVEL must be fatal, error, warn, log, debug or verbose.',
+    );
+  }
+  return logLevels.slice(0, levelIndex + 1);
+}
+
+export function redisConfig(env = process.env) {
+  const url = env.REDIS_URL?.trim() || undefined;
+  if (url) validatedUrl(url, 'REDIS_URL', ['redis:', 'rediss:']);
+  return {
+    url,
+    host: env.REDIS_HOST?.trim() || 'localhost',
+    port: port(env, 'REDIS_PORT', 6379),
+    password: env.REDIS_PASSWORD || undefined,
+  };
+}
+
+export function workerConfig(env = process.env) {
+  const environment = applicationEnvironment(env);
+  const redis = redisConfig(env);
+  const prefix = env.JOBS_QUEUE_PREFIX?.trim() || `kleva-${environment}`;
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(prefix)) {
+    throw new Error(
+      'JOBS_QUEUE_PREFIX must be 1–64 letters, digits, underscores or hyphens and begin with a letter.',
+    );
+  }
+  const concurrency = port(env, 'JOBS_CONCURRENCY', 4);
+  if (concurrency > 32) {
+    throw new Error('JOBS_CONCURRENCY must be between 1 and 32.');
+  }
+  if (environment === 'production' && !redis.url && !env.REDIS_HOST?.trim()) {
+    throw new Error('Set REDIS_URL or REDIS_HOST for the production worker.');
+  }
+  return { redis, prefix, concurrency };
+}
+
 export function appConfig(env = process.env) {
   const environment = applicationEnvironment(env);
   const production = environment === 'production';
   const database = databaseConfig(env);
   const meta = signupConfig(env);
   if (production) required(env, ['WHATSAPP_VERIFY_TOKEN'], true);
-  const level = env.LOG_LEVEL?.trim() || 'log';
-  const levelIndex = logLevels.findIndex((candidate) => candidate === level);
-  if (levelIndex < 0)
-    throw new Error(
-      'LOG_LEVEL must be fatal, error, warn, log, debug or verbose.',
-    );
-
-  const redisUrl = env.REDIS_URL?.trim() || undefined;
-  if (redisUrl) validatedUrl(redisUrl, 'REDIS_URL', ['redis:', 'rediss:']);
   return {
     environment,
     port: port(env, 'PORT', 3000),
     database,
     meta,
-    logLevels: logLevels.slice(0, levelIndex + 1),
-    redis: {
-      url: redisUrl,
-      host: env.REDIS_HOST?.trim() || 'localhost',
-      port: port(env, 'REDIS_PORT', 6379),
-      password: env.REDIS_PASSWORD || undefined,
-    },
+    logLevels: logLevelsConfig(env),
+    redis: redisConfig(env),
     ai: {
       apiKey: env.OPENAI_API_KEY?.trim() || undefined,
       model: env.OPENAI_MODEL?.trim() || undefined,

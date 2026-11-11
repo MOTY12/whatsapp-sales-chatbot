@@ -24,13 +24,11 @@ Required for local boot:
 
 Set `DATABASE_PORT` if PostgreSQL uses a port other than 5432. The API and migration CLI use the same database settings. The CLI only requires the database settings. The example Meta values suffice for local boot and a smoke check of `GET /`. Before connecting Meta, configure real Meta app credentials and a public HTTPS callback, and set `WHATSAPP_VERIFY_TOKEN` to match the webhook subscription.
 
-`NODE_ENV` accepts `development` (default), `test`, or `production`. `PORT` defaults to 3000 and `LOG_LEVEL` defaults to `log`. Redis and OpenAI settings are optional and no connections are opened to those services at startup.
+`NODE_ENV` accepts `development` (default), `test`, or `production`. `PORT` defaults to 3000 and `LOG_LEVEL` defaults to `log`. The HTTP process and migration CLI use PostgreSQL. Redis is used by the separate worker, and OpenAI settings are optional.
 
 For production, use `NODE_ENV=production`, `DATABASE_SSL=true`, and `DATABASE_SSL_CA` containing the trusted PostgreSQL CA bundle in PEM format. Use a `DATABASE_HOST` covered by the server certificate. Production also requires non-placeholder Meta credentials, an HTTPS callback, and the webhook verify token. Its Graph origin is fixed to `https://graph.facebook.com`. Local PostgreSQL can use `DATABASE_SSL=false`. See the [database TLS configuration](DATABASE_SETUP.md#database-tls) for details.
 
 `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are a development fallback. Connected businesses use the Meta access token and phone-number ID stored on the business record.
-
-Redis and OpenAI variables are listed for later milestones. Milestone 0 does not start a worker process and does not call OpenAI.
 
 ## Webhook configuration
 
@@ -48,7 +46,7 @@ npm run migration:run
 npm run migration:revert
 ```
 
-Migrations create the baseline schema, webhook/onboarding persistence fields, and Milestone 1 assistant persistence (`sales` and `assistant_sessions`).
+Migrations create the baseline schema, webhook and onboarding persistence, assistant persistence, and the background job outbox.
 
 TypeORM synchronization is disabled in every environment. Run migrations before starting the application whenever the schema changes.
 
@@ -56,7 +54,18 @@ See `DATABASE_SETUP.md` for PostgreSQL details.
 
 ## Workers
 
-BullMQ/Redis workers for follow-ups and the daily brief are not implemented yet. Do not start a separate worker process. `npm run start:dev` runs the HTTP application only.
+Apply the database migrations, then start the worker separately. The migration command also builds the application.
+
+```bash
+npm run migration:run
+npm run start:worker
+```
+
+The worker uses the shared PostgreSQL configuration and Redis 7 or newer. Set `REDIS_URL` or `REDIS_HOST`, `REDIS_PORT`, and optional `REDIS_PASSWORD`. `REDIS_URL` takes precedence and accepts `rediss://` for verified TLS. Use a distinct `JOBS_QUEUE_PREFIX` for each deployment and share it across that deployment's worker replicas. The default prefix is `kleva-<NODE_ENV>`. `JOBS_CONCURRENCY` defaults to 4 per worker.
+
+The relay polls PostgreSQL every second. A job contains only the outbox operation ID, and the Redis job ID combines that ID with the execution attempt. PostgreSQL retries failed dispatches with backoff and recovers expired leases and missing Redis jobs. Handler failures retry up to five execution attempts before the operation is marked `FAILED`. The worker drains active handlers on SIGINT or SIGTERM. Run `node dist/worker.js` directly if your process manager signals only its immediate child.
+
+Feature modules can write an intent through `OutboxStore.write` inside their TypeORM transaction. Use a stable UUID per logical operation and put only UUID references in metadata. Register the operation's handler in the worker. PostgreSQL effects performed through the supplied transaction manager commit together with the completion marker. Keep those transactions short. External calls need their own idempotency or reconciliation. This release ships the infrastructure with an empty feature handler registry. WhatsApp webhooks still run through the HTTP process.
 
 ## Scripts
 
@@ -70,7 +79,7 @@ npm run test:integration
 npm run migration:run
 ```
 
-The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 to verify migrations, repository behavior, database TLS, and health endpoints. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
+The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 and Redis to verify migrations, repository behavior, TLS, health endpoints, and outbox recovery. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
 
 ## Health and logs
 
@@ -81,4 +90,4 @@ The HTTP test suite exercises `GET /` and the positive and negative WhatsApp sub
 
 ## MVP boundary
 
-No web dashboard, payments, inventory, broadcasts, public CRM API, background workers, or OpenAI integration are included. Assistant CRM, follow-ups, sales, and multi-step command state are persisted in PostgreSQL.
+No web dashboard, payments, inventory, broadcasts, public CRM API, or OpenAI integration are included. Assistant CRM, follow-ups, sales, and multi-step command state are persisted in PostgreSQL.

@@ -23,11 +23,13 @@ npm run migration:revert
 1. `InitialSchema` — core tables for businesses, users, customers, conversations, messages, pipeline stages, follow-ups, tasks, audit logs, and notifications.
 2. `AddWebhookPersistence` — WhatsApp connection columns, unique owner WhatsApp IDs, unique provider message IDs, and onboarding session storage.
 3. `AddAssistantPersistence` — persisted sales and assistant command sessions.
+4. `AddOutboxOperations` — durable job intent, status, lease and retry tracking.
 
 CI applies, reverts, and reapplies all migrations in disposable databases on PostgreSQL 16. To run the same checks locally, use the integration suite below. For manual CLI verification, start with an empty disposable database.
 
 ```bash
 npm run migration:run
+npm run migration:revert
 npm run migration:revert
 npm run migration:revert
 npm run migration:revert
@@ -56,7 +58,13 @@ docker run --rm -p 127.0.0.1:55432:5432 \
   postgres:16
 ```
 
-When PostgreSQL accepts connections, run the suite from another terminal.
+Start a disposable Redis instance in another terminal.
+
+```bash
+docker run --rm -p 127.0.0.1:56379:6379 redis:7-alpine
+```
+
+When both services accept connections, run the suite from a third terminal.
 
 ```bash
 NODE_ENV=test \
@@ -65,6 +73,7 @@ NODE_ENV=test \
   KLEVA_TEST_PG_DATABASE=kleva_integration_control \
   KLEVA_TEST_PG_USER=kleva_integration_admin \
   KLEVA_TEST_PG_PASSWORD=local-integration-only \
+  KLEVA_TEST_REDIS_URL=redis://127.0.0.1:56379 \
   npm run test:integration
 ```
 
@@ -87,3 +96,4 @@ The seeded upgrade uses records from the initial migration. If historical messag
 - `onboarding_sessions`
 - `sales`
 - `assistant_sessions`
+- `outbox_operations`

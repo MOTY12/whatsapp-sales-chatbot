@@ -61,3 +61,23 @@
 **Status.** VERIFIED locally on Node 24.22.1 and PostgreSQL 16.14. Hosted Node 22 CI and deployment connectivity to PostgreSQL and Meta remain unverified. The TLS test uses a temporary certificate and a local TLS relay to the disposable database.
 
 **Next unblocked task.** FOUNDATION-004 adds the BullMQ worker runtime and durable PostgreSQL outbox. Use a disposable Redis instance for verification.
+
+## 11 November 2026 · FOUNDATION-004
+
+- **Starting point.** Clean `main` at `4ef22864742b768762568eeb41a1513462aa0e38`. Reviewed the five V1 documents, database schema and migrations, HTTP and webhook flow, centralized environment configuration, CI and integration harness. FOUNDATION-001 through FOUNDATION-003 remain verified.
+- **Outbox.** Added `AddOutboxOperations1760000000002`, the TypeORM entity, and the transaction-bound `OutboxStore`. One table holds durable intent and operation status. UUIDs identify logical operations, metadata accepts only UUID references, and status reads require explicit business scope. Reusing an ID for different intent fails. The relay claims due rows with `FOR UPDATE SKIP LOCKED`. Status transitions use lease tokens, and the scheduler timestamp records the retry, lease, or redelivery deadline according to state.
+- **Worker.** Added BullMQ and ioredis, the relay, processor, and standalone Nest worker. BullMQ job IDs use the logical ID and execution attempt, and payloads contain only the UUID. PostgreSQL retains intent when Redis is unreachable or loses a job. Redis dispatch retries use exponential backoff with jitter. Handler execution allows five attempts, and failed writes roll back. Transactional handler effects commit together with `COMPLETED`. External side effects require their own idempotency or reconciliation. The worker stops claiming and drains active work on shutdown. An empty handler registry leaves feature registration to later roadmap tasks.
+- **Scope and setup.** HTTP webhook processing continues through the existing services. The migration CLI and API open no Redis connections. Updated the README, environment example, database setup and existing CI workflow. CI uses disposable PostgreSQL 16 and Redis 7 services.
+
+| Verification | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed. |
+| `npm test` | 37 unit tests passed. |
+| `npm run test:e2e` | Three HTTP tests passed with local socket access. |
+| `npm run test:integration` | 30 tests passed, including six outbox tests on disposable PostgreSQL 16.14 and Redis 8.2.2. Covered rollback and conflicting IDs, Redis connection recovery, two relays racing, a crash after enqueue, a lost Redis job, a stale execution lease, duplicate delivery, retry exhaustion and graceful drain. |
+| Migration and standalone process smoke | All four migrations applied through the normal CLI with invalid Redis configuration. The worker started without Meta settings, parked an unregistered operation and shut down on SIGTERM. |
+| Cleanup | No generated test databases, roles, or Redis queue keys remained after the suite. |
+
+**Status.** VERIFIED locally. Hosted CI on Node 22 and Redis 7 remains pending. No live Meta calls or production services were used.
+
+**Next unblocked task.** TENANT-001 migrates business memberships and validates tenant integrity while preserving existing owner and CRM IDs.

@@ -13,9 +13,12 @@ import {
   Task,
   User,
 } from './entities';
+import { OutboxOperation } from './entities/outbox-operation.entity';
 import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
 import { AddWebhookPersistence1760000000000 } from './migrations/1760000000000-AddWebhookPersistence';
 import { AddAssistantPersistence1760000000001 } from './migrations/1760000000001-AddAssistantPersistence';
+
+import { AddOutboxOperations1760000000002 } from './migrations/1760000000002-AddOutboxOperations';
 
 export const databaseEntities = [
   Business,
@@ -31,10 +34,12 @@ export const databaseEntities = [
   OnboardingSession,
   AssistantSession,
   Sale,
+  OutboxOperation,
 ];
 
 export const databaseMigrations = [
   InitialSchema1759999999999,
   AddWebhookPersistence1760000000000,
   AddAssistantPersistence1760000000001,
+  AddOutboxOperations1760000000002,
 ];

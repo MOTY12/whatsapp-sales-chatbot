@@ -22,6 +22,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
       WHATSAPP_VERIFY_TOKEN: ci-verify-token
@@ -41,11 +50,12 @@ jobs:
         run: npm test -- --runInBand
       - name: End-to-end tests
         run: npm run test:e2e
-      - name: PostgreSQL integration tests
+      - name: PostgreSQL and Redis integration tests
         env:
           KLEVA_TEST_PG_HOST: 127.0.0.1
           KLEVA_TEST_PG_PORT: 5432
           KLEVA_TEST_PG_DATABASE: kleva_integration_control
           KLEVA_TEST_PG_USER: kleva_integration_admin
           KLEVA_TEST_PG_PASSWORD: ci-integration-only
+          KLEVA_TEST_REDIS_URL: redis://127.0.0.1:6379
         run: npm run test:integration
