@@ -24,6 +24,7 @@ npm run migration:revert
 2. `AddWebhookPersistence` — WhatsApp connection columns, unique owner WhatsApp IDs, unique provider message IDs, and onboarding session storage.
 3. `AddAssistantPersistence` — persisted sales and assistant command sessions.
 4. `AddOutboxOperations` — durable job intent, status, lease and retry tracking.
+5. `AddTenantIntegrity` — account and membership tables, legacy membership backfill, and same-business foreign keys.
 
 CI applies, reverts, and reapplies all migrations in disposable databases on PostgreSQL 16. To run the same checks locally, use the integration suite below. For manual CLI verification, start with an empty disposable database.
 
@@ -33,8 +34,29 @@ npm run migration:revert
 npm run migration:revert
 npm run migration:revert
 npm run migration:revert
+npm run migration:revert
 npm run migration:run
 ```
+
+## Membership and tenant integrity upgrade
+
+Run the preflight on a backup or staging copy with the first four migrations applied before scheduling a populated upgrade.
+
+```bash
+npm run tenant:preflight
+```
+
+The command prints issue names, counts and blocking flags. It exits nonzero for blocking findings. It does not print customer content, phone numbers, emails, or row IDs. The migration reruns the checks while holding write locks and rolls back if it finds a blocker. Budget a maintenance window for validation, index creation, and the conversion of text business IDs on notifications, pipeline stages and onboarding sessions, plus the onboarding owner ID, to UUID. Use a transactional TypeORM migration and pause writers before deployment.
+
+- For `missing_or_invalid` or `cross_tenant` findings, inspect the reported table and column using a restricted database session. For example, locate customer-owner mismatches by joining `customers."ownerId"` to `users.id` and comparing their `"businessId"` values. Review IDs against trusted business records. Fix a confirmed incorrect link or clear an optional link only with documented approval. Keep unresolved rows intact and defer the migration.
+- For multiple active legacy owners, unresolved owner hints, or onboarding sender mismatches, confirm the intended association with a verified operator before correcting any owner role or link. Re-run preflight and apply the migration only when all blocking counts clear.
+- Multiple open threads for a business/customer are advisory. Existing threads and IDs are preserved. Open-thread uniqueness belongs to the later conversation cutover.
+
+Each legacy user gets one membership tied to their existing business and user ID. Explicit legacy owners map to `owner` and other legacy users to `staff`. Memberships start unclaimed, with neither an account link nor a verified WhatsApp binding. The legacy user trigger creates memberships for new users and keeps role and status synchronized while the membership is unclaimed. If deployment roles use explicit grants, grant legacy user writers `SELECT`, `INSERT`, and `UPDATE` on `business_members` before resuming writes. Account linkage requires a future verified claim. The migration uses no phone or synthetic email as proof of identity.
+
+The foreign keys enforce matching business IDs across conversation and message, customer and owner, follow-up, task, sale, audit, assistant, and onboarding relationships. Existing nullable CRM references still clear when their parent is deleted. Deleting a legacy user cascades to the membership tied to that legacy user. These constraints protect persisted links. Authorization and row-level read isolation remain TENANT-002 work.
+
+Reverting removes the membership schema and restores the original text column types while preserving legacy row IDs. A revert is blocked once account data exists. Reverting before account creation discards generated membership IDs and any membership-only changes. Prefer a forward migration after identity rollout. Older application binaries can still use the legacy IDs, but use the TENANT-001 build or newer for lead capture so senders linked to another business are left unassigned.
 
 ## Schema synchronization
 
@@ -97,3 +119,5 @@ The seeded upgrade uses records from the initial migration. If historical messag
 - `sales`
 - `assistant_sessions`
 - `outbox_operations`
+- `accounts`
+- `business_members`

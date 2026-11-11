@@ -81,3 +81,23 @@
 **Status.** VERIFIED locally. Hosted CI on Node 22 and Redis 7 remains pending. No live Meta calls or production services were used.
 
 **Next unblocked task.** TENANT-001 migrates business memberships and validates tenant integrity while preserving existing owner and CRM IDs.
+
+## 11 November 2026 · TENANT-001
+
+- **Starting point.** Clean `main` at `5bde45f3fd06dc2509ebb239ef3e7411604d0217`. Reviewed the architecture, audit and roadmap, legacy entities and repositories, owner and onboarding paths, and PostgreSQL and Redis fixtures. FOUNDATION-001 through FOUNDATION-004 remain verified.
+- **Schema and backfill.** Added `Account`, `BusinessMember` and `AddTenantIntegrity1760000000003`. The migration backfills one unclaimed membership per legacy user, preserves legacy IDs, and creates no accounts or verified WhatsApp bindings. A trigger keeps unclaimed memberships synchronized with legacy user writes. An account can belong to multiple businesses, with a unique membership per business/account and a unique legacy user link.
+- **Integrity and compatibility.** Added composite keys for CRM and onboarding links and business foreign keys for previously unconstrained tables. Normalized legacy text foreign key columns to UUID under a transactional write lock. The lead-capture write now leaves the customer unassigned when a sender is linked to another business, so a valid lead can still be recorded for the receiving business. Existing owner-command routing and nullable CRM delete behavior passed.
+- **Preflight and rollback.** Added `npm run tenant:preflight` to report aggregate issue counts. The migration aborts without changing legacy records on blocking findings. Duplicate open threads are advisory. The setup guide explains reviewing and correcting known links before retry, migration locking, runtime role grants, and rollback. Rollback drops unclaimed membership data and is blocked once accounts exist.
+- **Scope.** The new constraints enforce consistency for stored links. Authentication and row-level read isolation remain TENANT-002 work.
+
+| Verification | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed. |
+| `npm test` | 37 unit tests passed. |
+| `npm run test:e2e` | Three HTTP tests passed. |
+| `npm run test:integration` | 33 tests passed on disposable PostgreSQL 16.14 and Redis 8.2.2. Verified all five migrations up/down/up, populated backfill and ID preservation, account membership constraints, cross-tenant rejection, ambiguous data remediation and retry, rollback guards, legacy owner commands and lead capture, and outbox regressions. |
+| Preflight and migration CLI smoke | Clean preflight reported zero findings. An invalid legacy reference caused both commands to fail with safe output. The commands omitted the fixture values and notification content. |
+
+**Status.** VERIFIED locally on Node 24.22.1. Hosted Node 22 CI and preflight against real legacy data remain pending. No production database was used.
+
+**Next unblocked task.** TENANT-002 adds merchant authentication, scoped sessions and row-level security. It requires a test identity provider.
