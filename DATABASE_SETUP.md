@@ -38,9 +38,15 @@ npm run migration:run
 
 TypeORM `synchronize` is disabled for both the application and migration CLI in every environment. Add and apply a migration for each schema change.
 
+## Database TLS
+
+The Nest API and TypeORM CLI share the same PostgreSQL configuration. The CLI validates the database settings independently of the Meta and HTTP settings. `DATABASE_PORT` defaults to 5432.
+
+Production requires TLS and a trusted CA bundle in `DATABASE_SSL_CA`. Supply PEM certificates with literal newlines or escaped `\n` sequences. Set `DATABASE_HOST` to a DNS name or IP address covered by the server certificate. The connection verifies the certificate chain and the configured hostname or IP. It rejects `DATABASE_SSL=false` and `DATABASE_SSL_REJECT_UNAUTHORIZED=false` in production. In development and tests, TLS defaults to disabled and can be enabled for a TLS-capable database.
+
 ## PostgreSQL integration tests
 
-Use a dedicated local PostgreSQL 16 instance. For example, start this disposable instance in one terminal and stop it with Ctrl+C after testing.
+Use a dedicated local PostgreSQL 16 instance and OpenSSL to generate a temporary certificate for the TLS tests. For example, start this disposable instance in one terminal and stop it with Ctrl+C after testing.
 
 ```bash
 docker run --rm -p 127.0.0.1:55432:5432 \

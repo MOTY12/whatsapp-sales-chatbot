@@ -10,10 +10,13 @@ import {
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
+import { metaConfig } from '../config/env';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('webhooks')
 export class WhatsAppWebhookController {
+  private readonly config = metaConfig();
+
   constructor(private readonly whatsappService: WhatsAppService) {}
 
   @Get('whatsapp')
@@ -24,7 +27,8 @@ export class WhatsAppWebhookController {
   ): string {
     if (
       mode === 'subscribe' &&
-      verifyToken === process.env.WHATSAPP_VERIFY_TOKEN
+      this.config.verifyToken &&
+      verifyToken === this.config.verifyToken
     ) {
       return challenge;
     }
@@ -49,7 +53,7 @@ export class WhatsAppWebhookController {
     signature?: string,
     rawBody?: Buffer,
   ): void {
-    const secret = process.env.META_APP_SECRET?.trim();
+    const secret = this.config.appSecret;
     if (!secret) {
       throw new ForbiddenException(
         'META_APP_SECRET must be configured to receive webhooks.',

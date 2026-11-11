@@ -1,19 +1,45 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
-import { databaseEntities, databaseMigrations } from './schema';
+import { errorCode } from '../config/logging';
+import { databaseOptions } from './options';
+import { databaseMigrations } from './schema';
 
-export default new DataSource({
-  type: 'postgres',
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: Number(process.env.DATABASE_PORT || 5432),
-  username: process.env.DATABASE_USER || 'postgres',
-  password: process.env.DATABASE_PASSWORD,
-  database: process.env.DATABASE_NAME || 'klevadb',
-  ssl:
-    process.env.NODE_ENV === 'production'
-      ? { rejectUnauthorized: false }
-      : false,
-  synchronize: false,
-  entities: databaseEntities,
+// The stock CLI prints thrown errors directly. Driver and migration errors
+// can contain SQL, credential values or customer data.
+class MigrationDataSource extends DataSource {
+  private async report<T>(operation: string, execute: () => Promise<T>) {
+    try {
+      return await execute();
+    } catch (error) {
+      const code = errorCode(error);
+      throw new Error(
+        code ? `${operation} failed (${code}).` : `${operation} failed.`,
+      );
+    }
+  }
+
+  override initialize() {
+    return this.report('PostgreSQL connection', () => super.initialize());
+  }
+
+  override runMigrations(options?: Parameters<DataSource['runMigrations']>[0]) {
+    return this.report('Migration apply', () => super.runMigrations(options));
+  }
+
+  override undoLastMigration(
+    options?: Parameters<DataSource['undoLastMigration']>[0],
+  ) {
+    return this.report('Migration revert', () =>
+      super.undoLastMigration(options),
+    );
+  }
+
+  override showMigrations() {
+    return this.report('Migration status', () => super.showMigrations());
+  }
+}
+
+export default new MigrationDataSource({
+  ...databaseOptions(),
   migrations: databaseMigrations,
 });

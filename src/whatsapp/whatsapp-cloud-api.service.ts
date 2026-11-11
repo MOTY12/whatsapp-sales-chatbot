@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { metaConfig } from '../config/env';
 import type { WhatsAppCloudApiClient } from './interfaces/whatsapp-cloud-api-client.interface';
 import { OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import { BusinessRepository } from '../database/repositories/business.repository';
@@ -7,10 +8,7 @@ import { BusinessRepository } from '../database/repositories/business.repository
 @Injectable()
 export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
   private readonly logger = new Logger(WhatsAppCloudApiService.name);
-  private readonly apiVersion =
-    process.env.WHATSAPP_API_VERSION?.trim() || 'v25.0';
-  private readonly graphBaseUrl =
-    process.env.META_GRAPH_BASE_URL?.trim() || 'https://graph.facebook.com';
+  private readonly config = metaConfig();
 
   constructor(private readonly businesses: BusinessRepository) {}
 
@@ -21,7 +19,7 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
     try {
       const connection = await this.resolveConnection(businessId);
       await axios.post(
-        `${this.graphBaseUrl}/${this.apiVersion}/${connection.phoneNumberId}/messages`,
+        `${this.config.graphBaseUrl}/${this.config.apiVersion}/${connection.phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
           to: this.normalizeRecipient(message.to),
@@ -32,6 +30,7 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
           },
         },
         {
+          maxRedirects: 0,
           headers: {
             Authorization: `Bearer ${connection.accessToken}`,
             'Content-Type': 'application/json',
@@ -41,16 +40,10 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
 
       this.logger.log('Sent WhatsApp message.');
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        this.logger.error(
-          `Failed to send WhatsApp message: ${JSON.stringify(error.response?.status ?? error.message)}`,
-        );
-        return;
-      }
-
-      const messageText =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Failed to send WhatsApp message: ${messageText}`);
+      this.logger.error({
+        event: 'whatsapp.send_failed',
+        status: axios.isAxiosError(error) ? error.response?.status : undefined,
+      });
     }
   }
 
@@ -70,23 +63,14 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
       };
     }
 
-    return {
-      accessToken: this.requireEnv('WHATSAPP_ACCESS_TOKEN'),
-      phoneNumberId: this.requireEnv('WHATSAPP_PHONE_NUMBER_ID'),
-    };
+    const { accessToken, phoneNumberId } = this.config;
+    if (!accessToken || !phoneNumberId) {
+      throw new Error('The platform WhatsApp connection is not configured.');
+    }
+    return { accessToken, phoneNumberId };
   }
 
   private normalizeRecipient(value: string): string {
     return value.replace(/[^\d]/g, '');
-  }
-
-  private requireEnv(name: string): string {
-    const value = process.env[name]?.trim();
-
-    if (!value || value.startsWith('your_')) {
-      throw new Error(`Missing required environment variable: ${name}`);
-    }
-
-    return value;
   }
 }

@@ -1,18 +1,261 @@
-const REQUIRED_DATABASE_VARS = [
-  'DATABASE_HOST',
-  'DATABASE_USER',
-  'DATABASE_PASSWORD',
-  'DATABASE_NAME',
-] as const;
+import { X509Certificate } from 'node:crypto';
+import { checkServerIdentity, type ConnectionOptions } from 'node:tls';
+import type { LogLevel } from '@nestjs/common';
+import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
-export function assertRequiredEnv(): void {
-  const missing = REQUIRED_DATABASE_VARS.filter(
-    (name) => !process.env[name]?.trim(),
-  );
+const logLevels: LogLevel[] = [
+  'fatal',
+  'error',
+  'warn',
+  'log',
+  'debug',
+  'verbose',
+];
+const graphOrigin = 'https://graph.facebook.com';
 
-  if (missing.length > 0) {
+export function applicationEnvironment(env = process.env) {
+  const value = env.NODE_ENV?.trim() || 'development';
+  if (value !== 'development' && value !== 'test' && value !== 'production') {
+    throw new Error('NODE_ENV must be development, test or production.');
+  }
+  return value;
+}
+
+function port(env: NodeJS.ProcessEnv, name: string, fallback: number) {
+  const value = env[name]?.trim() ?? String(fallback);
+  const parsed = Number(value);
+  if (!/^\d+$/.test(value) || parsed < 1 || parsed > 65535) {
+    throw new Error(`${name} must be an integer from 1 to 65535.`);
+  }
+  return parsed;
+}
+
+function flag(env: NodeJS.ProcessEnv, name: string, fallback: boolean) {
+  const value = env[name]?.trim();
+  if (value === undefined) return fallback;
+  if (value === 'true' || value === 'false') return value === 'true';
+  throw new Error(`${name} must be true or false.`);
+}
+
+function required<const Names extends string>(
+  env: NodeJS.ProcessEnv,
+  names: readonly Names[],
+  production: boolean,
+): Record<Names, string> {
+  const missing = names.filter((name) => {
+    const value = env[name]?.trim();
+    return !value || (production && isPlaceholder(value));
+  });
+  if (missing.length) {
     throw new Error(
-      `Missing required environment variables: ${missing.join(', ')}. Copy .env.example to .env and fill in the values.`,
+      `Missing required environment variables: ${missing.join(', ')}. Set non-placeholder values for this environment.`,
     );
   }
+  return Object.fromEntries(
+    names.map((name) => [name, env[name]?.trim()]),
+  ) as Record<Names, string>;
+}
+
+function isPlaceholder(value: string) {
+  return /^(replace_me$|your[_-])/i.test(value);
+}
+
+function validatedUrl(value: string, name: string, protocols: string[]) {
+  try {
+    const url = new URL(value);
+    if (protocols.includes(url.protocol) && url.hostname) return url;
+  } catch {
+    // Report the setting name without printing its value.
+  }
+  throw new Error(
+    `${name} must be a valid ${protocols.map((protocol) => protocol.slice(0, -1)).join(' or ')} URL.`,
+  );
+}
+
+export function databaseConfig(env = process.env): PostgresConnectionOptions {
+  const production = applicationEnvironment(env) === 'production';
+  const db = required(
+    env,
+    ['DATABASE_HOST', 'DATABASE_USER', 'DATABASE_PASSWORD', 'DATABASE_NAME'],
+    production,
+  );
+  const tls = flag(env, 'DATABASE_SSL', production);
+  const verify = flag(env, 'DATABASE_SSL_REJECT_UNAUTHORIZED', true);
+  if (production && !tls) {
+    throw new Error('DATABASE_SSL must be enabled in production.');
+  }
+  if (tls && !verify) {
+    throw new Error(
+      'DATABASE_SSL_REJECT_UNAUTHORIZED must be true when database TLS is enabled.',
+    );
+  }
+  if (tls && db.DATABASE_HOST.startsWith('/')) {
+    throw new Error(
+      'DATABASE_HOST must be a hostname or IP address when database TLS is enabled.',
+    );
+  }
+
+  const ca = env.DATABASE_SSL_CA?.trim().replace(/\\n/g, '\n');
+  if (production && !ca) {
+    throw new Error(
+      'DATABASE_SSL_CA is required in production. Supply the trusted PostgreSQL CA certificate in PEM format.',
+    );
+  }
+  if (tls && ca) {
+    const certificates = ca.match(
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+    );
+    try {
+      if (
+        !certificates ||
+        ca
+          .replace(
+            /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+            '',
+          )
+          .trim()
+      ) {
+        throw new Error();
+      }
+      for (const certificate of certificates) new X509Certificate(certificate);
+    } catch {
+      throw new Error('DATABASE_SSL_CA must contain valid PEM certificates.');
+    }
+  }
+
+  const ssl:
+    | Pick<
+        ConnectionOptions,
+        'ca' | 'rejectUnauthorized' | 'checkServerIdentity'
+      >
+    | false = tls && {
+    ca,
+    rejectUnauthorized: true,
+    // pg supplies SNI for DNS names only. Verify the configured IP or name in either case.
+    checkServerIdentity: (_name, certificate) =>
+      checkServerIdentity(db.DATABASE_HOST, certificate),
+  };
+
+  return {
+    type: 'postgres',
+    host: db.DATABASE_HOST,
+    port: port(env, 'DATABASE_PORT', 5432),
+    username: db.DATABASE_USER,
+    password: env.DATABASE_PASSWORD,
+    database: db.DATABASE_NAME,
+    connectTimeoutMS: 5000,
+    synchronize: false,
+    logging: flag(env, 'DATABASE_LOGGING', false),
+    ssl,
+  };
+}
+
+export function metaConfig(env = process.env) {
+  const production = applicationEnvironment(env) === 'production';
+  const graph = validatedUrl(
+    env.META_GRAPH_BASE_URL?.trim() || graphOrigin,
+    'META_GRAPH_BASE_URL',
+    production ? ['https:'] : ['http:', 'https:'],
+  );
+  if (
+    graph.username ||
+    graph.password ||
+    graph.search ||
+    graph.hash ||
+    graph.pathname !== '/' ||
+    (production && graph.origin !== graphOrigin)
+  ) {
+    throw new Error(
+      'META_GRAPH_BASE_URL must be a Graph API origin. Production requires https://graph.facebook.com.',
+    );
+  }
+  const apiVersion = env.WHATSAPP_API_VERSION?.trim() || 'v25.0';
+  if (!/^v\d+\.\d+$/.test(apiVersion)) {
+    throw new Error('WHATSAPP_API_VERSION must use the vMAJOR.MINOR format.');
+  }
+  const accessToken = env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneNumberId = env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  return {
+    graphBaseUrl: graph.origin,
+    apiVersion,
+    appSecret: env.META_APP_SECRET?.trim() || undefined,
+    verifyToken: env.WHATSAPP_VERIFY_TOKEN || undefined,
+    accessToken:
+      accessToken && !isPlaceholder(accessToken) ? accessToken : undefined,
+    phoneNumberId:
+      phoneNumberId && !isPlaceholder(phoneNumberId)
+        ? phoneNumberId
+        : undefined,
+  };
+}
+
+export function signupConfig(env = process.env) {
+  const production = applicationEnvironment(env) === 'production';
+  const values = required(
+    env,
+    [
+      'META_APP_ID',
+      'META_APP_SECRET',
+      'META_REDIRECT_URI',
+      'WHATSAPP_BUSINESS_CONFIG_ID',
+      'WHATSAPP_API_VERSION',
+    ],
+    production,
+  );
+  const redirect = validatedUrl(
+    values.META_REDIRECT_URI,
+    'META_REDIRECT_URI',
+    production ? ['https:'] : ['http:', 'https:'],
+  );
+  if (
+    redirect.username ||
+    redirect.password ||
+    redirect.hash ||
+    (production && isPlaceholder(redirect.hostname))
+  ) {
+    throw new Error(
+      'META_REDIRECT_URI must be a callback URL without credentials or a fragment.',
+    );
+  }
+  return {
+    ...metaConfig(env),
+    appId: values.META_APP_ID,
+    appSecret: values.META_APP_SECRET,
+    redirectUri: values.META_REDIRECT_URI,
+    businessConfigId: values.WHATSAPP_BUSINESS_CONFIG_ID,
+  };
+}
+
+export function appConfig(env = process.env) {
+  const environment = applicationEnvironment(env);
+  const production = environment === 'production';
+  const database = databaseConfig(env);
+  const meta = signupConfig(env);
+  if (production) required(env, ['WHATSAPP_VERIFY_TOKEN'], true);
+  const level = env.LOG_LEVEL?.trim() || 'log';
+  const levelIndex = logLevels.findIndex((candidate) => candidate === level);
+  if (levelIndex < 0)
+    throw new Error(
+      'LOG_LEVEL must be fatal, error, warn, log, debug or verbose.',
+    );
+
+  const redisUrl = env.REDIS_URL?.trim() || undefined;
+  if (redisUrl) validatedUrl(redisUrl, 'REDIS_URL', ['redis:', 'rediss:']);
+  return {
+    environment,
+    port: port(env, 'PORT', 3000),
+    database,
+    meta,
+    logLevels: logLevels.slice(0, levelIndex + 1),
+    redis: {
+      url: redisUrl,
+      host: env.REDIS_HOST?.trim() || 'localhost',
+      port: port(env, 'REDIS_PORT', 6379),
+      password: env.REDIS_PASSWORD || undefined,
+    },
+    ai: {
+      apiKey: env.OPENAI_API_KEY?.trim() || undefined,
+      model: env.OPENAI_MODEL?.trim() || undefined,
+    },
+  };
 }

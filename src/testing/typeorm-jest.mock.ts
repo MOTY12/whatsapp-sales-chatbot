@@ -24,7 +24,7 @@ function createRepositoryStub(): Record<string, jest.Mock> {
 }
 
 export class TypeOrmModule {
-  static forRoot(): DynamicModule {
+  static forRootAsync(): DynamicModule {
     return { module: TypeOrmModule };
   }
 

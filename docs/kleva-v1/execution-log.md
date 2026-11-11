@@ -40,3 +40,24 @@
 **Status.** VERIFIED locally on Node 24.22.1 and PostgreSQL 16.14. Hosted GitHub Actions on Node 22 remains pending. There is no blocker for FOUNDATION-003.
 
 **Next unblocked task.** FOUNDATION-003 consolidates runtime database configuration and adds verified production TLS, readiness checks, and redaction.
+
+## 11 November 2026 · FOUNDATION-003
+
+- **Starting point.** Clean `main` at `0fd914e2032a88a01eb6733b14c52044496486eb`. Reviewed the V1 audit, architecture, roadmap, tracker and log, the environment and TypeORM settings, and the existing CI and test profiles. FOUNDATION-001 and FOUNDATION-002 remain verified.
+- **Configuration.** Centralized validation in `src/config/env.ts`. `src/database/options.ts` supplies the Nest and CLI database options and schema registry. The integration harness uses the same database parser after its dedicated safety checks. The CLI validates only database settings. The HTTP bootstrap also validates server, logging, Meta and optional Redis and OpenAI settings. WhatsApp and Embedded Signup consume the shared Meta configuration.
+- **TLS and logging.** Production requires a trusted PEM CA and verifies the server certificate chain and configured DNS name or IP address. Plaintext and insecure certificate verification settings fail before connection. The Graph origin is restricted in production and credential-bearing requests reject redirects. JSON application logs carry validated or generated request IDs. Request logs omit URLs, headers and payloads, and database and provider logs retain safe failure metadata. The CLI retains migration names and status while suppressing SQL, parameters and raw errors. Embedded Signup error pages keep their status and retry guidance with generic provider failure text.
+- **Health.** Added `GET /health/live` and `GET /health/ready`. Readiness uses a PostgreSQL probe with a one-second response budget and shares the pending probe across concurrent requests. Liveness is independent of PostgreSQL after the app starts. The initial Nest startup still requires a working database connection.
+- **Documentation.** Updated `.env.example`, `README.md` and `DATABASE_SETUP.md` with setup, production TLS, logging, health and integration-test instructions.
+
+| Verification | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed. |
+| `npm test` | 37 tests passed across seven suites, including environment validation, log redaction, and the readiness timeout. |
+| `npm run test:e2e` | Three tests passed with local socket access. |
+| `npm run test:integration` | 24 tests passed across five suites on disposable PostgreSQL 16.14. The new suites verified matching API/CLI options, correlation, readiness recovery, and PostgreSQL queries through a locally terminated TLS connection. The client rejected an untrusted certificate and a hostname mismatch. |
+| Compiled API and migration CLI with `NODE_ENV=production DATABASE_SSL=false` | Both rejected the setting before connecting and omitted the fixture password from output. |
+| Migration and process outage smoke | The normal CLI applied and reported all three migrations. The compiled Nest app booted and returned HTTP 200 readiness. After PostgreSQL stopped, liveness returned HTTP 200 and readiness HTTP 503. Test database and role cleanup passed. |
+
+**Status.** VERIFIED locally on Node 24.22.1 and PostgreSQL 16.14. Hosted Node 22 CI and deployment connectivity to PostgreSQL and Meta remain unverified. The TLS test uses a temporary certificate and a local TLS relay to the disposable database.
+
+**Next unblocked task.** FOUNDATION-004 adds the BullMQ worker runtime and durable PostgreSQL outbox. Use a disposable Redis instance for verification.

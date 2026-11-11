@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import {
+  DatabaseReadiness,
+  HealthController,
+} from './health/health.controller';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -13,7 +17,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     OnboardingModule,
     MetaEmbeddedSignupModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, HealthController],
+  providers: [AppService, DatabaseReadiness],
 })
 export class AppModule {}

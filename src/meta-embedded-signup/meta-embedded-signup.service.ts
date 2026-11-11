@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { signupConfig } from '../config/env';
+import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { EmbeddedSignupConnectionService } from './embedded-signup-connection.service';
@@ -13,15 +14,8 @@ import {
 
 @Injectable()
 export class MetaEmbeddedSignupService {
-  private readonly metaAppId = this.requireEnv('META_APP_ID');
-  private readonly metaAppSecret = this.requireEnv('META_APP_SECRET');
-  private readonly metaRedirectUri = this.requireEnv('META_REDIRECT_URI');
-  private readonly whatsappBusinessConfigId = this.requireEnv(
-    'WHATSAPP_BUSINESS_CONFIG_ID',
-  );
-  private readonly whatsappApiVersion = this.requireEnv('WHATSAPP_API_VERSION');
-  private readonly graphBaseUrl =
-    process.env.META_GRAPH_BASE_URL ?? 'https://graph.facebook.com';
+  private readonly config = signupConfig();
+  private readonly logger = new Logger(MetaEmbeddedSignupService.name);
   private readonly facebookBaseUrl = 'https://www.facebook.com';
 
   constructor(
@@ -41,16 +35,16 @@ export class MetaEmbeddedSignupService {
       feature: 'whatsapp_embedded_signup',
       version: 2,
       setup: {
-        business_config_id: this.whatsappBusinessConfigId,
+        business_config_id: this.config.businessConfigId,
       },
     };
 
     const url = new URL(
-      `${this.facebookBaseUrl}/${this.whatsappApiVersion}/dialog/oauth`,
+      `${this.facebookBaseUrl}/${this.config.apiVersion}/dialog/oauth`,
     );
 
-    url.searchParams.set('client_id', this.metaAppId);
-    url.searchParams.set('redirect_uri', this.metaRedirectUri);
+    url.searchParams.set('client_id', this.config.appId);
+    url.searchParams.set('redirect_uri', this.config.redirectUri);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set(
       'scope',
@@ -69,7 +63,7 @@ export class MetaEmbeddedSignupService {
       throw new Error('The embedded signup state is invalid or missing.');
     }
 
-    const expectedSignature = createHmac('sha256', this.metaAppSecret)
+    const expectedSignature = createHmac('sha256', this.config.appSecret)
       .update(encodedPayload)
       .digest('base64url');
 
@@ -112,9 +106,6 @@ export class MetaEmbeddedSignupService {
         statusCode: 400,
         html: this.buildErrorHtml(
           'Meta returned an error during WhatsApp Embedded Signup.',
-          [query.error, query.error_reason, query.error_description]
-            .filter(Boolean)
-            .join(' - '),
         ),
       };
     }
@@ -166,14 +157,15 @@ export class MetaEmbeddedSignupService {
         html: this.buildSuccessHtml(),
       };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown callback failure.';
+      this.logger.warn({
+        event: 'meta.signup_failed',
+        status: axios.isAxiosError(error) ? error.response?.status : undefined,
+      });
 
       return {
         statusCode: 400,
         html: this.buildErrorHtml(
           'WhatsApp Embedded Signup could not be completed.',
-          message,
         ),
       };
     }
@@ -181,12 +173,13 @@ export class MetaEmbeddedSignupService {
 
   async exchangeCodeForAccessToken(code: string): Promise<string> {
     const response = await axios.get(
-      `${this.graphBaseUrl}/${this.whatsappApiVersion}/oauth/access_token`,
+      `${this.config.graphBaseUrl}/${this.config.apiVersion}/oauth/access_token`,
       {
+        maxRedirects: 0,
         params: {
-          client_id: this.metaAppId,
-          client_secret: this.metaAppSecret,
-          redirect_uri: this.metaRedirectUri,
+          client_id: this.config.appId,
+          client_secret: this.config.appSecret,
+          redirect_uri: this.config.redirectUri,
           code,
         },
       },
@@ -270,8 +263,9 @@ export class MetaEmbeddedSignupService {
     params: Record<string, string>,
   ): Promise<unknown> {
     const response = await axios.get(
-      `${this.graphBaseUrl}/${this.whatsappApiVersion}${path}`,
+      `${this.config.graphBaseUrl}/${this.config.apiVersion}${path}`,
       {
+        maxRedirects: 0,
         params: {
           ...params,
           access_token: accessToken,
@@ -287,7 +281,7 @@ export class MetaEmbeddedSignupService {
       JSON.stringify(payload),
       'utf8',
     ).toString('base64url');
-    const signature = createHmac('sha256', this.metaAppSecret)
+    const signature = createHmac('sha256', this.config.appSecret)
       .update(encodedPayload)
       .digest('base64url');
 
@@ -452,9 +446,8 @@ export class MetaEmbeddedSignupService {
     ].join('');
   }
 
-  private buildErrorHtml(title: string, details?: string): string {
+  private buildErrorHtml(title: string): string {
     const safeTitle = this.escapeHtml(title);
-    const safeDetails = details ? this.escapeHtml(details) : '';
 
     return [
       '<!doctype html>',
@@ -462,7 +455,6 @@ export class MetaEmbeddedSignupService {
       '<head><meta charset="utf-8"><title>WhatsApp connection failed</title></head>',
       '<body>',
       `<p>${safeTitle}</p>`,
-      safeDetails ? `<p>${safeDetails}</p>` : '',
       '<p>Please retry the connect link from WhatsApp.</p>',
       '</body>',
       '</html>',
@@ -480,15 +472,5 @@ export class MetaEmbeddedSignupService {
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  }
-
-  private requireEnv(name: string): string {
-    const value = process.env[name]?.trim();
-
-    if (!value) {
-      throw new Error(`Missing required environment variable: ${name}`);
-    }
-
-    return value;
   }
 }

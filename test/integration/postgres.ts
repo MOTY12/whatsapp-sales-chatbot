@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { databaseConfig } from '../../src/config/env';
 import { DataSource, Migration } from 'typeorm';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 import {
@@ -43,16 +44,15 @@ export function integrationConfig(
     );
   }
   return {
-    type: 'postgres',
-    database: controlDatabase,
-    host,
-    port,
-    username,
-    password,
-    connectTimeoutMS: 5000,
+    ...databaseConfig({
+      NODE_ENV: 'test',
+      DATABASE_HOST: host,
+      DATABASE_PORT: String(port),
+      DATABASE_USER: username,
+      DATABASE_PASSWORD: password,
+      DATABASE_NAME: controlDatabase,
+    }),
     installExtensions: false,
-    synchronize: false,
-    ssl: false,
   };
 }
 
