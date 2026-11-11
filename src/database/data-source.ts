@@ -1,23 +1,6 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
-import {
-  AuditLog,
-  AssistantSession,
-  Business,
-  Conversation,
-  Customer,
-  FollowUp,
-  Message,
-  Notification,
-  OnboardingSession,
-  PipelineStage,
-  Sale,
-  Task,
-  User,
-} from './entities';
-import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
-import { AddWebhookPersistence1760000000000 } from './migrations/1760000000000-AddWebhookPersistence';
-import { AddAssistantPersistence1760000000001 } from './migrations/1760000000001-AddAssistantPersistence';
+import { databaseEntities, databaseMigrations } from './schema';
 
 export default new DataSource({
   type: 'postgres',
@@ -31,24 +14,6 @@ export default new DataSource({
       ? { rejectUnauthorized: false }
       : false,
   synchronize: false,
-  entities: [
-    Business,
-    User,
-    Customer,
-    Conversation,
-    Message,
-    PipelineStage,
-    FollowUp,
-    Task,
-    AuditLog,
-    Notification,
-    OnboardingSession,
-    AssistantSession,
-    Sale,
-  ],
-  migrations: [
-    InitialSchema1759999999999,
-    AddWebhookPersistence1760000000000,
-    AddAssistantPersistence1760000000001,
-  ],
+  entities: databaseEntities,
+  migrations: databaseMigrations,
 });

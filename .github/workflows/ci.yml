@@ -12,23 +12,18 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kleva_ci
+          POSTGRES_USER: kleva_integration_admin
+          POSTGRES_PASSWORD: ci-integration-only
+          POSTGRES_DB: kleva_integration_control
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -h 127.0.0.1 -U kleva_integration_admin -d kleva_integration_control"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
       NODE_ENV: test
-      DATABASE_HOST: localhost
-      DATABASE_PORT: 5432
-      DATABASE_USER: postgres
-      DATABASE_PASSWORD: postgres
-      DATABASE_NAME: kleva_ci
       WHATSAPP_VERIFY_TOKEN: ci-verify-token
       META_APP_SECRET: ci-app-secret
     steps:
@@ -46,9 +41,11 @@ jobs:
         run: npm test -- --runInBand
       - name: End-to-end tests
         run: npm run test:e2e
-      - name: Migration check (apply, revert, re-apply)
-        run: |
-          npm run migration:run
-          npm run migration:revert
-          npm run migration:revert
-          npm run migration:run
+      - name: PostgreSQL integration tests
+        env:
+          KLEVA_TEST_PG_HOST: 127.0.0.1
+          KLEVA_TEST_PG_PORT: 5432
+          KLEVA_TEST_PG_DATABASE: kleva_integration_control
+          KLEVA_TEST_PG_USER: kleva_integration_admin
+          KLEVA_TEST_PG_PASSWORD: ci-integration-only
+        run: npm run test:integration

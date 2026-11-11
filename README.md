@@ -65,7 +65,7 @@ npm run test:e2e
 npm run migration:run
 ```
 
-The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI runs the migration check separately against PostgreSQL.
+The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 to verify migrations and repository behavior. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
 
 ## MVP boundary
 
