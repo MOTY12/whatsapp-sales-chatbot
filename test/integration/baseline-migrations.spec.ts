@@ -2,8 +2,10 @@ import { databaseMigrations } from '../../src/database/schema';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
 const expectedTables = [
+  'accounts',
   'assistant_sessions',
   'audit_logs',
+  'business_members',
   'businesses',
   'conversations',
   'customers',
@@ -54,27 +56,49 @@ describe('PostgreSQL migration baseline', () => {
       WHERE constraint_schema = 'public' AND constraint_type = 'FOREIGN KEY'
       ORDER BY constraint_name
     `);
-    expect(foreignKeys.map(({ constraint_name }) => constraint_name)).toEqual([
-      'FK_assistant_sessions_business',
-      'FK_assistant_sessions_owner',
-      'FK_audit_logs_business',
-      'FK_audit_logs_user',
-      'FK_conversations_business',
-      'FK_conversations_customer',
-      'FK_customers_business',
-      'FK_customers_owner',
-      'FK_follow_ups_business',
-      'FK_follow_ups_customer',
-      'FK_follow_ups_owner',
-      'FK_messages_conversation',
-      'FK_outbox_operations_business',
-      'FK_sales_business',
-      'FK_sales_customer',
-      'FK_sales_owner',
-      'FK_tasks_business',
-      'FK_tasks_owner',
-      'FK_users_business',
-    ]);
+    expect(
+      foreignKeys.map(({ constraint_name }) => constraint_name).sort(),
+    ).toEqual(
+      [
+        'FK_assistant_sessions_business',
+        'FK_assistant_sessions_owner',
+        'FK_audit_logs_business',
+        'FK_audit_logs_user',
+        'FK_conversations_business',
+        'FK_conversations_customer',
+        'FK_customers_business',
+        'FK_customers_owner',
+        'FK_follow_ups_business',
+        'FK_follow_ups_customer',
+        'FK_follow_ups_owner',
+        'FK_messages_conversation',
+        'FK_outbox_operations_business',
+        'FK_sales_business',
+        'FK_sales_customer',
+        'FK_sales_owner',
+        'FK_tasks_business',
+        'FK_tasks_owner',
+        'FK_users_business',
+        'FK_assistant_sessions_ownerId_tenant',
+        'FK_audit_logs_userId_tenant',
+        'FK_conversations_customerId_tenant',
+        'FK_customers_ownerId_tenant',
+        'FK_follow_ups_customerId_tenant',
+        'FK_follow_ups_ownerId_tenant',
+        'FK_members_account',
+        'FK_members_business',
+        'FK_members_legacy_tenant',
+        'FK_messages_conversationId_tenant',
+        'FK_messages_tenant_business',
+        'FK_notifications_tenant_business',
+        'FK_onboarding_sessions_ownerId_tenant',
+        'FK_onboarding_sessions_tenant_business',
+        'FK_pipeline_stages_tenant_business',
+        'FK_sales_customerId_tenant',
+        'FK_sales_ownerId_tenant',
+        'FK_tasks_ownerId_tenant',
+      ].sort(),
+    );
 
     for (const name of [...expectedMigrations].reverse()) {
       const [latest] = await source.query<{ name: string }[]>(

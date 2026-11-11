@@ -26,10 +26,10 @@ export class OnboardingSession {
   @Column({ type: 'jsonb', default: {} })
   profile: Record<string, unknown>;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   businessId: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   ownerId: string | null;
 
   @Column({ type: 'varchar', nullable: true })

@@ -13,12 +13,16 @@ import {
   Task,
   User,
 } from './entities';
+import { Account } from './entities/account.entity';
+import { BusinessMember } from './entities/business-member.entity';
 import { OutboxOperation } from './entities/outbox-operation.entity';
 import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
 import { AddWebhookPersistence1760000000000 } from './migrations/1760000000000-AddWebhookPersistence';
 import { AddAssistantPersistence1760000000001 } from './migrations/1760000000001-AddAssistantPersistence';
 
 import { AddOutboxOperations1760000000002 } from './migrations/1760000000002-AddOutboxOperations';
+
+import { AddTenantIntegrity1760000000003 } from './migrations/1760000000003-AddTenantIntegrity';
 
 export const databaseEntities = [
   Business,
@@ -35,6 +39,8 @@ export const databaseEntities = [
   AssistantSession,
   Sale,
   OutboxOperation,
+  Account,
+  BusinessMember,
 ];
 
 export const databaseMigrations = [
@@ -42,4 +48,5 @@ export const databaseMigrations = [
   AddWebhookPersistence1760000000000,
   AddAssistantPersistence1760000000001,
   AddOutboxOperations1760000000002,
+  AddTenantIntegrity1760000000003,
 ];

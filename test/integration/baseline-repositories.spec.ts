@@ -300,30 +300,30 @@ describe('PostgreSQL repository baseline', () => {
     }
   });
 
-  // Update this characterization when TENANT-001 adds same-tenant constraints.
-  it('documents that foreign keys currently permit a conversation or message to reference another tenant', async () => {
-    const conversation = await repo.conversations.create({
-      businessId: first.business.id,
-      customerId: second.customer.id,
-    });
-    try {
-      expect(conversation).toMatchObject({
+  it('rejects cross-tenant conversation and message references', async () => {
+    await expect(
+      repo.conversations.create({
         businessId: first.business.id,
         customerId: second.customer.id,
-      });
-      await expect(
-        repo.messages.create({
-          businessId: second.business.id,
-          conversationId: conversation.id,
-          direction: 'inbound',
-          content: 'Cross-tenant constraint fixture',
-        }),
-      ).resolves.toMatchObject({
+      }),
+    ).rejects.toMatchObject({
+      driverError: {
+        code: '23503',
+        constraint: 'FK_conversations_customerId_tenant',
+      },
+    });
+    await expect(
+      repo.messages.create({
         businessId: second.business.id,
-        conversationId: conversation.id,
-      });
-    } finally {
-      await runtime.getRepository(Conversation).delete(conversation.id);
-    }
+        conversationId: first.conversation.id,
+        direction: 'inbound',
+        content: 'Cross-tenant constraint fixture',
+      }),
+    ).rejects.toMatchObject({
+      driverError: {
+        code: '23503',
+        constraint: 'FK_messages_conversationId_tenant',
+      },
+    });
   });
 });

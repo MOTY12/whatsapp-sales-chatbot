@@ -20,10 +20,10 @@ export class Sale {
   @Column()
   businessId: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   customerId: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   ownerId: string | null;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })

@@ -88,7 +88,6 @@ export class WebhookLeadCaptureService {
       isNewLead = true;
       customer = await this.customers.create({
         businessId: business.id,
-        ownerId: owner?.id,
         name: message.profileName?.trim() || `WhatsApp ${normalizedPhone}`,
         phone: normalizedPhone,
         whatsappId: message.from,

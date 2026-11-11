@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { errorCode } from '../config/logging';
 import { databaseOptions } from './options';
 import { databaseMigrations } from './schema';
+import { TenantIntegrityError } from './tenant-integrity';
 
 // The stock CLI prints thrown errors directly. Driver and migration errors
 // can contain SQL, credential values or customer data.
@@ -11,6 +12,7 @@ class MigrationDataSource extends DataSource {
     try {
       return await execute();
     } catch (error) {
+      if (error instanceof TenantIntegrityError) throw error;
       const code = errorCode(error);
       throw new Error(
         code ? `${operation} failed (${code}).` : `${operation} failed.`,
