@@ -84,7 +84,7 @@ flowchart LR
 
 ### TENANT-002 · Authenticate and authorize merchant access · Medium
 
-- **Objective and status.** Establish protected sessions and tenant queries. src/Auth/ is empty.
+- **Objective and status.** Establish protected sessions and tenant queries. Local fixture acceptance is verified in the [execution log](execution-log.md).
 - **Existing files → changes.** src/Auth/, src/app.module.ts, database module → auth, session and scoped transaction helpers.
 - **Requirements.** OIDC PKCE, cookie session, logout, CSRF, DTO validation and current role check. Add transaction-local tenant context, narrow lookup entry points and forced RLS on tenant tables when their callers are migrated. Protect legacy records before exposing them by API. **DB.** Sessions and runtime-role RLS policies. **API.** Auth routes and /me.
 - **Dependencies and security.** TENANT-001 and test IdP. Enforce issuer, audience, nonce and redirects. No scope fails closed.

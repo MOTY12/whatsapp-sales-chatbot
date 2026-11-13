@@ -1,13 +1,11 @@
-import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { fork } from 'node:child_process';
+import { once } from 'node:events';
+import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Response } from 'supertest';
-import type { App } from 'supertest/types';
 import type { DataSource } from 'typeorm';
-import { AuthModule } from '../../src/Auth/auth.module';
 import { MerchantAccess } from '../../src/Auth/merchant-access.service';
-import { MerchantOidcClient } from '../../src/Auth/oidc-client';
 import { MerchantDatabase } from '../../src/Auth/merchant-database';
 import { merchantAuthConfig } from '../../src/config/env';
 import { Account } from '../../src/database/entities/account.entity';
@@ -16,16 +14,6 @@ import { merchantPolicyTables } from '../../src/database/merchant-access';
 import { seedTenant } from './fixtures';
 import { clientId, clientSecret, startIdentityProvider } from './oidc-fixture';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
-
-// Jest transforms the adapter's dynamic import to require. Load the actual
-// ESM client through Node's loader so the tests exercise discovery and exchange.
-jest.mock('openid-client', () => {
-  const { createRequire } =
-    jest.requireActual<typeof import('node:module')>('node:module');
-  return createRequire(process.cwd() + '/package.json')(
-    'openid-client',
-  ) as typeof import('openid-client');
-});
 
 function cookieHeader(response: Response, name: string) {
   const headers = response.headers['set-cookie'] as unknown as
@@ -46,7 +34,9 @@ const origin = 'http://127.0.0.1:3000';
 describe('merchant OIDC and tenant isolation', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
   let idp: Awaited<ReturnType<typeof startIdentityProvider>>;
-  let app: INestApplication<App>;
+  let app: ReturnType<typeof fork>;
+  let server: string;
+  let merchantDatabase: MerchantDatabase;
   let admin: DataSource;
   let first: Awaited<ReturnType<typeof seedTenant>>;
   let second: Awaited<ReturnType<typeof seedTenant>>;
@@ -80,30 +70,46 @@ describe('merchant OIDC and tenant isolation', () => {
       OIDC_CLIENT_SECRET: clientSecret,
       OIDC_REDIRECT_URI: origin + '/auth/callback',
     };
-    jest.replaceProperty(process, 'env', env);
-    const module = await Test.createTestingModule({
-      imports: [AuthModule],
-    }).compile();
-    app = module.createNestApplication();
-    await app.init();
-    const probe = app.get(MerchantOidcClient) as unknown as {
-      discover(settings: NonNullable<ReturnType<typeof merchantAuthConfig>>): Promise<unknown>;
-    };
-    await probe.discover(merchantAuthConfig(env)!);
+    // Run Nest under Node's native module loader while keeping the signed
+    // provider and disposable database under the suite's control.
+    app = fork(join(__dirname, 'auth-app.ts'), {
+      env,
+      execArgv: ['-r', 'ts-node/register/transpile-only'],
+    });
+    const [port] = (await Promise.race([
+      once(app, 'message'),
+      once(app, 'exit').then(([code]) => {
+        throw new Error(
+          'Merchant auth fixture exited with code ' + String(code),
+        );
+      }),
+    ])) as [unknown];
+    if (typeof port !== 'number') throw new Error('Expected auth fixture port');
+    server = 'http://127.0.0.1:' + String(port);
+
+    merchantDatabase = new MerchantDatabase(merchantAuthConfig(env));
+    await merchantDatabase.onModuleInit();
   });
 
   afterAll(async () => {
     try {
-      await app?.close();
+      if (app?.connected) {
+        const exited = once(app, 'exit');
+        app.disconnect();
+        await exited;
+      }
+      await merchantDatabase?.onApplicationShutdown();
     } finally {
-      jest.restoreAllMocks();
-      await idp?.close();
-      await database?.close();
+      try {
+        await idp?.close();
+      } finally {
+        await database?.close();
+      }
     }
   });
 
   async function start() {
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/auth/login')
       .query({ redirect_uri: 'https://untrusted.example.test/callback' })
       .expect(302)
@@ -128,7 +134,7 @@ describe('merchant OIDC and tenant isolation', () => {
     const { authorization, binding } = await start();
     const state = authorization.searchParams.get('state');
     const code = idp.authorize(authorization, subject);
-    const response = await request(app.getHttpServer())
+    const response = await request(server)
       .get('/auth/callback')
       .query({ code, state })
       .set('Cookie', previous ? binding + '; ' + previous : binding)
@@ -168,26 +174,26 @@ describe('merchant OIDC and tenant isolation', () => {
     expect(() =>
       merchantAuthConfig({ ...env, MERCHANT_DATABASE_USER: 'postgres' }),
     ).toThrow('separate');
-    await request(app.getHttpServer()).get('/auth/me').expect(401);
-    await request(app.getHttpServer()).get('/auth/businesses').expect(401);
+    await request(server).get('/auth/me').expect(401);
+    await request(server).get('/auth/businesses').expect(401);
   });
 
   it('binds login state to the browser and consumes a callback once', async () => {
     const { authorization, binding } = await start();
     const state = authorization.searchParams.get('state');
     const code = idp.authorize(authorization, 'state-fixture');
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/callback')
       .set('Cookie', binding)
       .query({ code, state: 'invalid' })
       .expect(400);
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/callback')
       .query({ code, state })
       .expect(400);
     const concurrent = await Promise.all(
       [1, 2].map(() =>
-        request(app.getHttpServer())
+        request(server)
           .get('/auth/callback')
           .set('Cookie', binding)
           .query({ code, state }),
@@ -207,7 +213,7 @@ describe('merchant OIDC and tenant isolation', () => {
     const { authorization, binding } = await start();
     const subject = 'bad-' + fault;
     const code = idp.authorize(authorization, subject, fault);
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/callback')
       .set('Cookie', binding)
       .query({ code, state: authorization.searchParams.get('state') })
@@ -228,7 +234,7 @@ describe('merchant OIDC and tenant isolation', () => {
     expect(rows).toEqual([
       { token_digest: old.digest, csrf_digest: hash(old.csrf) },
     ]);
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/me')
       .set('Cookie', old.session)
       .expect(200, { accountId: old.accountId, memberships: [] });
@@ -239,34 +245,34 @@ describe('merchant OIDC and tenant isolation', () => {
     const rotated = await login('session-fixture', old.session);
     expect(rotated.session).not.toEqual(old.session);
     expect(rotated.accountId).toBe(old.accountId);
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/me')
       .set('Cookie', old.session)
       .expect(401);
-    await request(app.getHttpServer())
+    await request(server)
       .post('/auth/logout')
       .set('Cookie', rotated.session)
       .set('Origin', 'http://other.example.test')
       .set('X-CSRF-Token', rotated.csrf)
       .expect(403);
-    await request(app.getHttpServer())
+    await request(server)
       .post('/auth/logout')
       .set('Cookie', rotated.session)
       .set('Origin', origin)
       .expect(403);
-    await request(app.getHttpServer())
+    await request(server)
       .post('/auth/logout')
       .set('Cookie', rotated.session)
       .set('Origin', origin)
       .set('X-CSRF-Token', old.csrf)
       .expect(403);
-    await request(app.getHttpServer())
+    await request(server)
       .post('/auth/logout')
       .set('Cookie', rotated.session)
       .set('Origin', origin)
       .set('X-CSRF-Token', rotated.csrf)
       .expect(204);
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/me')
       .set('Cookie', rotated.session)
       .expect(401);
@@ -276,7 +282,7 @@ describe('merchant OIDC and tenant isolation', () => {
       "UPDATE merchant_sessions SET expires_at = now() - interval '1 second' WHERE token_digest = $1",
       [expired.digest],
     );
-    await request(app.getHttpServer())
+    await request(server)
       .get('/auth/me')
       .set('Cookie', expired.session)
       .expect(401);
@@ -303,7 +309,6 @@ describe('merchant OIDC and tenant isolation', () => {
         role: 'staff',
       },
     ]);
-    const server = app.getHttpServer();
     const list = await request(server)
       .get('/auth/businesses')
       .set('Cookie', owner.session)
@@ -347,7 +352,7 @@ describe('merchant OIDC and tenant isolation', () => {
       .set('Cookie', owner.session)
       .expect(404);
 
-    const access = app.get(MerchantAccess);
+    const access = new MerchantAccess(merchantDatabase);
     const principal = {
       accountId: owner.accountId,
       sessionDigest: owner.digest,
@@ -395,11 +400,11 @@ describe('merchant OIDC and tenant isolation', () => {
         role: 'owner',
       },
     ]);
-    const pool = app.get(MerchantDatabase).connection();
+    const pool = merchantDatabase.connection();
     await expect(
       pool.query('SELECT public.kleva_issue_session(NULL,NULL,NULL,NULL,NULL)'),
     ).rejects.toMatchObject({ driverError: { code: '42501' } });
-    const identityPool = app.get(MerchantDatabase).identityConnection();
+    const identityPool = merchantDatabase.identityConnection();
     await expect(
       identityPool.query('SELECT id FROM public.businesses'),
     ).rejects.toMatchObject({ driverError: { code: '42501' } });
@@ -427,7 +432,7 @@ describe('merchant OIDC and tenant isolation', () => {
     );
     expect(protected_count).toBe(merchantPolicyTables.length);
 
-    const access = app.get(MerchantAccess);
+    const access = new MerchantAccess(merchantDatabase);
     const scopes = [
       [one, first.business.id],
       [two, second.business.id],
@@ -450,6 +455,21 @@ describe('merchant OIDC and tenant isolation', () => {
         ),
       ),
     );
+    const rollback = new Error('Rollback tenant scope');
+    await expect(
+      access.withBusiness(
+        { accountId: one.accountId, sessionDigest: one.digest },
+        first.business.id,
+        'business.read',
+        async (manager) => {
+          await expect(
+            manager.query('SELECT id FROM public.businesses'),
+          ).resolves.toEqual([{ id: first.business.id }]);
+          throw rollback;
+        },
+      ),
+    ).rejects.toBe(rollback);
+
     // A forged tenant identifier alone cannot select rows.
     await pool.transaction(async (manager) => {
       await manager.query("SELECT set_config('kleva.business_id', $1, true)", [

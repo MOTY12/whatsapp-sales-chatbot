@@ -1,5 +1,7 @@
 # Repository assessment
 
+This is the original repository snapshot. The [December execution log](../kleva-mvp-30d/execution-log.md) records the subsequent TENANT-002 verification.
+
 Reviewed clean local `main` at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a` (tenant2 in progress), following the V1 audit, architecture, roadmap, tracker and execution log. The assessment reflects this checkout and local fixture evidence.
 
 | Surface | Status and evidence | Reuse or risk |

@@ -59,12 +59,17 @@ export async function startIdentityProvider() {
         const challenge = createHash('sha256')
           .update(verifier)
           .digest('base64url');
+        const authorization = request.headers.authorization ?? '';
+        const [id, secret] = authorization.startsWith('Basic ')
+          ? Buffer.from(authorization.slice(6), 'base64')
+              .toString('utf8')
+              .split(':')
+              .map((value) => decodeURIComponent(value.replace(/\+/g, ' ')))
+          : [];
         if (
           !fixture ||
-          fixture.fault === 'pkce' ||
-          request.headers.authorization !==
-            'Basic ' +
-              Buffer.from(clientId + ':' + clientSecret).toString('base64') ||
+          id !== clientId ||
+          secret !== clientSecret ||
           form.get('grant_type') !== 'authorization_code' ||
           form.get('redirect_uri') !==
             fixture.authorization.searchParams.get('redirect_uri') ||
@@ -124,7 +129,14 @@ export async function startIdentityProvider() {
     issuer,
     authorize(authorization: URL, subject: string, fault?: Fault) {
       const value = 'fixture-code-' + String(++code);
-      requests.set(value, { authorization, subject, fault });
+      const expected = new URL(authorization);
+      if (fault === 'pkce') {
+        expected.searchParams.set(
+          'code_challenge',
+          createHash('sha256').update('different-verifier').digest('base64url'),
+        );
+      }
+      requests.set(value, { authorization: expected, subject, fault });
       return value;
     },
     close() {

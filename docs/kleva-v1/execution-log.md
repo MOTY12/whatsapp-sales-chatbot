@@ -101,3 +101,20 @@
 **Status.** VERIFIED locally on Node 24.22.1. Hosted Node 22 CI and preflight against real legacy data remain pending. No production database was used.
 
 **Next unblocked task.** TENANT-002 adds merchant authentication, scoped sessions and row-level security. It requires a test identity provider.
+
+## 13 November 2026 · TENANT-002
+
+- **Starting point.** Clean `main` at `36968ac5a4e613439a1dbeb9a6aab5a4469b3d88`. Reproduced the temporary auth probe lint failure and the recursive Jest mock. All 11 auth cases originally failed in setup. The other 33 integration cases passed.
+- **Completed.** Run the Nest auth HTTP fixture in native Node and retain the signed local OIDC server. Decode token endpoint Basic credentials using form encoding and test an actual S256 challenge mismatch. Verify cookie ambiguity, scope cleanup after rollback, and rollback of the provisioned merchant column grant.
+- **Database.** The existing auth migration, role grants and RLS passed. Fresh apply/revert/reapply, populated upgrade, legacy owner paths and outbox behavior passed without new schema changes.
+
+| Verification | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed |
+| `npm test` | 39 passed |
+| `npm run test:e2e` | Three passed with stubbed WhatsApp |
+| `npm run test:integration` | 44 passed, including all 11 merchant authentication and tenant isolation tests |
+
+**Status.** VERIFIED locally with Node 24.22.1, PostgreSQL 16.14, Redis 8.2.2 and a signed local identity provider. Hosted Node 22 CI and staging OIDC remain pending. See the [December MVP release checklist](../kleva-mvp-30d/release-checklist.md).
+
+**Next unblocked task.** TENANT-003 implements atomic business and owner creation and scoped profile editing for the December pilot.

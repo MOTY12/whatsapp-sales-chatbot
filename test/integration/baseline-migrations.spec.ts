@@ -103,12 +103,20 @@ describe('PostgreSQL migration baseline', () => {
       ].sort(),
     );
 
+    const { username } = await database.merchantCredentials(source);
     for (const name of [...expectedMigrations].reverse()) {
       const [latest] = await source.query<{ name: string }[]>(
         'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',
       );
       expect(latest.name).toBe(name);
       await source.undoLastMigration();
+      if (name === expectedMigrations.at(-1)) {
+        const [acl] = await source.query<{ canRead: boolean }[]>(
+          `SELECT has_column_privilege($1, 'public.businesses', 'name', 'SELECT') AS "canRead"`,
+          [username],
+        );
+        expect(acl.canRead).toBe(false);
+      }
     }
     expect(await tableNames()).toEqual([]);
     expect((await applyMigrations(source)).map(({ name }) => name)).toEqual(

@@ -1,6 +1,6 @@
 # Progress tracker
 
-Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. The original tracker remains historical. VERIFIED indicates evidence within the stated boundary. IN_PROGRESS indicates an implementation without passing acceptance. NOT_STARTED includes tasks waiting on earlier work. CONDITIONAL indicates access and a positive provider decision must precede development. See [repository assessment](repository-assessment.md) and [execution roadmap](execution-roadmap.md).
+Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 reflects the November 13 verification in the [execution log](../kleva-v1/execution-log.md). VERIFIED indicates evidence within the stated boundary. IN_PROGRESS indicates an implementation without passing acceptance. NOT_STARTED includes tasks waiting on earlier work. CONDITIONAL indicates access and a positive provider decision must precede development. See [repository assessment](repository-assessment.md) and [execution roadmap](execution-roadmap.md).
 
 | Task | Phase | Status | Direct dependencies | Evidence or next action |
 | --- | --- | --- | --- | --- |
@@ -10,7 +10,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. The original tr
 | FOUNDATION-003 | Groundwork | VERIFIED | FOUNDATION-002 | Prior local evidence and applicable passing regression suites at audited HEAD. |
 | FOUNDATION-004 | Groundwork | VERIFIED | FOUNDATION-002 | Prior local evidence and applicable passing regression suites at audited HEAD. |
 | TENANT-001 | Groundwork | VERIFIED | FOUNDATION-002 | Prior local evidence and applicable passing regression suites at audited HEAD. |
-| TENANT-002 | Groundwork | IN_PROGRESS | TENANT-001 | Source and migrations exist. Repair recursive ESM fixture and temporary lint probe, then verify OIDC, sessions and RLS. |
+| TENANT-002 | Groundwork | VERIFIED | TENANT-001 | Signed fixture verifies OIDC, sessions and restricted PostgreSQL RLS. Hosted CI and staging OIDC remain release checks. |
 | CHANNEL-001 | Groundwork | NOT_STARTED | TENANT-001, FOUNDATION-004 | Add normalized channel contracts and connection schema. |
 | TENANT-003 | Paid pilot | NOT_STARTED | TENANT-001, TENANT-002 | Create or claim a business and manage its team. |
 | TENANT-004 | Paid pilot | NOT_STARTED | FOUNDATION-003, FOUNDATION-004, TENANT-002, TENANT-003, CHANNEL-001 | Harden Embedded Signup and encrypt credentials. |

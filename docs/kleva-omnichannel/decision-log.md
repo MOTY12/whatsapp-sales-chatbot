@@ -4,7 +4,7 @@
 | --- | --- |
 | Use WhatsApp as the first revenue channel and provider-neutral contracts underneath | Existing integration and merchant behavior reduce adoption cost. Preserve legacy transport through a staged cutover. Expand only after paid-pilot evidence. |
 | Keep the modular monolith and existing outbox | PostgreSQL already provides durable intent and deduplication, Redis schedules work. Separate HTTP, worker and dashboard runtime failure domains. |
-| Verify TENANT-002 before new merchant features | Source and migration exist, but the auth integration suite fails in setup. Downstream business routes must wait for positive OIDC, session and restricted-role evidence. |
+| Verify TENANT-002 before new merchant features | The signed OIDC fixture and restricted PostgreSQL roles passed local acceptance on November 13. Require staging OIDC and hosted CI before the pilot. |
 | Use native catalog and lightweight CRM first | SMEs can onboard without other software. Verified prices and availability come from explicit records. Orders, bookings and payments follow separate approval and reconciliation work. |
 | Keep provider IDs and customer IDs distinct | Existing WhatsApp IDs remain stable. Cross-channel links require verified consent and provenance. |
 | Choose PostgreSQL and pgvector with a benchmark gate | Existing tenant transactions and publish pointers simplify consistency. Add approximate indexing only after measured latency and filtered-recall evidence. |
@@ -23,8 +23,8 @@
 | Integrations lead | Instagram/Messenger access and window cases, Telegram sandbox, email scope decision, LinkedIn/TikTok account eligibility |
 | Commerce lead | Catalog freshness rules, provider inventory/booking contracts, payment verification and permitted automated effects |
 
-## Next implementation prompt
+## Next implementation task
 
-TENANT-002 is in progress. Its dependencies are available through the existing local fixtures, and its outcome gates every merchant business and dashboard route. The independent CHANNEL-001 contract work and POLICY-001 provider review may be scheduled separately, but neither resolves the immediate merchant authorization gate.
+TENANT-003 is next for the [December MVP](../kleva-mvp-30d/execution-plan.md). Its local prerequisites are verified.
 
-> **Finish and verify TENANT-002 only.** Start from the actual current Git HEAD and preserve unrelated changes. Read the original V1 TENANT-002 card, the omnichannel repository assessment, and the auth and database grant code. Reproduce the auth integration failure on Node 22 or the available supported runtime with the disposable PostgreSQL/Redis harness. Remove the temporary discovery probe and fix native loading of the real OpenID client in the test harness without stubbing authentication behavior. A compiled-app test process with the deterministic local OIDC provider is acceptable if needed. Keep browser-bound one-time state, S256, nonce, signature, issuer, audience, expiry and configured redirect URI checks. Prove session rotation, expiry, logout/CSRF, membership and role changes, same-origin cookie settings, multi-business switching, and default-deny concurrent pooled SQL under restricted identity/merchant roles. Test migration rollback and legacy webhook/owner/outbox regressions. Only make application changes when supported by a failing acceptance test. Run npm run lint:check, npm run build, npm test, npm run test:e2e, npm run test:integration -- auth-tenant, and npm run test:integration. Document results, actual HEAD and unverified provider/deployment limits. Update the original and omnichannel trackers only after obtaining evidence. Stop after TENANT-002, without implementing onboarding or another roadmap task.
+> Implement the December TENANT-003 slice. Reuse registration and membership code to create a business and owner in one transaction, and expose profile editing only to authorized merchants. Test concurrent creation, rollback, cross-tenant denial and legacy registration compatibility in PostgreSQL. Keep legacy claims and full team management on the broader roadmap.
