@@ -20,6 +20,11 @@ const sessionFunctions = [
   'kleva_revoke_session(text,text)',
   'kleva_list_memberships(text)',
 ];
+export const onboardingFunctions = [
+  'kleva_create_merchant_business(text,uuid,jsonb)',
+  'kleva_read_merchant_profile()',
+  'kleva_update_merchant_profile(jsonb)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -52,7 +57,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${sessionFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

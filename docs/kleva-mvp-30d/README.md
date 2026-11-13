@@ -7,3 +7,5 @@ A merchant signs in, creates a business, publishes products and FAQs, and connec
 Start with the [execution plan](execution-plan.md), [task tracker](progress-tracker.md), [verification log](execution-log.md), and [release checklist](release-checklist.md). Task IDs map to the [omnichannel roadmap](../kleva-omnichannel/execution-roadmap.md). This plan records December acceptance for thin slices. Requirements deferred from a roadmap task remain open in the broader roadmap.
 
 Use one modular NestJS backend, PostgreSQL, Redis/BullMQ, and one Next.js merchant dashboard served on the merchant session origin. Use PostgreSQL full-text search for published text. Keep provider calls bounded and use deterministic logic for permissions, lead writes, delivery and takeover.
+
+See the [merchant business API](merchant-business-api.md) for onboarding, profile and deployment contracts.

@@ -157,7 +157,7 @@ export class BusinessRegistrationService {
       name: string;
       industry: string;
       phone: string;
-      whatsappNumber: string;
+      whatsappNumber: string | null;
       timezone: string | null;
       createdAt: Date;
     },
@@ -168,7 +168,7 @@ export class BusinessRegistrationService {
       name: business.name,
       industry: business.industry,
       phone: business.phone,
-      whatsapp_number: business.whatsappNumber,
+      whatsapp_number: business.whatsappNumber ?? '',
       timezone: business.timezone ?? '',
       owner_whatsapp_id: ownerWhatsappId,
       status: 'active',

@@ -4,6 +4,7 @@
 
 - [x] Local merchant authentication, session and PostgreSQL isolation suite passes with signed OIDC fixtures.
 - [ ] Hosted CI passes lint, build, unit, HTTP, database, queue and browser journey checks.
+- [x] Backend tests prove atomic creation, idempotent retry, role checks, and cross-tenant denial.
 - [ ] Browser onboarding proves same-origin sessions, atomic ownership, profile edits and cross-business denial.
 - [ ] Signed webhook commits to PostgreSQL before acknowledgement. Duplicate events, Redis outage, worker restart and replay preserve intended effects.
 - [ ] Approved WhatsApp assets and encrypted credentials map to the correct tenant. Verify send windows, delivery status and uncertain-send recovery.

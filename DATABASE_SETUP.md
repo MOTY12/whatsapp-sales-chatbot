@@ -26,6 +26,7 @@ npm run migration:revert
 4. `AddOutboxOperations` — durable job intent, status, lease and retry tracking.
 5. `AddTenantIntegrity` — account and membership tables, legacy membership backfill, and same-business foreign keys.
 6. `AddMerchantAuth` — merchant sessions, login attempts, scoped SQL functions, and forced row-level security.
+7. `AddMerchantOnboarding` — merchant business creation receipts, scoped profile functions, and nullable WhatsApp routing for disconnected businesses.
 
 CI applies, reverts, and reapplies all migrations in disposable databases on PostgreSQL 16. To run the same checks locally, use the integration suite below. For manual CLI verification, start with an empty disposable database.
 
@@ -87,6 +88,8 @@ TypeORM `synchronize` is disabled for both the application and migration CLI in 
 The Nest API and TypeORM CLI share the same PostgreSQL configuration. The CLI validates the database settings independently of the Meta and HTTP settings. `DATABASE_PORT` defaults to 5432.
 
 Production requires TLS and a trusted CA bundle in `DATABASE_SSL_CA`. Supply PEM certificates with literal newlines or escaped `\n` sequences. Set `DATABASE_HOST` to a DNS name or IP address covered by the server certificate. The connection verifies the certificate chain and the configured hostname or IP. It rejects `DATABASE_SSL=false` and `DATABASE_SSL_REJECT_UNAUTHORIZED=false` in production. In development and tests, TLS defaults to disabled and can be enabled for a TLS-capable database.
+
+After applying the onboarding migration, rerun `npm run auth:grant` for existing roles. See the [merchant business API](docs/kleva-mvp-30d/merchant-business-api.md#deployment-and-rollback) for permissions and rollback.
 
 ## PostgreSQL integration tests
 

@@ -9,6 +9,7 @@ import { MerchantAccess } from '../../src/Auth/merchant-access.service';
 import { MerchantDatabase } from '../../src/Auth/merchant-database';
 import { merchantAuthConfig } from '../../src/config/env';
 import { Account } from '../../src/database/entities/account.entity';
+import { Business, User } from '../../src/database/entities';
 import { BusinessMember } from '../../src/database/entities/business-member.entity';
 import { merchantPolicyTables } from '../../src/database/merchant-access';
 import { seedTenant } from './fixtures';
@@ -328,6 +329,11 @@ describe('merchant OIDC and tenant isolation', () => {
           name: first.business.name,
           status: 'active',
           role: 'owner',
+          industry: first.business.industry,
+          phone: first.business.phone,
+          timezone: first.business.timezone,
+          description: null,
+          openingHours: null,
         }),
       request(server)
         .get('/auth/businesses/' + second.business.id)
@@ -337,6 +343,11 @@ describe('merchant OIDC and tenant isolation', () => {
           name: second.business.name,
           status: 'active',
           role: 'agent',
+          industry: second.business.industry,
+          phone: second.business.phone,
+          timezone: second.business.timezone,
+          description: null,
+          openingHours: null,
         }),
     ]);
     await request(server)
@@ -489,5 +500,245 @@ describe('merchant OIDC and tenant isolation', () => {
         }),
       ),
     );
+  });
+
+  describe('merchant business onboarding', () => {
+    const path = '/merchant/businesses';
+    const profile = {
+      name: '  Browser Business ',
+      industry: ' Retail ',
+      phone: '+234 (801) 111-2222',
+      timezone: 'africa/lagos',
+    };
+    type Merchant = Awaited<ReturnType<typeof login>>;
+    function create(merchant: Merchant, key: string) {
+      return request(server)
+        .post(path)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .set('Idempotency-Key', key);
+    }
+    function patch(merchant: Merchant, id: string) {
+      return request(server)
+        .patch(path + '/' + id)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf);
+    }
+
+    it('rejects unauthorized, CSRF-unsafe and invalid create requests', async () => {
+      const merchant = await login('onboarding-validation');
+      await request(server).post(path).send(profile).expect(401);
+      await request(server)
+        .post(path)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .send(profile)
+        .expect(403);
+      await create(merchant, randomUUID())
+        .set('X-CSRF-Token', 'invalid')
+        .send(profile)
+        .expect(403);
+      await create(merchant, 'invalid').send(profile).expect(400);
+      for (const bad of [
+        { ownerId: randomUUID() },
+        { accountId: merchant.accountId },
+        { role: 'owner' },
+        { id: randomUUID() },
+        { config: {} },
+        { name: '  ' },
+        { industry: '' },
+        { phone: '08011112222' },
+        { timezone: 'Nowhere/Invalid' },
+        { description: 42 },
+      ]) {
+        await create(merchant, randomUUID())
+          .send({ ...profile, ...bad })
+          .expect(400);
+      }
+    });
+
+    it('creates one active owner and no legacy owner across concurrent requests and retries', async () => {
+      const merchant = await login('onboarding-concurrency');
+      const key = randomUUID();
+      const responses = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          create(merchant, key).send(profile).expect(201),
+        ),
+      );
+      const body = responses[0].body as { id: string };
+      expect(body).toEqual({
+        id: expect.any(String),
+        name: 'Browser Business',
+        industry: 'Retail',
+        phone: '+2348011112222',
+        timezone: 'Africa/Lagos',
+        status: 'active',
+        role: 'owner',
+        description: null,
+        openingHours: null,
+      });
+      for (const response of responses) expect(response.body).toEqual(body);
+      await create(merchant, key)
+        .send({
+          ...profile,
+          name: 'Browser Business',
+          phone: '+2348011112222',
+        })
+        .expect(201, body);
+      await create(merchant, key)
+        .send({ ...profile, name: 'Different' })
+        .expect(409);
+      const members = admin.getRepository(BusinessMember);
+      expect(await members.findBy({ accountId: merchant.accountId })).toEqual([
+        expect.objectContaining({
+          businessId: body.id,
+          role: 'owner',
+          status: 'active',
+          legacyUserId: null,
+        }),
+      ]);
+      expect(
+        await admin.getRepository(User).countBy({ businessId: body.id }),
+      ).toBe(0);
+      await expect(
+        admin.getRepository(Business).findOneByOrFail({ id: body.id }),
+      ).resolves.toMatchObject({
+        whatsappNumber: null,
+        phoneNumberId: null,
+        accessToken: null,
+      });
+      const other = await login('onboarding-other-account');
+      const distinct = await create(other, key).send(profile).expect(201);
+      expect(distinct.body).not.toEqual(body);
+      await request(server)
+        .get(path + '/' + body.id)
+        .set('Cookie', other.session)
+        .expect(404);
+      await patch(other, body.id).send({ name: 'Cross tenant' }).expect(404);
+    });
+
+    it('rolls back the business and request reservation when the owner insert fails', async () => {
+      const merchant = await login('onboarding-rollback');
+      const key = randomUUID();
+      const name = 'Rollback fixture business';
+      await admin.query(`
+        ALTER TABLE public.business_members ADD CONSTRAINT test_reject_owner
+        CHECK ("accountId" IS DISTINCT FROM '${merchant.accountId}'::uuid)
+      `);
+      try {
+        await create(merchant, key)
+          .send({ ...profile, name })
+          .expect(500);
+        expect(await admin.getRepository(Business).countBy({ name })).toBe(0);
+        await expect(
+          admin.query(
+            'SELECT 1 FROM public.merchant_business_requests WHERE request_key = $1',
+            [key],
+          ),
+        ).resolves.toEqual([]);
+      } finally {
+        await admin.query(
+          'ALTER TABLE public.business_members DROP CONSTRAINT test_reject_owner',
+        );
+      }
+      await create(merchant, key)
+        .send({ ...profile, name })
+        .expect(201);
+    });
+
+    it('shares read semantics, permits owner-only profile changes and preserves confidential fields', async () => {
+      const owner = await login('onboarding-profile-owner');
+      const editor = await login('onboarding-profile-editor');
+      const created = await create(owner, randomUUID())
+        .send(profile)
+        .expect(201);
+      const { id } = created.body as { id: string };
+      await admin.getRepository(BusinessMember).insert({
+        businessId: id,
+        accountId: editor.accountId,
+        role: 'editor',
+      });
+      const protectedFields = {
+        phoneNumberId: 'private-phone-id',
+        accessToken: 'private-provider-token',
+        wabaId: 'private-waba',
+        displayPhoneNumber: 'private-display-number',
+        whatsappNumber: 'private-whatsapp-number',
+        status: 'active' as const,
+      };
+      await admin.getRepository(Business).save({
+        id,
+        ...protectedFields,
+        config: {
+          security: { private: 'keep' },
+          profile: { logoUploaded: true, openingHours: 'existing' },
+        },
+      });
+      await patch(editor, id).send({ name: 'Editor update' }).expect(403);
+      await request(server)
+        .patch(path + '/' + id)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .send({ name: 'No CSRF' })
+        .expect(403);
+      await patch(owner, id).send({ config: {} }).expect(400);
+      await patch(owner, id).send({ status: 'suspended' }).expect(400);
+      await patch(owner, id).send({ accessToken: 'replace' }).expect(400);
+      const updated = await patch(owner, id)
+        .send({ name: ' Updated ', description: ' One line ' })
+        .expect(200);
+      expect(updated.body).toEqual({
+        ...created.body,
+        name: 'Updated',
+        description: 'One line',
+        openingHours: 'existing',
+      });
+      await request(server)
+        .get('/auth/businesses/' + id)
+        .set('Cookie', owner.session)
+        .expect(200, updated.body as object);
+      const profileRead = await request(server)
+        .get(path + '/' + id)
+        .set('Cookie', editor.session)
+        .expect(200);
+      expect(profileRead.body).toEqual({ ...updated.body, role: 'editor' });
+      await patch(owner, id).send({ openingHours: null }).expect(200);
+      await expect(
+        admin.getRepository(Business).findOneByOrFail({ id }),
+      ).resolves.toMatchObject({
+        ...protectedFields,
+        config: {
+          security: { private: 'keep' },
+          profile: {
+            logoUploaded: true,
+            description: 'One line',
+            openingHours: null,
+          },
+        },
+      });
+      const pool = merchantDatabase.connection();
+      await expect(
+        pool.query('UPDATE public.businesses SET name = $1 WHERE id = $2', [
+          'denied',
+          id,
+        ]),
+      ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      await expect(
+        pool.query('SELECT * FROM public.merchant_business_requests'),
+      ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      await expect(
+        pool.query('SELECT * FROM public.kleva_read_merchant_profile()'),
+      ).resolves.toEqual([]);
+    });
+
+    it('blocks migration rollback once onboarding receipts exist', async () => {
+      const merchant = await login('onboarding-rollback-guard');
+      await create(merchant, randomUUID()).send(profile).expect(201);
+      await expect(admin.undoLastMigration()).rejects.toThrow(
+        'Merchant onboarding data exists',
+      );
+    });
   });
 });

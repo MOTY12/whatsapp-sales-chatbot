@@ -10,6 +10,7 @@ const expectedTables = [
   'conversations',
   'customers',
   'follow_ups',
+  'merchant_business_requests',
   'merchant_login_attempts',
   'merchant_sessions',
   'messages',
@@ -74,6 +75,8 @@ describe('PostgreSQL migration baseline', () => {
         'FK_follow_ups_customer',
         'FK_follow_ups_owner',
         'FK_merchant_sessions_account',
+        'merchant_business_requests_account_id_fkey',
+        'merchant_business_requests_business_id_fkey',
         'FK_messages_conversation',
         'FK_outbox_operations_business',
         'FK_sales_business',
@@ -110,7 +113,7 @@ describe('PostgreSQL migration baseline', () => {
       );
       expect(latest.name).toBe(name);
       await source.undoLastMigration();
-      if (name === expectedMigrations.at(-1)) {
+      if (name === 'AddMerchantAuth1760000000004') {
         const [acl] = await source.query<{ canRead: boolean }[]>(
           `SELECT has_column_privilege($1, 'public.businesses', 'name', 'SELECT') AS "canRead"`,
           [username],

@@ -1,6 +1,6 @@
 # December MVP progress tracker
 
-Baseline `main` at `36968ac5a4e613439a1dbeb9a6aab5a4469b3d88`, with the uncommitted TENANT-002 verification changes described in the [execution log](execution-log.md). Estimates after that task total 139 hours. P0 is required for the pilot. NOT_STARTED includes ordinary dependency ordering. BLOCKED identifies a release gate missing external evidence. Bundled rows share a single budget.
+Verification baseline is `main` at `16ef54935b6c663605625d0f22b659df516a6318` plus the TENANT-003 changes in the [execution log](execution-log.md). The remaining estimate is 127 hours. P0 is required for the pilot. NOT_STARTED includes ordinary dependency ordering. BLOCKED identifies a release gate missing external evidence. Bundled rows share a single budget.
 
 | Roadmap ID and MVP slice | Dependencies | Priority · hours | Status | Acceptance | Tests and evidence | Blocker and next action |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -8,7 +8,7 @@ Baseline `main` at `36968ac5a4e613439a1dbeb9a6aab5a4469b3d88`, with the uncommit
 | TENANT-001 · memberships and composite keys | FOUNDATION-002 | P0 · 0 | VERIFIED | Upgrade preserves IDs and rejects cross-tenant writes | Real seeded PostgreSQL upgrade | Run staging data preflight |
 | TENANT-002 · authentication and RLS | TENANT-001 | P0 · 0 | VERIFIED locally | Signed PKCE flow, CSRF/logout, role changes and pooled tenant isolation | 11 auth cases plus migration and legacy regressions | Staging OIDC and hosted CI are release checks |
 | POLICY-001 · WhatsApp pilot eligibility | None | P0 · 3 | NOT_STARTED | Approved asset and consent, template, support-window and pricing review | Record provider evidence and real asset permissions | Start immediately, provider approval may take longer than engineering |
-| TENANT-003 · create business and profile | TENANT-001, TENANT-002 | P0 · 12 | NOT_STARTED | Merchant creates business and owner atomically, edits own profile, and cannot edit another tenant | Add real PG rollback, concurrency, role and cross-tenant tests | Start next from existing registration and memberships |
+| TENANT-003 · create business and profile | TENANT-001, TENANT-002 | P0 · 0 remaining (12 planned) | VERIFIED locally | Atomic owner creation, idempotent retries and owner-only profile edits | Five onboarding integration cases plus real PostgreSQL rollback and legacy registration checks | Apply migration and rerun merchant grants in staging |
 | CHANNEL-001 · WhatsApp connection contract | TENANT-001, FOUNDATION-004 | P0 · 5 | NOT_STARTED | Verified stable provider asset maps to one business | Add migration and ambiguous route cases | Define minimal connection record and adapter seam |
 | DASHBOARD-001 · merchant shell | TENANT-002, TENANT-003 for shell, TENANT-004 for connected state | P0 · 8 | NOT_STARTED | Same-origin sign-in, session expiry, onboarding form and connection status | Add browser smoke with fixture and expired session | Build shell before connection status wiring |
 | TENANT-004 · supervised encrypted connection | TENANT-003, CHANNEL-001, FOUNDATION-003, FOUNDATION-004 | P0 · 12 | NOT_STARTED | Verify required asset and permissions, encrypt token, preserve migration and rotation | Add tenant-binding and no-secret-output tests | Needs staging assets and key provisioning for live proof. Start local fixtures first |

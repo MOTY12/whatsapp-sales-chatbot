@@ -118,3 +118,7 @@
 **Status.** VERIFIED locally with Node 24.22.1, PostgreSQL 16.14, Redis 8.2.2 and a signed local identity provider. Hosted Node 22 CI and staging OIDC remain pending. See the [December MVP release checklist](../kleva-mvp-30d/release-checklist.md).
 
 **Next unblocked task.** TENANT-003 implements atomic business and owner creation and scoped profile editing for the December pilot.
+
+## 13 November 2026 · TENANT-003 December slice
+
+Merchant business creation and owner-only profile management passed local verification. The full TENANT-003 card remains in progress for ownership claims, invitations, team management and its broader audit workflow. See the [December execution log](../kleva-mvp-30d/execution-log.md#november-13-2026--tenant-003) for migration, endpoint and test evidence.

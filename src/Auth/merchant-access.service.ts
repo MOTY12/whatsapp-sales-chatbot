@@ -9,9 +9,19 @@ import type { MerchantPrincipal } from './auth.service';
 import { MerchantDatabase } from './merchant-database';
 
 type Permission =
-  'business.read' | 'team.manage' | 'knowledge.manage' | 'inbox.operate';
+  | 'business.read'
+  | 'business.update'
+  | 'team.manage'
+  | 'knowledge.manage'
+  | 'inbox.operate';
 const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
-  owner: ['business.read', 'team.manage', 'knowledge.manage', 'inbox.operate'],
+  owner: [
+    'business.read',
+    'business.update',
+    'team.manage',
+    'knowledge.manage',
+    'inbox.operate',
+  ],
   editor: ['business.read', 'knowledge.manage'],
   agent: ['business.read', 'inbox.operate'],
   staff: [],

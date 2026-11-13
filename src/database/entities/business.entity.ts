@@ -31,8 +31,8 @@ export class Business {
   @Column()
   phone: string;
 
-  @Column()
-  whatsappNumber: string;
+  @Column({ type: 'varchar', nullable: true })
+  whatsappNumber: string | null;
 
   @Column({ type: 'varchar', nullable: true, unique: true })
   phoneNumberId: string | null;

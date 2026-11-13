@@ -1,3 +1,5 @@
+import type { EmbeddedSignupConnectionService } from '../../src/meta-embedded-signup/embedded-signup-connection.service';
+import { BusinessRegistrationService } from '../../src/onboarding/business-registration.service';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { Account } from '../../src/database/entities/account.entity';
@@ -24,7 +26,7 @@ describe('tenant integrity migration', () => {
 
   beforeEach(async () => {
     database = await createIntegrationDatabase();
-    source = await database.migrator(databaseMigrations.slice(0, -2));
+    source = await database.migrator(databaseMigrations.slice(0, -3));
     await applyMigrations(source);
     first = await seedTenant(source, 1);
     second = await seedTenant(source, 2);
@@ -36,7 +38,7 @@ describe('tenant integrity migration', () => {
 
   async function upgrade() {
     await source.destroy();
-    source = await database.migrator(databaseMigrations.slice(0, -1));
+    source = await database.migrator(databaseMigrations.slice(0, -2));
     await applyMigrations(source);
   }
 
@@ -244,10 +246,42 @@ describe('tenant integrity migration', () => {
   });
 
   it('enforces CRM tenant links, preserves nullable deletion behavior, and accepts legacy registration and capture', async () => {
-    await upgrade();
+    await source.destroy();
+    source = await database.migrator();
+    await applyMigrations(source);
     await database.grantRuntimeAccess(source);
     const runtime = await database.runtime();
     const users = new UserRepository(runtime.getRepository(User));
+    const registration = new BusinessRegistrationService(
+      {} as EmbeddedSignupConnectionService,
+      new BusinessRepository(runtime.getRepository(Business)),
+      users,
+    );
+    const draft = {
+      ownerWhatsappId: '2348288888888',
+      draftBusiness: {
+        name: 'Legacy WhatsApp Store',
+        industry: 'Retail',
+        phone: '+2348188888888',
+        whatsapp_number: '2348188888888',
+        timezone: 'Africa/Lagos',
+      },
+    };
+    const registered = await registration.registerBusiness(draft);
+    expect((await registration.registerBusiness(draft)).business.id).toBe(
+      registered.business.id,
+    );
+    await expect(
+      runtime.getRepository(BusinessMember).findOneBy({
+        legacyUserId: registered.owner.id,
+      }),
+    ).resolves.toMatchObject({
+      businessId: registered.business.id,
+      accountId: null,
+      role: 'owner',
+      status: 'active',
+    });
+
     const owner = await users.create({
       businessId: first.business.id,
       firstName: 'New staff',

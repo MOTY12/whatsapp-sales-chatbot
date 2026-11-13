@@ -25,6 +25,4 @@
 
 ## Next implementation task
 
-TENANT-003 is next for the [December MVP](../kleva-mvp-30d/execution-plan.md). Its local prerequisites are verified.
-
-> Implement the December TENANT-003 slice. Reuse registration and membership code to create a business and owner in one transaction, and expose profile editing only to authorized merchants. Test concurrent creation, rollback, cross-tenant denial and legacy registration compatibility in PostgreSQL. Keep legacy claims and full team management on the broader roadmap.
+CHANNEL-001 is next on the [December MVP transport path](../kleva-mvp-30d/execution-plan.md). TENANT-001 and FOUNDATION-004 are verified locally. Add the minimal connection schema and adapter contract, require a verified provider asset to map to only one tenant, and verify migration and ambiguous-routing behavior. This unblocks TENANT-004 and the durable webhook path. The initial dashboard shell can also start after the locally verified onboarding slice.

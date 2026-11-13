@@ -3,7 +3,6 @@ import {
   Get,
   Header,
   HttpCode,
-  NotFoundException,
   Param,
   Post,
   Redirect,
@@ -22,6 +21,7 @@ import {
 } from './auth.guards';
 import { MerchantAuthService } from './auth.service';
 import { MerchantAccess } from './merchant-access.service';
+import { MerchantBusinessService } from './merchant-business.service';
 
 const minutes = 60_000;
 
@@ -30,6 +30,7 @@ export class MerchantAuthController {
   constructor(
     private readonly auth: MerchantAuthService,
     private readonly access: MerchantAccess,
+    private readonly merchantBusinesses: MerchantBusinessService,
   ) {}
 
   private cookies() {
@@ -128,19 +129,6 @@ export class MerchantAuthController {
     @Req() request: MerchantRequest,
     @Param('businessId') businessId: string,
   ) {
-    return this.access.withBusiness(
-      principal(request),
-      businessId,
-      'business.read',
-      async (manager, membership) => {
-        const [business] = await manager.query<
-          { id: string; name: string; status: string }[]
-        >('SELECT id, name, status FROM public.businesses WHERE id = $1', [
-          membership.businessId,
-        ]);
-        if (!business) throw new NotFoundException();
-        return { ...business, role: membership.role };
-      },
-    );
+    return this.merchantBusinesses.read(principal(request), businessId);
   }
 }
