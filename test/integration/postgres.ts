@@ -220,6 +220,14 @@ export async function createIntegrationDatabase() {
         const [credentialTable] = await migrator.query<{ exists: boolean }[]>(
           "SELECT to_regclass('public.whatsapp_credentials') IS NOT NULL AS exists",
         );
+        const [receiptTable] = await migrator.query<{ exists: boolean }[]>(
+          "SELECT to_regclass('public.webhook_receipts') IS NOT NULL AS exists",
+        );
+        if (receiptTable.exists) {
+          await migrator.query(
+            `GRANT SELECT, INSERT, UPDATE (handed_off_at) ON public.webhook_receipts TO "${runtimeRole}"`,
+          );
+        }
         if (credentialTable.exists) {
           await migrator.query(
             `GRANT SELECT, UPDATE (expires_at, revision) ON public.whatsapp_credentials TO "${runtimeRole}"`,

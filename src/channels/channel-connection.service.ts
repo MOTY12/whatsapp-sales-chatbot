@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import type {
   ChannelAsset,
   ChannelConnectionResolver,
@@ -11,12 +11,15 @@ import type {
 export class ChannelConnectionService implements ChannelConnectionResolver {
   constructor(@InjectDataSource() private readonly database: DataSource) {}
 
-  async resolve({ provider, externalAssetId }: ChannelAsset) {
+  async resolve(
+    { provider, externalAssetId }: ChannelAsset,
+    database: DataSource | EntityManager = this.database,
+  ) {
     if (!/^[^\s\p{Cc}]{1,255}$/u.test(externalAssetId)) return null;
 
     // Read both mappings in one statement so a signup update cannot split
     // ownership checks across database snapshots.
-    const [route] = await this.database.query<ResolvedChannel[]>(
+    const [route] = await database.query<ResolvedChannel[]>(
       `
       WITH connections AS (
         SELECT c.id AS "connectionId", c."businessId", c."externalAccountId",

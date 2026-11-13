@@ -756,6 +756,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await create(merchant, randomUUID()).send(profile).expect(201);
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );

@@ -1,11 +1,11 @@
 # December execution plan
 
-Plan dated November 13, 2026. Estimates are engineering hours for the remaining work after local TENANT-002 verification. They assume reuse of the existing schema, owner CRM, outbox, Meta client, and test harness. The focused budget is 150 hours. The original scope allocated 139 hours and left 11 hours for defects and staging retries. TENANT-003, CHANNEL-001 and TENANT-004 complete 29 planned hours, leaving 110 estimated implementation hours, plus the original 11-hour contingency. The milestones retain the original allocations for reference.
+Plan dated November 13, 2026. Estimates are engineering hours for the remaining work after local TENANT-002 verification. They assume reuse of the existing schema, owner CRM, outbox, Meta client, and test harness. The focused budget is 150 hours. The original scope allocated 139 hours and left 11 hours for defects and staging retries. TENANT-003, CHANNEL-001, TENANT-004 and WHATSAPP-001 complete 37 planned hours, leaving 102 estimated implementation hours, plus the original 11-hour contingency. The milestones retain the original allocations for reference.
 
 | Period | Hours | Deliverable and order |
 | --- | ---: | --- |
 | Nov 14–20 | 35 | POLICY-001 (3), TENANT-003 (12, verified locally), CHANNEL-001 (5, verified locally), DASHBOARD-001 (8), TENANT-004 start (7). Start Meta and OIDC staging setup immediately. Demo signed-in business creation and profile editing. |
-| Nov 21–27 | 35 | TENANT-004 finish (5, verified locally), WHATSAPP-001 (8), WHATSAPP-002 (8), METER-001 (5), WHATSAPP-003 start (9). Prove signed intake commits before acknowledgement and duplicate receipts create one turn. |
+| Nov 21–27 | 35 | TENANT-004 finish (5, verified locally), WHATSAPP-001 (8, verified locally), WHATSAPP-002 (8), METER-001 (5), WHATSAPP-003 start (9). Prove signed intake commits before acknowledgement and duplicate receipts create one turn. |
 | Nov 28–Dec 4 | 35 | WHATSAPP-003 finish (2), INBOX-001 (9), INBOX-002 (6), KNOWLEDGE-001 and KNOWLEDGE-004 (8), CATALOG-001 (5), RAG-001 (5). Demo manual delivery, takeover and published content retrieval. |
 | Dec 5–11 | 34 | SALES-001 (5), RAG-002 and AGENT-001 (11), OPS-001 and OPS-002 (7), QA-001 (6), QA-002 (5). Prove the full flow in CI and then on approved staging assets. |
 | Dec 12–13 | 10 | Hold for release defects and staged rollout. Keep the remaining one hour of buffer during Dec 5–11. |

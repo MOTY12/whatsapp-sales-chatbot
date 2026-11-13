@@ -11,3 +11,5 @@ Use one modular NestJS backend, PostgreSQL, Redis/BullMQ, and one Next.js mercha
 See the [merchant business API](merchant-business-api.md) for onboarding, profile and deployment contracts.
 
 See the [supervised WhatsApp connection API](whatsapp-connection-api.md) for credentials, provisioning and deployment.
+
+See the [WhatsApp webhook intake guide](whatsapp-webhook-intake.md) for acknowledgement, deduplication and retention rules.

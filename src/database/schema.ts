@@ -33,6 +33,8 @@ import { AddChannelConnections1760000000006 } from './migrations/1760000000006-A
 
 import { SecureWhatsAppCredentials1760000000007 } from './migrations/1760000000007-SecureWhatsAppCredentials';
 
+import { AddWebhookReceipts1760000000008 } from './migrations/1760000000008-AddWebhookReceipts';
+
 export const databaseEntities = [
   Business,
   User,
@@ -63,4 +65,5 @@ export const databaseMigrations = [
   AddMerchantOnboarding1760000000005,
   AddChannelConnections1760000000006,
   SecureWhatsAppCredentials1760000000007,
+  AddWebhookReceipts1760000000008,
 ];

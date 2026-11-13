@@ -6,6 +6,10 @@ import {
   Module,
   OnApplicationBootstrap,
 } from '@nestjs/common';
+import {
+  handoffWhatsAppReceipt,
+  whatsappReceiptOperation,
+} from '../whatsapp/webhook-receipt.handler';
 import { workerConfig } from '../config/env';
 import { DatabaseModule } from '../database/database.module';
 import { OutboxProcessor } from './outbox.processor';
@@ -75,7 +79,10 @@ export class OutboxModule {}
     WorkerRuntime,
     {
       provide: OUTBOX_HANDLERS,
-      useFactory: () => new Map<string, JobHandler>(),
+      useFactory: () =>
+        new Map<string, JobHandler>([
+          [whatsappReceiptOperation, handoffWhatsAppReceipt],
+        ]),
     },
   ],
 })

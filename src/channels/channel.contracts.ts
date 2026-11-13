@@ -19,6 +19,7 @@ export interface ProviderMessageIdentifier extends ChannelAsset {
 }
 
 interface ChannelEvent extends ProviderMessageIdentifier {
+  externalAccountId?: string;
   occurredAt?: Date;
 }
 

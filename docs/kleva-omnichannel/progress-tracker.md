@@ -17,7 +17,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | KNOWLEDGE-001 | Paid pilot | NOT_STARTED | TENANT-003 | Implement knowledge source and revision lifecycle. |
 | METER-001 | Paid pilot | NOT_STARTED | FOUNDATION-004, TENANT-003 | Reserve and reconcile model and delivery budgets. |
 | DASHBOARD-001 | Paid pilot | NOT_STARTED | TENANT-002, TENANT-003, TENANT-004 | Build dashboard shell and onboarding. |
-| WHATSAPP-001 | Paid pilot | NOT_STARTED | TENANT-004, FOUNDATION-004, CHANNEL-001 | Authenticate and durably acknowledge webhook events. |
+| WHATSAPP-001 | Paid pilot | VERIFIED | TENANT-004, FOUNDATION-004, CHANNEL-001 | Signed raw intake and atomic receipt/outbox handoff verified locally. WHATSAPP-002 handles downstream effects. |
 | KNOWLEDGE-002 | Paid pilot | NOT_STARTED | KNOWLEDGE-001 | Add private upload and PDF extraction. |
 | CATALOG-001 | Paid pilot | NOT_STARTED | TENANT-003, DASHBOARD-001 | Publish native product and service offers. |
 | WHATSAPP-002 | Paid pilot | NOT_STARTED | WHATSAPP-001 | Process inbound turns and legacy commands safely. |

@@ -22,6 +22,7 @@ const expectedTables = [
   'sales',
   'tasks',
   'users',
+  'webhook_receipts',
   'whatsapp_credentials',
 ];
 
@@ -72,6 +73,8 @@ describe('PostgreSQL migration baseline', () => {
         'FK_conversations_business',
         'FK_channel_connections_business',
         'FK_whatsapp_credentials_tenant',
+        'FK_webhook_connection_tenant',
+        'FK_webhook_outbox_tenant',
         'FK_conversations_customer',
         'FK_customers_business',
         'FK_customers_owner',

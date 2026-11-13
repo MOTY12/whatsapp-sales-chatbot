@@ -21,3 +21,6 @@
 - [ ] Verify redacted logs, ready/live endpoints, worker backlog monitoring, error alerts and incident ownership.
 - [ ] Verify published privacy and support contact, retention and deletion procedures, and pilot opt-in.
 - [ ] Enable the agent only for approved pilot tenants. Keep a tested disable switch and an operator-run inbox during the pilot.
+
+- [x] Local signed intake rolls back on PostgreSQL failure and recovers queued handoff after Redis outage.
+- [ ] Verify live Meta intake and restore downstream owner/customer handling before routing pilot traffic.

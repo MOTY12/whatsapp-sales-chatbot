@@ -1,8 +1,9 @@
 import {
-  Body,
+  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Headers,
   Post,
   Query,
@@ -11,13 +12,13 @@ import {
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
 import { metaConfig } from '../config/env';
-import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppWebhookIntake } from './webhook-intake.service';
 
 @Controller('webhooks')
 export class WhatsAppWebhookController {
   private readonly config = metaConfig();
 
-  constructor(private readonly whatsappService: WhatsAppService) {}
+  constructor(private readonly intake: WhatsAppWebhookIntake) {}
 
   @Get('whatsapp')
   verifyWhatsAppWebhook(
@@ -37,41 +38,37 @@ export class WhatsAppWebhookController {
   }
 
   @Post('whatsapp')
+  @HttpCode(200)
   async handleWhatsAppWebhook(
-    @Body() body: any,
-    @Headers('x-hub-signature-256') signature?: string,
-    @Req() request?: Request & { rawBody?: Buffer },
+    @Headers('x-hub-signature-256') signature: string | undefined,
+    @Req() request: Request & { rawBody?: Buffer },
   ): Promise<{ received: true }> {
-    this.assertValidSignature(body, signature, request?.rawBody);
-    await this.whatsappService.handleWebhookPayload(body);
-
-    return { received: true };
-  }
-
-  private assertValidSignature(
-    body: unknown,
-    signature?: string,
-    rawBody?: Buffer,
-  ): void {
     const secret = this.config.appSecret;
-    if (!secret) {
+    const raw = request.rawBody;
+    if (
+      !secret ||
+      !raw?.length ||
+      !/^sha256=[0-9a-f]{64}$/i.test(signature ?? '') ||
+      (request.headers['content-encoding'] &&
+        request.headers['content-encoding'] !== 'identity')
+    ) {
       throw new ForbiddenException(
-        'META_APP_SECRET must be configured to receive webhooks.',
+        'WhatsApp webhook signature could not be verified.',
       );
     }
-    if (!signature?.startsWith('sha256=')) {
-      throw new ForbiddenException('Missing WhatsApp webhook signature.');
+    const expected = createHmac('sha256', secret).update(raw).digest();
+    if (!timingSafeEqual(expected, Buffer.from(signature!.slice(7), 'hex'))) {
+      throw new ForbiddenException(
+        'WhatsApp webhook signature could not be verified.',
+      );
     }
-    const payload = rawBody ?? Buffer.from(JSON.stringify(body), 'utf8');
-    const expected = createHmac('sha256', secret).update(payload).digest('hex');
-    const actual = signature.slice('sha256='.length);
-    const expectedBuffer = Buffer.from(expected, 'hex');
-    const actualBuffer = Buffer.from(actual, 'hex');
-    if (
-      expectedBuffer.length !== actualBuffer.length ||
-      !timingSafeEqual(expectedBuffer, actualBuffer)
-    ) {
-      throw new ForbiddenException('Invalid WhatsApp webhook signature.');
+    let body: unknown;
+    try {
+      body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
+    } catch {
+      throw new BadRequestException('Invalid WhatsApp webhook JSON.');
     }
+    await this.intake.accept(body);
+    return { received: true };
   }
 }

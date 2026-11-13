@@ -51,6 +51,9 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
             continue;
           events.push({
             ...this.messageId(externalAssetId, message.id),
+            ...(typeof entry.id === 'string'
+              ? { externalAccountId: entry.id }
+              : {}),
             kind: 'message',
             externalSenderId: message.from,
             text,
@@ -71,6 +74,9 @@ export class WhatsAppChannelAdapter implements ChannelAdapter {
           const code = records(receipt.errors)[0]?.code;
           events.push({
             ...this.messageId(externalAssetId, receipt.id),
+            ...(typeof entry.id === 'string'
+              ? { externalAccountId: entry.id }
+              : {}),
             kind: 'delivery',
             status,
             occurredAt: timestamp(receipt.timestamp),

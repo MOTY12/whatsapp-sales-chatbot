@@ -5,7 +5,7 @@ import { App } from 'supertest/types';
 import { AppController } from './../src/app.controller';
 import { AppService } from './../src/app.service';
 import { WhatsAppWebhookController } from './../src/whatsapp/whatsapp-webhook.controller';
-import { WhatsAppService } from './../src/whatsapp/whatsapp.service';
+import { WhatsAppWebhookIntake } from './../src/whatsapp/webhook-intake.service';
 
 describe('HTTP (e2e)', () => {
   let app: INestApplication<App>;
@@ -22,9 +22,9 @@ describe('HTTP (e2e)', () => {
       providers: [
         AppService,
         {
-          provide: WhatsAppService,
+          provide: WhatsAppWebhookIntake,
           useValue: {
-            handleWebhookPayload: jest.fn(),
+            accept: jest.fn(),
           },
         },
       ],

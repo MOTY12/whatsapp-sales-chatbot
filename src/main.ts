@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { appConfig } from './config/env';
@@ -21,14 +21,21 @@ async function bootstrap() {
   }
 
   const logger = new ApplicationLogger(config.logLevels);
-  let app: INestApplication | undefined;
+  let app: NestExpressApplication | undefined;
   try {
-    app = await NestFactory.create(AppModule, {
+    app = await NestFactory.create<NestExpressApplication>(AppModule, {
       rawBody: true,
       abortOnError: false,
       logger,
     });
     app.use(correlateRequest);
+    app.useBodyParser('raw', {
+      limit: '256kb',
+      inflate: false,
+      type: (request) =>
+        request.method === 'POST' &&
+        /^\/webhooks\/whatsapp\/?(?:\?|$)/i.test(request.url ?? ''),
+    });
     await app.listen(config.port);
   } catch (error) {
     logger.error(error, 'Bootstrap');

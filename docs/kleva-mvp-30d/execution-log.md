@@ -68,3 +68,16 @@ Started from clean `main` at `0cb0b8cde7a71b8134233b8493e9f24935df00c6`. Added o
 The signed OIDC, local Meta, PostgreSQL 16 and Redis fixtures verify authorized connection, denied cross-tenant access, concurrent duplicate handling, encrypted storage, successful and failed rotation, revoked/disconnected sends, legacy fallback fencing, and existing owner commands. Unit tests verify ciphertext tamper rejection, tenant/connection binding and key rollover.
 
 The December supervised implementation is VERIFIED locally. Approved Meta assets, staging subscription and live send verification, runtime grants and keyring provisioning remain release gates. See the [API and deployment instructions](whatsapp-connection-api.md). WHATSAPP-001 is next. The remaining estimate is 110 implementation hours plus 11 hours of contingency.
+
+## WHATSAPP-001 · Signed durable webhook intake
+
+Started from clean `main` at `774a9f977d8f48625e40d75ae961ac29a5e68158`. Reused the existing resolver, WhatsApp normalizer, PostgreSQL outbox and BullMQ runtime. The route verifies HMAC on bounded raw bytes before JSON parsing. Each eligible batch commits tenant-scoped receipts and their outbox intents before HTTP 200. A failed transaction returns 503. Unroutable events are discarded as documented in the [intake guide](whatsapp-webhook-intake.md). The worker marks a receipt ready for downstream processing.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed |
+| `npm test` | 40 passed |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | 59 passed in 10 suites |
+
+Local integration used real PostgreSQL and Redis plus signed fixtures. It covered raw tampering, missing secret, size limits, GET challenge, concurrent duplicate messages and statuses, multi-tenant batches, WABA mismatch, inactive assets, rollback, unavailable Redis and replay. Existing owner command logic still passes its direct regression. WHATSAPP-002 must restore downstream handling through the worker before live cutover. Live Meta and staging remain unverified. The remaining estimate is 102 implementation hours plus 11 hours of contingency.
