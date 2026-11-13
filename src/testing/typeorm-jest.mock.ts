@@ -37,3 +37,5 @@ export class TypeOrmModule {
     return { module: TypeOrmModule, providers, exports: providers };
   }
 }
+
+export const InjectDataSource = () => () => undefined;

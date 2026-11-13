@@ -9,3 +9,5 @@ Start with the [execution plan](execution-plan.md), [task tracker](progress-trac
 Use one modular NestJS backend, PostgreSQL, Redis/BullMQ, and one Next.js merchant dashboard served on the merchant session origin. Use PostgreSQL full-text search for published text. Keep provider calls bounded and use deterministic logic for permissions, lead writes, delivery and takeover.
 
 See the [merchant business API](merchant-business-api.md) for onboarding, profile and deployment contracts.
+
+See the [supervised WhatsApp connection API](whatsapp-connection-api.md) for credentials, provisioning and deployment.

@@ -2,9 +2,7 @@ import { signupConfig } from '../config/env';
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { EmbeddedSignupConnectionService } from './embedded-signup-connection.service';
 import {
-  EmbeddedSignupConnection,
   MetaEmbeddedSignupCallbackQuery,
   MetaEmbeddedSignupCallbackResult,
   MetaEmbeddedSignupStatePayload,
@@ -17,10 +15,6 @@ export class MetaEmbeddedSignupService {
   private readonly config = signupConfig();
   private readonly logger = new Logger(MetaEmbeddedSignupService.name);
   private readonly facebookBaseUrl = 'https://www.facebook.com';
-
-  constructor(
-    private readonly connectionService: EmbeddedSignupConnectionService,
-  ) {}
 
   createSignupUrl(input: {
     ownerWhatsappId: string;
@@ -98,9 +92,9 @@ export class MetaEmbeddedSignupService {
     }
   }
 
-  async handleCallback(
+  handleCallback(
     query: MetaEmbeddedSignupCallbackQuery,
-  ): Promise<MetaEmbeddedSignupCallbackResult> {
+  ): MetaEmbeddedSignupCallbackResult {
     if (query.error) {
       return {
         statusCode: 400,
@@ -129,32 +123,12 @@ export class MetaEmbeddedSignupService {
     }
 
     try {
-      const state = this.verifyAndDecodeState(query.state);
-      const accessToken = await this.exchangeCodeForAccessToken(query.code);
-
-      await this.fetchGraphJson(accessToken, '/me', { fields: 'id,name' });
-
-      const wabas = await this.getOwnedWhatsAppBusinessAccounts(accessToken);
-      const waba = this.pickFirstWaba(wabas);
-      const phoneNumbers = await this.getPhoneNumbers(accessToken, waba.id);
-      const phoneNumber = this.pickFirstPhoneNumber(phoneNumbers);
-
-      const connection: EmbeddedSignupConnection = {
-        businessId: state.businessId,
-        ownerWhatsappId: state.ownerWhatsappId,
-        wabaId: waba.id,
-        phoneNumberId: phoneNumber.id,
-        displayPhoneNumber: phoneNumber.displayPhoneNumber,
-        accessToken,
-        connectedAt: new Date().toISOString(),
-        status: 'connected',
-      };
-
-      await this.connectionService.saveEmbeddedSignupConnection(connection);
-
+      this.verifyAndDecodeState(query.state);
       return {
-        statusCode: 200,
-        html: this.buildSuccessHtml(),
+        statusCode: 410,
+        html: this.buildErrorHtml(
+          'Connect WhatsApp through supervised merchant onboarding.',
+        ),
       };
     } catch (error) {
       this.logger.warn({
@@ -379,32 +353,6 @@ export class MetaEmbeddedSignupService {
     );
   }
 
-  private pickFirstWaba(wabas: MetaWaba[]): MetaWaba {
-    const waba = wabas[0];
-
-    if (!waba) {
-      throw new Error(
-        'No owned WhatsApp Business Account was returned by Meta.',
-      );
-    }
-
-    return waba;
-  }
-
-  private pickFirstPhoneNumber(
-    phoneNumbers: MetaPhoneNumber[],
-  ): MetaPhoneNumber {
-    const phoneNumber = phoneNumbers[0];
-
-    if (!phoneNumber) {
-      throw new Error(
-        'No phone number was returned for the selected WhatsApp Business Account.',
-      );
-    }
-
-    return phoneNumber;
-  }
-
   private uniqueById(items: MetaWaba[]): MetaWaba[] {
     const seen = new Set<string>();
 
@@ -434,18 +382,6 @@ export class MetaEmbeddedSignupService {
     return undefined;
   }
 
-  private buildSuccessHtml(): string {
-    return [
-      '<!doctype html>',
-      '<html lang="en">',
-      '<head><meta charset="utf-8"><title>Connected</title></head>',
-      '<body>',
-      '<p>WhatsApp Business connected successfully. You can now return to WhatsApp and send "done" to continue onboarding.</p>',
-      '</body>',
-      '</html>',
-    ].join('');
-  }
-
   private buildErrorHtml(title: string): string {
     const safeTitle = this.escapeHtml(title);
 
@@ -455,7 +391,7 @@ export class MetaEmbeddedSignupService {
       '<head><meta charset="utf-8"><title>WhatsApp connection failed</title></head>',
       '<body>',
       `<p>${safeTitle}</p>`,
-      '<p>Please retry the connect link from WhatsApp.</p>',
+      '<p>Contact Kleva support for supervised setup.</p>',
       '</body>',
       '</html>',
     ].join('');

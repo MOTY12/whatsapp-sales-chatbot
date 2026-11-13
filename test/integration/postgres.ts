@@ -217,6 +217,14 @@ export async function createIntegrationDatabase() {
         const names = migrator.entityMetadatas.map(
           ({ tableName }) => `public."${tableName}"`,
         );
+        const [credentialTable] = await migrator.query<{ exists: boolean }[]>(
+          "SELECT to_regclass('public.whatsapp_credentials') IS NOT NULL AS exists",
+        );
+        if (credentialTable.exists) {
+          await migrator.query(
+            `GRANT SELECT, UPDATE (expires_at, revision) ON public.whatsapp_credentials TO "${runtimeRole}"`,
+          );
+        }
         await migrator.query(
           `GRANT SELECT, INSERT, UPDATE, DELETE ON ${names.join(', ')} TO "${runtimeRole}"`,
         );

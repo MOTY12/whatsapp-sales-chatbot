@@ -366,3 +366,34 @@ export function merchantAuthConfig(env = process.env) {
     }),
   };
 }
+
+export function whatsappCredentialConfig(env = process.env) {
+  const current = env.WHATSAPP_CREDENTIAL_KEY_ID?.trim() ?? '';
+  const raw = env.WHATSAPP_CREDENTIAL_KEYS?.trim();
+  const keys = new Map<string, Buffer>();
+  if (!current && !raw) return { current, keys };
+
+  try {
+    const parsed: unknown = JSON.parse(raw ?? '');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error();
+    for (const [id, value] of Object.entries(parsed)) {
+      if (
+        !/^[a-zA-Z0-9_-]{1,40}$/.test(id) ||
+        typeof value !== 'string' ||
+        !/^[A-Za-z0-9_-]{43}$/.test(value)
+      )
+        throw new Error();
+      const key = Buffer.from(value, 'base64url');
+      if (key.length !== 32 || key.toString('base64url') !== value)
+        throw new Error();
+      keys.set(id, key);
+    }
+    if (!keys.has(current)) throw new Error();
+    return { current, keys };
+  } catch {
+    throw new Error(
+      'Invalid WHATSAPP_CREDENTIAL_KEY_ID or WHATSAPP_CREDENTIAL_KEYS.',
+    );
+  }
+}

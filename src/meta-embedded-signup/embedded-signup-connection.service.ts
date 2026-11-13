@@ -6,30 +6,6 @@ import { BusinessRepository } from '../database/repositories/business.repository
 export class EmbeddedSignupConnectionService {
   constructor(private readonly businessRepository: BusinessRepository) {}
 
-  async saveEmbeddedSignupConnection(
-    connection: EmbeddedSignupConnection,
-  ): Promise<EmbeddedSignupConnection> {
-    const business = await this.businessRepository.update(
-      connection.businessId,
-      {
-        wabaId: connection.wabaId,
-        phoneNumberId: connection.phoneNumberId,
-        displayPhoneNumber: connection.displayPhoneNumber ?? null,
-        accessToken: connection.accessToken,
-        connectedAt: new Date(connection.connectedAt),
-        status: connection.status === 'connected' ? 'active' : 'inactive',
-      },
-    );
-
-    if (!business) {
-      throw new Error(
-        'The business for this WhatsApp connection no longer exists.',
-      );
-    }
-
-    return connection;
-  }
-
   async getEmbeddedSignupConnection(
     businessId: string,
   ): Promise<EmbeddedSignupConnection | undefined> {
@@ -49,7 +25,6 @@ export class EmbeddedSignupConnectionService {
       wabaId: business.wabaId,
       phoneNumberId: business.phoneNumberId,
       displayPhoneNumber: business.displayPhoneNumber ?? undefined,
-      accessToken: business.accessToken,
       connectedAt: business.connectedAt.toISOString(),
       status: 'connected',
     };

@@ -1,3 +1,4 @@
+import { ChannelConnectionService } from '../../src/channels/channel-connection.service';
 import type { EmbeddedSignupConnectionService } from '../../src/meta-embedded-signup/embedded-signup-connection.service';
 import { BusinessRegistrationService } from '../../src/onboarding/business-registration.service';
 import { randomUUID } from 'node:crypto';
@@ -345,15 +346,19 @@ describe('tenant integrity migration', () => {
       ownerId: null,
     });
 
-    await runtime
-      .getRepository(Business)
-      .update(first.business.id, { phoneNumberId: 'tenant-capture-fixture' });
+    await runtime.getRepository(Business).update(first.business.id, {
+      phoneNumberId: 'tenant-capture-fixture',
+      wabaId: 'legacy-fixture',
+      accessToken: 'legacy-fixture-only',
+      connectedAt: new Date(),
+    });
     const capture = new WebhookLeadCaptureService(
       new BusinessRepository(runtime.getRepository(Business)),
       users,
       repo.customers,
       repo.conversations,
       repo.messages,
+      new ChannelConnectionService(runtime),
     );
     await expect(
       capture.capture({

@@ -114,78 +114,21 @@ describe('MetaEmbeddedSignupService', () => {
     );
   });
 
-  it('callback exchanges code and saves the connection', async () => {
-    await businesses.create({
-      id: 'business-1',
-      name: 'Kleva',
-      phone: '+2348012345678',
-      whatsappNumber: '+2348012345678',
-      config: { ownerWhatsappId: 'whatsapp-owner' },
-    });
-
+  it('retires the legacy callback without exchanging a code or writing credentials', async () => {
     const signupUrl = service.createSignupUrl({
       ownerWhatsappId: 'whatsapp-owner',
       businessId: 'business-1',
     });
     const state = new URL(signupUrl).searchParams.get('state');
-
-    mockedAxios.get.mockImplementation(async (url: string) => {
-      if (url.includes('/oauth/access_token')) {
-        return { data: { access_token: 'access-token-123' } } as never;
-      }
-
-      if (url.endsWith('/me')) {
-        return { data: { id: 'me-1', name: 'Owner' } } as never;
-      }
-
-      if (url.endsWith('/me/businesses')) {
-        return {
-          data: { data: [{ id: 'business-meta-1', name: 'Kleva' }] },
-        } as never;
-      }
-
-      if (url.endsWith('/owned_whatsapp_business_accounts')) {
-        return {
-          data: { data: [{ id: 'waba-1', name: 'Kleva WABA' }] },
-        } as never;
-      }
-
-      if (url.endsWith('/phone_numbers')) {
-        return {
-          data: {
-            data: [
-              {
-                id: 'phone-1',
-                display_phone_number: '+2348012345678',
-                verified_name: 'Kleva',
-              },
-            ],
-          },
-        } as never;
-      }
-
-      throw new Error(`Unexpected URL: ${url}`);
-    });
-
-    const result = await service.handleCallback({
+    const result = service.handleCallback({
       code: 'auth-code-123',
       state: state ?? undefined,
     });
-
-    expect(result.statusCode).toBe(200);
-    expect(result.html).toContain('WhatsApp Business connected successfully');
-
+    expect(result.statusCode).toBe(410);
+    expect(result.html).toContain('supervised merchant onboarding');
+    expect(mockedAxios.get.mock.calls).toHaveLength(0);
     await expect(
       connectionService.getEmbeddedSignupConnection('business-1'),
-    ).resolves.toEqual({
-      businessId: 'business-1',
-      ownerWhatsappId: 'whatsapp-owner',
-      wabaId: 'waba-1',
-      phoneNumberId: 'phone-1',
-      displayPhoneNumber: '+2348012345678',
-      accessToken: 'access-token-123',
-      connectedAt: expect.any(String),
-      status: 'connected',
-    });
+    ).resolves.toBeUndefined();
   });
 });

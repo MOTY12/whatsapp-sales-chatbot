@@ -31,6 +31,8 @@ import { AddMerchantOnboarding1760000000005 } from './migrations/1760000000005-A
 
 import { AddChannelConnections1760000000006 } from './migrations/1760000000006-AddChannelConnections';
 
+import { SecureWhatsAppCredentials1760000000007 } from './migrations/1760000000007-SecureWhatsAppCredentials';
+
 export const databaseEntities = [
   Business,
   User,
@@ -60,4 +62,5 @@ export const databaseMigrations = [
   AddMerchantAuth1760000000004,
   AddMerchantOnboarding1760000000005,
   AddChannelConnections1760000000006,
+  SecureWhatsAppCredentials1760000000007,
 ];

@@ -7,6 +7,7 @@
 - [x] Backend tests prove atomic creation, idempotent retry, role checks, and cross-tenant denial.
 - [ ] Browser onboarding proves same-origin sessions, atomic ownership, profile edits and cross-business denial.
 - [ ] Signed webhook commits to PostgreSQL before acknowledgement. Duplicate events, Redis outage, worker restart and replay preserve intended effects.
+- [x] Local Meta fixtures and PostgreSQL verify tenant-bound encrypted provisioning, rotation, revocation and disconnect.
 - [ ] Approved WhatsApp assets and encrypted credentials map to the correct tenant. Verify send windows, delivery status and uncertain-send recovery.
 - [ ] Merchant publishes an FAQ and product, sees grounded replies and observes handoff for insufficient evidence. Unknown price, stock, payment and policy facts are omitted.
 - [ ] Lead and conversation history persist. Manual takeover prevents pending AI sends and permits a merchant reply.

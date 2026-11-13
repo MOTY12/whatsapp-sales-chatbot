@@ -11,6 +11,7 @@ import { MerchantDatabase } from './merchant-database';
 type Permission =
   | 'business.read'
   | 'business.update'
+  | 'whatsapp.manage'
   | 'team.manage'
   | 'knowledge.manage'
   | 'inbox.operate';
@@ -18,6 +19,7 @@ const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
   owner: [
     'business.read',
     'business.update',
+    'whatsapp.manage',
     'team.manage',
     'knowledge.manage',
     'inbox.operate',

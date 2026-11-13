@@ -1,3 +1,4 @@
+import { ChannelConnectionService } from '../channels/channel-connection.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { BusinessRepository } from '../database/repositories/business.repository';
 import { ConversationRepository } from '../database/repositories/conversation.repository';
@@ -32,6 +33,7 @@ export class WebhookLeadCaptureService {
     private readonly customers: CustomerRepository,
     private readonly conversations: ConversationRepository,
     private readonly messages: MessageRepository,
+    private readonly channels: ChannelConnectionService,
   ) {}
 
   async capture(
@@ -45,9 +47,12 @@ export class WebhookLeadCaptureService {
       return { kind: 'unsupported' };
     }
 
-    const business = await this.businesses.findByPhoneNumberId(
-      message.phoneNumberId,
-    );
+    const route = await this.channels.resolve({
+      provider: 'whatsapp',
+      externalAssetId: message.phoneNumberId,
+    });
+    const business =
+      route && (await this.businesses.findById(route.businessId));
     if (!business) {
       this.logger.warn(`Webhook received for an unrecognised phone number ID.`);
       return { kind: 'unknown_business' };

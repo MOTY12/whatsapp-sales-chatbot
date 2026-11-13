@@ -1,7 +1,12 @@
+import { ChannelConnectionService } from '../../src/channels/channel-connection.service';
+import { CredentialCipher } from '../../src/channels/secure-whatsapp/credential-cipher';
+import { WhatsAppCloudApiService } from '../../src/whatsapp/whatsapp-cloud-api.service';
+import { BusinessRepository } from '../../src/database/repositories/business.repository';
+import { startMetaFixture } from './meta-fixture';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Response } from 'supertest';
 import type { DataSource } from 'typeorm';
@@ -11,7 +16,10 @@ import { merchantAuthConfig } from '../../src/config/env';
 import { Account } from '../../src/database/entities/account.entity';
 import { Business, User } from '../../src/database/entities';
 import { BusinessMember } from '../../src/database/entities/business-member.entity';
-import { merchantPolicyTables } from '../../src/database/merchant-access';
+import {
+  grantMerchantAccess,
+  merchantPolicyTables,
+} from '../../src/database/merchant-access';
 import { seedTenant } from './fixtures';
 import { clientId, clientSecret, startIdentityProvider } from './oidc-fixture';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
@@ -35,6 +43,7 @@ const origin = 'http://127.0.0.1:3000';
 describe('merchant OIDC and tenant isolation', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
   let idp: Awaited<ReturnType<typeof startIdentityProvider>>;
+  let meta: Awaited<ReturnType<typeof startMetaFixture>>;
   let app: ReturnType<typeof fork>;
   let server: string;
   let merchantDatabase: MerchantDatabase;
@@ -51,9 +60,18 @@ describe('merchant OIDC and tenant isolation', () => {
     second = await seedTenant(admin, 2);
     const credentials = await database.merchantCredentials(admin);
     idp = await startIdentityProvider();
+    meta = await startMetaFixture();
     env = {
       ...process.env,
       NODE_ENV: 'test',
+      META_GRAPH_BASE_URL: meta.origin,
+      META_APP_ID: '123',
+      WHATSAPP_PHONE_NUMBER_ID: '100',
+      META_APP_SECRET: 'fixture-app-secret',
+      WHATSAPP_CREDENTIAL_KEY_ID: 'fixture',
+      WHATSAPP_CREDENTIAL_KEYS: JSON.stringify({
+        fixture: randomBytes(32).toString('base64url'),
+      }),
       DATABASE_HOST: credentials.host,
       DATABASE_PORT: String(credentials.port),
       DATABASE_NAME: credentials.database,
@@ -102,7 +120,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await merchantDatabase?.onApplicationShutdown();
     } finally {
       try {
-        await idp?.close();
+        await Promise.all([idp?.close(), meta?.close()]);
       } finally {
         await database?.close();
       }
@@ -736,10 +754,188 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
-      await admin.undoLastMigration(); // Remove the later channel migration first.
+      await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );
+      await applyMigrations(admin);
+      await grantMerchantAccess(
+        admin,
+        env.MERCHANT_DATABASE_USER!,
+        env.IDENTITY_DATABASE_USER!,
+      );
     });
+  });
+
+  it('verifies, encrypts, rotates, fences and disconnects a tenant-owned WhatsApp asset', async () => {
+    const owner = await login('secure-whatsapp-owner');
+    const other = await login('secure-whatsapp-other');
+    const agent = await login('secure-whatsapp-agent');
+    await admin.getRepository(BusinessMember).insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: second.business.id,
+        accountId: other.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+    ]);
+    await admin.getRepository(Business).update(first.business.id, {
+      phoneNumberId: '789',
+      wabaId: '456',
+      accessToken: 'legacy-fixture-token',
+      connectedAt: new Date(),
+    });
+    const path = '/merchant/businesses/' + first.business.id + '/whatsapp';
+    const otherPath =
+      '/merchant/businesses/' + second.business.id + '/whatsapp';
+    const payload = {
+      phoneNumberId: '789',
+      wabaId: '456',
+      accessToken: 'valid-fixture-token',
+    };
+    const headers = (merchant: typeof owner) => ({
+      Cookie: merchant.session,
+      Origin: origin,
+      'X-CSRF-Token': merchant.csrf,
+    });
+    await request(server).get(path).expect(401);
+    await request(server).get(path).set(headers(other)).expect(404);
+    await request(server)
+      .post(path)
+      .set(headers(agent))
+      .send(payload)
+      .expect(403);
+    await request(server)
+      .post(path)
+      .set(headers(owner))
+      .unset('X-CSRF-Token')
+      .send(payload)
+      .expect(403);
+    await request(server)
+      .post(path)
+      .set(headers(owner))
+      .send({ ...payload, accessToken: 'invalid-token' })
+      .expect(400);
+    await request(server)
+      .post(path)
+      .set(headers(owner))
+      .send({ ...payload, phoneNumberId: '999' })
+      .expect(400);
+    await request(server)
+      .get(path)
+      .set(headers(owner))
+      .expect(200, { status: 'pending' });
+
+    const race = await Promise.all([
+      request(server).post(path).set(headers(owner)).send(payload),
+      request(server).post(path).set(headers(owner)).send(payload),
+    ]);
+    expect(race.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const created = race.find(({ status }) => status === 201)!;
+    expect(created.body).toEqual({
+      id: expect.any(String),
+      phoneNumberId: '789',
+      wabaId: '456',
+      displayName: 'Fixture shop',
+      status: 'active',
+      revision: 1,
+    });
+    expect(created.text).not.toContain(payload.accessToken);
+    await request(server)
+      .post(otherPath)
+      .set(headers(other))
+      .send(payload)
+      .expect(409);
+    const stored = async () =>
+      (
+        await admin.query<{ envelope: unknown }[]>(
+          'SELECT envelope FROM public.whatsapp_credentials WHERE business_id = $1',
+          [first.business.id],
+        )
+      )[0].envelope;
+    const encrypted = await stored();
+    expect(JSON.stringify(encrypted)).not.toContain(payload.accessToken);
+    await expect(
+      merchantDatabase
+        .connection()
+        .query('SELECT envelope FROM public.whatsapp_credentials'),
+    ).rejects.toMatchObject({ driverError: { code: '42501' } });
+
+    const rotate = (accessToken: string) =>
+      request(server)
+        .patch(path + '/credential')
+        .set(headers(owner))
+        .send({ accessToken });
+    await rotate('invalid-token').expect(400);
+    expect(await stored()).toEqual(encrypted);
+    await rotate('rotated-fixture-token').expect(200);
+    expect(await stored()).not.toEqual(encrypted);
+
+    await database.grantRuntimeAccess(admin);
+    const runtime = await database.runtime();
+    const channels = new ChannelConnectionService(runtime);
+    jest.replaceProperty(process, 'env', env);
+    try {
+      const sender = new WhatsAppCloudApiService(
+        new BusinessRepository(runtime.getRepository(Business)),
+        channels,
+        new CredentialCipher(),
+        runtime,
+      );
+      const send = () =>
+        sender.sendTextMessage(
+          { to: '2348012345678', message: 'Fixture' },
+          first.business.id,
+        );
+      const resolve = () =>
+        channels.resolve({ provider: 'whatsapp', externalAssetId: '789' });
+      await expect(resolve()).resolves.toMatchObject({
+        businessId: first.business.id,
+      });
+      await send();
+      expect(meta.sent).toEqual(['rotated-fixture-token']);
+
+      await rotate('revoked-token').expect(200);
+      await send();
+      await expect(resolve()).resolves.toBeNull();
+      await send();
+      expect(meta.sent).toEqual(['rotated-fixture-token', 'revoked-token']);
+
+      await rotate('recovered-token').expect(200);
+      await request(server).delete(path).set(headers(owner)).expect(200);
+      expect(await stored()).toBeNull();
+      await send();
+      await expect(resolve()).resolves.toBeNull();
+      await expect(
+        admin
+          .getRepository(Business)
+          .findOneByOrFail({ id: first.business.id }),
+      ).resolves.toMatchObject({ accessToken: 'legacy-fixture-token' });
+      expect(meta.sent).toHaveLength(2);
+      await expect(
+        admin
+          .getRepository(Business)
+          .update(first.business.id, { phoneNumberId: '999' }),
+      ).rejects.toMatchObject({ driverError: { code: '23514' } });
+      const logs = await admin.query<unknown[]>(
+        'SELECT "newValue" FROM public.audit_logs WHERE "entityType" = \'whatsapp_connection\'',
+      );
+      expect(logs).toHaveLength(5);
+      expect(JSON.stringify(logs)).not.toMatch(
+        /fixture-token|revoked-token|recovered-token/,
+      );
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 });

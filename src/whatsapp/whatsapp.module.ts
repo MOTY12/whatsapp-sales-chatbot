@@ -1,5 +1,6 @@
 import { ChannelConnectionService } from '../channels/channel-connection.service';
 import { WhatsAppChannelAdapter } from '../channels/adapters/whatsapp/whatsapp.adapter';
+import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
 import { Module } from '@nestjs/common';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AssistantModule } from '../assistant/assistant.module';
@@ -11,7 +12,12 @@ import { WhatsAppService } from './whatsapp.service';
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
 
 @Module({
-  imports: [OnboardingModule, AssistantModule, DatabaseModule],
+  imports: [
+    OnboardingModule,
+    AssistantModule,
+    DatabaseModule,
+    CredentialCipherModule,
+  ],
   controllers: [WhatsAppWebhookController],
   providers: [
     ChannelConnectionService,

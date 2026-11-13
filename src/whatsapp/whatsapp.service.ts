@@ -1,3 +1,4 @@
+import { metaConfig } from '../config/env';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   IncomingWhatsAppMessage,
@@ -15,6 +16,7 @@ import { UserRepository } from '../database/repositories/user.repository';
 
 @Injectable()
 export class WhatsAppService {
+  private readonly platformAsset = metaConfig().phoneNumberId;
   private readonly logger = new Logger(WhatsAppService.name);
 
   constructor(
@@ -68,6 +70,8 @@ export class WhatsAppService {
       message.from.trim(),
     );
     if (
+      message.phoneNumberId === this.platformAsset &&
+      this.platformAsset &&
       onboardingState &&
       onboardingState.step !== 'IDLE' &&
       onboardingState.step !== 'DONE'
@@ -104,6 +108,8 @@ export class WhatsAppService {
 
     if (
       disposition.kind === 'unknown_business' &&
+      this.platformAsset &&
+      message.phoneNumberId === this.platformAsset &&
       message.message.trim().toLowerCase() === 'hi'
     ) {
       await this.processOnboardingMessage(message);

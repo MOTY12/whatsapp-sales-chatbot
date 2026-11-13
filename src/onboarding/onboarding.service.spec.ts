@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing';
 import { EmbeddedSignupConnectionService } from '../meta-embedded-signup/embedded-signup-connection.service';
-import { MetaEmbeddedSignupService } from '../meta-embedded-signup/meta-embedded-signup.service';
 import { BusinessRepository } from '../database/repositories/business.repository';
 import { OnboardingSessionRepository } from '../database/repositories/onboarding-session.repository';
 import { UserRepository } from '../database/repositories/user.repository';
@@ -17,8 +16,7 @@ describe('OnboardingService', () => {
   let onboardingService: OnboardingService;
   let conversationStateService: ConversationStateService;
   let businessRegistrationService: BusinessRegistrationService;
-  let embeddedSignupConnectionService: EmbeddedSignupConnectionService;
-  const createSignupUrl = jest.fn(() => 'https://facebook.example/signup');
+  let businesses: ReturnType<typeof createInMemoryBusinessRepository>;
 
   const sender = '+2348012345678';
 
@@ -30,6 +28,7 @@ describe('OnboardingService', () => {
     });
 
   beforeEach(async () => {
+    businesses = createInMemoryBusinessRepository();
     const moduleRef = await Test.createTestingModule({
       providers: [
         ConversationStateService,
@@ -37,14 +36,8 @@ describe('OnboardingService', () => {
         BusinessRegistrationService,
         OnboardingService,
         {
-          provide: MetaEmbeddedSignupService,
-          useValue: {
-            createSignupUrl,
-          },
-        },
-        {
           provide: BusinessRepository,
-          useValue: createInMemoryBusinessRepository(),
+          useValue: businesses,
         },
         {
           provide: UserRepository,
@@ -58,12 +51,8 @@ describe('OnboardingService', () => {
     }).compile();
 
     onboardingService = moduleRef.get(OnboardingService);
-    conversationStateService = moduleRef.get(ConversationStateService);
     businessRegistrationService = moduleRef.get(BusinessRegistrationService);
-    embeddedSignupConnectionService = moduleRef.get(
-      EmbeddedSignupConnectionService,
-    );
-    createSignupUrl.mockClear();
+    conversationStateService = moduleRef.get(ConversationStateService);
   });
 
   it('Hi starts registration prompt', async () => {
@@ -89,7 +78,7 @@ describe('OnboardingService', () => {
     );
   });
 
-  it('Connect returns a Meta signup link and waits for callback completion', async () => {
+  it('Connect directs the owner to supervised setup', async () => {
     await send('Hi');
     await send('Yes');
     await send('Kleva Foods');
@@ -107,42 +96,12 @@ describe('OnboardingService', () => {
     expect(connectChoice.message).toContain(
       'To connect your WhatsApp Business number',
     );
-    expect(connectChoice.message).toContain('https://facebook.example/signup');
+    expect(connectChoice.message).toContain('supervised setup');
     expect((await conversationStateService.get(sender))?.step).toBe(
       'WAITING_FOR_EMBEDDED_SIGNUP',
     );
-    expect(createSignupUrl).toHaveBeenCalledWith({
-      ownerWhatsappId: sender,
-      businessId: expect.any(String),
-    });
-
-    const waitingResponse = await send('done');
-
-    expect(waitingResponse.message).toContain('still waiting for Meta');
-
-    const stateAfterConnect = await conversationStateService.get(sender);
-    const businessId = stateAfterConnect?.businessId;
-
-    expect(businessId).toBeDefined();
-
-    if (!businessId) {
-      return;
-    }
-
-    await embeddedSignupConnectionService.saveEmbeddedSignupConnection({
-      businessId,
-      ownerWhatsappId: sender,
-      wabaId: 'waba_123',
-      phoneNumberId: 'phone_123',
-      accessToken: 'access-token',
-      connectedAt: new Date().toISOString(),
-      status: 'connected',
-    });
-
-    const doneResponse = await send('done');
-
-    expect(doneResponse.message).toContain('Upload your business logo');
-    expect((await conversationStateService.get(sender))?.step).toBe('ASK_LOGO');
+    const response = await send('2');
+    expect(response.message).toContain('Upload your business logo');
   });
 
   it('Done before callback keeps waiting for Meta confirmation', async () => {
@@ -162,7 +121,7 @@ describe('OnboardingService', () => {
     );
   });
 
-  it('Done after callback continues to logo upload', async () => {
+  it('Done with a previously saved legacy connection continues to logo upload', async () => {
     await send('Hi');
     await send('Yes');
     await send('Kleva Foods');
@@ -180,14 +139,11 @@ describe('OnboardingService', () => {
       return;
     }
 
-    await businessRegistrationService.saveEmbeddedSignupConnection({
-      businessId,
-      ownerWhatsappId: sender,
+    await businesses.update(businessId, {
       wabaId: 'waba_123',
       phoneNumberId: 'phone_123',
-      accessToken: 'access-token',
-      connectedAt: new Date().toISOString(),
-      status: 'connected',
+      accessToken: 'legacy-fixture-token',
+      connectedAt: new Date(),
     });
 
     const response = await send('done');

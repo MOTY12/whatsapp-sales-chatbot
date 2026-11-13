@@ -32,7 +32,7 @@ describe('channel connection contract', () => {
 
   beforeEach(async () => {
     database = await createIntegrationDatabase();
-    source = await database.migrator(databaseMigrations.slice(0, -1));
+    source = await database.migrator(databaseMigrations.slice(0, 7));
     await applyMigrations(source);
     first = await seedTenant(source, 1);
     second = await seedTenant(source, 2);

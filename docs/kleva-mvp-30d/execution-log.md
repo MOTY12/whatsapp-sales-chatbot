@@ -53,3 +53,18 @@ The resolver compares connection and legacy mappings in one PostgreSQL statement
 Verified on Node 24.22.1, disposable PostgreSQL 16.14 and Redis 8.2.2. Covered concurrent asset uniqueness, cross-tenant assignment denial, pending/inactive routes, legacy rotation and conflicts, credential-free lookup, historical link preservation, migration reapply, and legacy owner and onboarding regression. Hosted CI, staging migration and live Meta ownership/subscription validation remain release checks.
 
 CHANNEL-001 is VERIFIED locally. The next implementation task is TENANT-004. The December estimate is 122 hours remaining, plus 11 hours of contingency.
+
+## November 13, 2026 · TENANT-004
+
+Started from clean `main` at `0cb0b8cde7a71b8134233b8493e9f24935df00c6`. Added owner-scoped supervised connection, status, rotation and disconnect. Meta verification checks app, token, permission scopes, WABA phone membership and app subscription before activation. The migration stores tenant and connection-bound AES-256-GCM envelopes, keeps revision fences and writes redacted lifecycle audit events. A secure binding disables fallback to the business's legacy credential. The legacy callback uses supervised setup instead of exchanging codes or persisting plaintext. Existing complete legacy connections remain readable pending supervised migration.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed |
+| `npm test` | 40 passed |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | 55 passed across 9 suites |
+
+The signed OIDC, local Meta, PostgreSQL 16 and Redis fixtures verify authorized connection, denied cross-tenant access, concurrent duplicate handling, encrypted storage, successful and failed rotation, revoked/disconnected sends, legacy fallback fencing, and existing owner commands. Unit tests verify ciphertext tamper rejection, tenant/connection binding and key rollover.
+
+The December supervised implementation is VERIFIED locally. Approved Meta assets, staging subscription and live send verification, runtime grants and keyring provisioning remain release gates. See the [API and deployment instructions](whatsapp-connection-api.md). WHATSAPP-001 is next. The remaining estimate is 110 implementation hours plus 11 hours of contingency.

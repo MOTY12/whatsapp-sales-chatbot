@@ -118,14 +118,6 @@ export class BusinessRegistrationService {
     };
   }
 
-  async saveEmbeddedSignupConnection(
-    connection: EmbeddedSignupConnection,
-  ): Promise<EmbeddedSignupConnection> {
-    return this.embeddedSignupConnectionService.saveEmbeddedSignupConnection(
-      connection,
-    );
-  }
-
   async getEmbeddedSignupConnection(
     businessId: string,
   ): Promise<EmbeddedSignupConnection | undefined> {

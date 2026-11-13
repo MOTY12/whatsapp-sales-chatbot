@@ -22,6 +22,7 @@ const expectedTables = [
   'sales',
   'tasks',
   'users',
+  'whatsapp_credentials',
 ];
 
 type IntegrationDatabase = Awaited<
@@ -70,6 +71,7 @@ describe('PostgreSQL migration baseline', () => {
         'FK_audit_logs_user',
         'FK_conversations_business',
         'FK_channel_connections_business',
+        'FK_whatsapp_credentials_tenant',
         'FK_conversations_customer',
         'FK_customers_business',
         'FK_customers_owner',

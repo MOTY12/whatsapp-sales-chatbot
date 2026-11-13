@@ -28,7 +28,6 @@ export interface EmbeddedSignupConnection {
   wabaId: string;
   phoneNumberId: string;
   displayPhoneNumber?: string;
-  accessToken: string;
   connectedAt: string;
   status: 'connected';
 }

@@ -25,4 +25,4 @@
 
 ## Next implementation task
 
-TENANT-004 is next on the [December transport path](../kleva-mvp-30d/execution-plan.md). Start the supervised WhatsApp connection implementation using the locally verified tenant, channel and outbox foundations. Bind the operation to an authorized owner, verify selected assets and subscriptions, provision encrypted credentials, and test rotation and legacy compatibility. Approved Meta assets and encryption key provisioning are needed for live verification.
+WHATSAPP-001 is next on the December transport path. Use the verified asset resolver to authenticate the original webhook bytes, persist the receipt and outbox intent atomically, and acknowledge only after commit. Test retries and failure recovery with local fixtures. Live Meta rollout still requires approved assets, key provisioning and staging subscription verification.

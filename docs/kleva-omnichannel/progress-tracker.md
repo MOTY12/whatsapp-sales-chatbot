@@ -13,7 +13,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | TENANT-002 | Groundwork | VERIFIED | TENANT-001 | Signed fixture verifies OIDC, sessions and restricted PostgreSQL RLS. Hosted CI and staging OIDC remain release checks. |
 | CHANNEL-001 | Groundwork | VERIFIED | TENANT-001, FOUNDATION-004 | WhatsApp adapter contract, fail-closed resolver and migration verified locally. Live cutover and credentials remain later work. |
 | TENANT-003 | Paid pilot | IN_PROGRESS | TENANT-001, TENANT-002 | December merchant creation and profile slice verified locally. Legacy claims, invitations, team management and broader audit workflow remain open. |
-| TENANT-004 | Paid pilot | NOT_STARTED | FOUNDATION-003, FOUNDATION-004, TENANT-002, TENANT-003, CHANNEL-001 | Harden Embedded Signup and encrypt credentials. |
+| TENANT-004 | Paid pilot | IN_PROGRESS | FOUNDATION-003, FOUNDATION-004, TENANT-002, TENANT-003, CHANNEL-001 | Supervised credential setup verified locally. Live Meta proof, self-service Embedded Signup and external key-management integration remain open. |
 | KNOWLEDGE-001 | Paid pilot | NOT_STARTED | TENANT-003 | Implement knowledge source and revision lifecycle. |
 | METER-001 | Paid pilot | NOT_STARTED | FOUNDATION-004, TENANT-003 | Reserve and reconcile model and delivery budgets. |
 | DASHBOARD-001 | Paid pilot | NOT_STARTED | TENANT-002, TENANT-003, TENANT-004 | Build dashboard shell and onboarding. |

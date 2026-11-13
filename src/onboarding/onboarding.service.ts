@@ -7,14 +7,12 @@ import {
 } from '../whatsapp/types/whatsapp.types';
 import { BusinessRegistrationService } from './business-registration.service';
 import { ConversationStateService } from './conversation-state.service';
-import { MetaEmbeddedSignupService } from '../meta-embedded-signup/meta-embedded-signup.service';
 
 @Injectable()
 export class OnboardingService {
   constructor(
     private readonly conversationStateService: ConversationStateService,
     private readonly businessRegistrationService: BusinessRegistrationService,
-    private readonly metaEmbeddedSignupService: MetaEmbeddedSignupService,
   ) {}
 
   async handleIncomingMessage(
@@ -362,11 +360,6 @@ export class OnboardingService {
     }
 
     if (this.isConnectChoice(normalizedMessage)) {
-      const signupUrl = this.metaEmbeddedSignupService.createSignupUrl({
-        ownerWhatsappId: whatsappId,
-        businessId,
-      });
-
       const nextState = this.updateState(currentState, {
         step: 'WAITING_FOR_EMBEDDED_SIGNUP',
         connectionChoice: 'connect',
@@ -376,7 +369,7 @@ export class OnboardingService {
 
       return {
         to: message.from,
-        message: `To connect your WhatsApp Business number, open this secure Meta signup link:\n\n${signupUrl}\n\nAfter you finish, return here and send "done".`,
+        message: `To connect your WhatsApp Business number, contact Kleva support for supervised setup. You can also reply 2 to continue with this number.`,
       };
     }
 
@@ -408,6 +401,14 @@ export class OnboardingService {
     message: IncomingWhatsAppMessage,
     currentState: ConversationState,
   ): Promise<OutgoingWhatsAppMessage> {
+    if (this.isCurrentNumberChoice(normalizedMessage)) {
+      return this.handleConnectionStep(
+        whatsappId,
+        normalizedMessage,
+        message,
+        currentState,
+      );
+    }
     if (!this.isDoneMessage(normalizedMessage)) {
       return {
         to: message.from,

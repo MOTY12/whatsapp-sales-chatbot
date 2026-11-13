@@ -10,11 +10,11 @@ export class MetaEmbeddedSignupController {
   ) {}
 
   @Get('callback')
-  async callback(
+  callback(
     @Query() query: MetaEmbeddedSignupCallbackQuery,
     @Res() response: Response,
-  ): Promise<void> {
-    const result = await this.metaEmbeddedSignupService.handleCallback(query);
+  ): void {
+    const result = this.metaEmbeddedSignupService.handleCallback(query);
 
     response.status(result.statusCode).type('html').send(result.html);
   }

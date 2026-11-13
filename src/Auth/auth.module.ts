@@ -9,8 +9,18 @@ import { MerchantBusinessController } from './merchant-business.controller';
 import { MerchantBusinessService } from './merchant-business.service';
 import { MerchantOidcClient } from './oidc-client';
 
+import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
+import { MerchantWhatsAppController } from '../channels/secure-whatsapp/merchant-whatsapp.controller';
+import { MerchantWhatsAppService } from '../channels/secure-whatsapp/merchant-whatsapp.service';
+import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier';
+
 @Module({
-  controllers: [MerchantAuthController, MerchantBusinessController],
+  imports: [CredentialCipherModule],
+  controllers: [
+    MerchantAuthController,
+    MerchantBusinessController,
+    MerchantWhatsAppController,
+  ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
     MerchantDatabase,
@@ -18,6 +28,8 @@ import { MerchantOidcClient } from './oidc-client';
     MerchantAuthService,
     MerchantAccess,
     MerchantBusinessService,
+    MerchantWhatsAppService,
+    MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,
   ],
