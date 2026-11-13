@@ -36,3 +36,20 @@ Started at clean `main` commit `16ef54935b6c663605625d0f22b659df516a6318`. Revie
 The integration run used a signed local OIDC provider, restricted PostgreSQL 16.14 roles and disposable Redis 8.2.2. It covered concurrent retries, account scoping, failed owner insert rollback, unauthorized and invalid writes, provider field preservation, and migration rollback rules. Hosted CI, staging migration and browser/provider verification remain pending.
 
 The December TENANT-003 slice is VERIFIED locally. Claims, invitations, team management and the broader audit workflow remain open in the full roadmap. The next unblocked transport task is CHANNEL-001. The remaining December estimate is 127 hours, plus the original 11-hour contingency.
+
+## November 13, 2026 · CHANNEL-001
+
+Started from clean `main` at `f1f8416a6442601d4bba9ce5b6f825773ec79b8f`. Confirmed local TENANT-003 evidence and reviewed WhatsApp webhook routing, signup persistence, the sender and migration grants. Added a credential-free ChannelConnection table with tenant foreign key, forced RLS, immutable ownership fields and unique provider/asset key across lifecycle states. Backfill imports complete, unambiguous legacy signup evidence and reports conflicting mappings without printing asset IDs or credentials.
+
+The resolver compares connection and legacy mappings in one PostgreSQL statement. Pending and inactive rows fence fallback. Imported rows require current legacy evidence, and unresolved conflicts return no route. The WhatsApp adapter normalizes text and delivery events from a signature-verified envelope for future intake. The existing webhook and sender retain their current behavior. See the [migration notes](../kleva-omnichannel/migration-strategy.md#channel-001-rollout).
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` and `npm run build` | Passed |
+| `npm test` | 39 passed |
+| `npm run test:e2e` | 3 passed with stubbed WhatsApp |
+| `npm run test:integration` | 54 passed in 9 suites, including 5 channel cases |
+
+Verified on Node 24.22.1, disposable PostgreSQL 16.14 and Redis 8.2.2. Covered concurrent asset uniqueness, cross-tenant assignment denial, pending/inactive routes, legacy rotation and conflicts, credential-free lookup, historical link preservation, migration reapply, and legacy owner and onboarding regression. Hosted CI, staging migration and live Meta ownership/subscription validation remain release checks.
+
+CHANNEL-001 is VERIFIED locally. The next implementation task is TENANT-004. The December estimate is 122 hours remaining, plus 11 hours of contingency.

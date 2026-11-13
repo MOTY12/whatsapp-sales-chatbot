@@ -27,6 +27,7 @@ npm run migration:revert
 5. `AddTenantIntegrity` — account and membership tables, legacy membership backfill, and same-business foreign keys.
 6. `AddMerchantAuth` — merchant sessions, login attempts, scoped SQL functions, and forced row-level security.
 7. `AddMerchantOnboarding` — merchant business creation receipts, scoped profile functions, and nullable WhatsApp routing for disconnected businesses.
+8. `AddChannelConnections` — credential-free channel metadata and backfill. See the [rollout notes](docs/kleva-omnichannel/migration-strategy.md#channel-001-rollout).
 
 CI applies, reverts, and reapplies all migrations in disposable databases on PostgreSQL 16. To run the same checks locally, use the integration suite below. For manual CLI verification, start with an empty disposable database.
 

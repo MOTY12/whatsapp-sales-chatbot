@@ -25,4 +25,4 @@
 
 ## Next implementation task
 
-CHANNEL-001 is next on the [December MVP transport path](../kleva-mvp-30d/execution-plan.md). TENANT-001 and FOUNDATION-004 are verified locally. Add the minimal connection schema and adapter contract, require a verified provider asset to map to only one tenant, and verify migration and ambiguous-routing behavior. This unblocks TENANT-004 and the durable webhook path. The initial dashboard shell can also start after the locally verified onboarding slice.
+TENANT-004 is next on the [December transport path](../kleva-mvp-30d/execution-plan.md). Start the supervised WhatsApp connection implementation using the locally verified tenant, channel and outbox foundations. Bind the operation to an authorized owner, verify selected assets and subscriptions, provision encrypted credentials, and test rotation and legacy compatibility. Approved Meta assets and encryption key provisioning are needed for live verification.

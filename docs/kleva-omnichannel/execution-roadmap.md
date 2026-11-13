@@ -143,15 +143,11 @@ V1 mapping and adaptation. Finish the implementation present at HEAD. Remove the
 
 ### CHANNEL-001 · Add normalized channel contracts and connection schema · Medium
 
-- **Objective.** Define a provider-neutral port, capability snapshot and connection routing, with no public cutover.
-- **Reuse and likely changes.** Reuse Business, phone number routing, OutboxOperation, tenant migration patterns → src/channels and database registry.
-- **Implementation.** Define a provider-neutral port, capability snapshot and connection routing, with no public cutover.
-- **Database and API.** ChannelConnection and versioned normalized event types. No public route.
-- **Dependencies.** TENANT-001, FOUNDATION-004. **External services.** PostgreSQL and Redis fixtures.
-- **Security.** Composite tenant keys. Route on verified provider asset. No secrets in DTOs or queue.
-- **Acceptance and required tests.** Two fake adapters satisfy the same contract and ambiguous asset ownership fails. Round-trip additive migration and golden event validation.
-- **Verify.** npm run test:integration -- channel-contract, plus lint/build and applicable dashboard or provider contract checks.
-- **Done.** The schema migration and adapter contract fixtures are green, and the WhatsApp entry point still runs through the current path.
+- **Objective.** Establish provider-neutral routing and normalize WhatsApp text and delivery events before live cutover.
+- **Implementation.** Add a credential-free connection model, fail-closed resolver and WhatsApp adapter contract. Reserve each provider asset across connection states and backfill complete, unambiguous historical mappings. Capability snapshots and additional adapters follow provider-specific work.
+- **Dependencies.** TENANT-001, FOUNDATION-004.
+- **Acceptance.** Verify exclusive tenant resolution, concurrent uniqueness, legacy compatibility, additive migration round trip and golden WhatsApp event normalization. Keep the live path on existing processing.
+- **Evidence.** Five channel cases passed on PostgreSQL and the full local regression is green. See the [December execution log](../kleva-mvp-30d/execution-log.md) and [migration notes](migration-strategy.md#channel-001-rollout).
 
 ## Paid pilot
 

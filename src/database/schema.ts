@@ -14,6 +14,7 @@ import {
   User,
 } from './entities';
 import { Account } from './entities/account.entity';
+import { ChannelConnection } from './entities/channel-connection.entity';
 import { BusinessMember } from './entities/business-member.entity';
 import { OutboxOperation } from './entities/outbox-operation.entity';
 import { InitialSchema1759999999999 } from './migrations/1759999999999-InitialSchema';
@@ -27,6 +28,8 @@ import { AddTenantIntegrity1760000000003 } from './migrations/1760000000003-AddT
 import { AddMerchantAuth1760000000004 } from './migrations/1760000000004-AddMerchantAuth';
 
 import { AddMerchantOnboarding1760000000005 } from './migrations/1760000000005-AddMerchantOnboarding';
+
+import { AddChannelConnections1760000000006 } from './migrations/1760000000006-AddChannelConnections';
 
 export const databaseEntities = [
   Business,
@@ -45,6 +48,7 @@ export const databaseEntities = [
   OutboxOperation,
   Account,
   BusinessMember,
+  ChannelConnection,
 ];
 
 export const databaseMigrations = [
@@ -55,4 +59,5 @@ export const databaseMigrations = [
   AddTenantIntegrity1760000000003,
   AddMerchantAuth1760000000004,
   AddMerchantOnboarding1760000000005,
+  AddChannelConnections1760000000006,
 ];

@@ -1,5 +1,9 @@
 # Channel adapter design
 
+CHANNEL-001 implements typed asset lookup, message identifiers, text and delivery events, outbound request shape, and safe numeric provider error codes. The WhatsApp normalizer consumes a Meta envelope after caller-side signature verification and uses only `value.metadata.phone_number_id` for routing. Sender IDs and display phones are never used to resolve a tenant. The deployed webhook and sender still use the existing processing path. The wider adapter interface below describes later stages.
+
+The resolver returns a credential-free internal route with business, connection, provider account and asset IDs. An explicit pending or inactive route blocks fallback. Active routes also require an active business, verification evidence and no competing legacy owner. Read the [channel migration notes](migration-strategy.md#channel-001-rollout) before switching traffic.
+
 Keep adapters in `src/channels/adapters/<provider>`. Wrap the current WhatsApp parser and sender behind the first adapter. Provider-specific headers, media payloads, tokens and statuses terminate there. The agent sees internal identifiers, message parts, and an allowed action set.
 
 ```ts

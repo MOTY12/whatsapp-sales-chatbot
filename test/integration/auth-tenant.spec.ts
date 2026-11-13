@@ -736,6 +736,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration(); // Remove the later channel migration first.
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );

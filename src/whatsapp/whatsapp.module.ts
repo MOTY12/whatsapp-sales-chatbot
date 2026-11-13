@@ -1,3 +1,5 @@
+import { ChannelConnectionService } from '../channels/channel-connection.service';
+import { WhatsAppChannelAdapter } from '../channels/adapters/whatsapp/whatsapp.adapter';
 import { Module } from '@nestjs/common';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AssistantModule } from '../assistant/assistant.module';
@@ -12,6 +14,8 @@ import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
   imports: [OnboardingModule, AssistantModule, DatabaseModule],
   controllers: [WhatsAppWebhookController],
   providers: [
+    ChannelConnectionService,
+    WhatsAppChannelAdapter,
     WhatsAppService,
     WebhookLeadCaptureService,
     WhatsAppCloudApiService,
@@ -20,6 +24,6 @@ import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
       useExisting: WhatsAppCloudApiService,
     },
   ],
-  exports: [WhatsAppService],
+  exports: [WhatsAppService, ChannelConnectionService, WhatsAppChannelAdapter],
 })
 export class WhatsAppModule {}
