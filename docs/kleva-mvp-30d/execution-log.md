@@ -153,3 +153,23 @@ AI response intents capture the conversation version when their inbound intent i
 | `npm run test:integration` | 88 passed in 12 suites against disposable PostgreSQL 16 and Redis 7 |
 
 Integration evidence covers owner/agent authorization, cross-tenant denial, list and history pagination, duplicate and concurrent control changes, audit writes, manual reply idempotency and history visibility, AI suppression on takeover, stale suppression after release, takeover winning against a waiting send claim, an already-started provider request remaining visible as SENDING, manual delivery in HUMAN mode, migration rollback/reapply and the existing webhook/outbound/usage suites. The local Meta HTTP fixture is used; no live customer account or provider credentials were used. Hosted CI and staging/live Meta proof remain release checks. INBOX-001 is VERIFIED locally. Remaining MVP estimate: 69 hours plus 11 hours of contingency. Next task: INBOX-002.
+
+## November 14, 2026 · DASHBOARD-001
+
+Added `apps/merchant-dashboard`, a standalone Next.js App Router, TypeScript and Tailwind application. The NestJS server and its OIDC/session contracts remain authoritative. The same-origin login route forwards Nest's short-lived binding cookie to the dashboard origin before the identity-provider redirect; the callback bridge forwards callback cookies and query to Nest, relays session/CSRF cookies to the browser, and returns to the dashboard. Server Components use a server-only typed API client that forwards cookies, disables caching, applies request timeouts, retries only transient safe GETs, and attaches the backend-required Origin and CSRF proof to mutations.
+
+Implemented an authenticated responsive shell, membership-scoped business selection, idempotent business setup, owner-only profile editing, logout, setup overview, live WhatsApp status and supervised provisioning guidance. WhatsApp credentials are never collected or displayed; the safe status API does not expose a phone number, so the UI does not mislabel a Meta phone-number asset ID as one. Conversations, Knowledge Base, Products and Leads have honest placeholders. Setup, API and local test instructions are in [merchant dashboard README](../../apps/merchant-dashboard/README.md).
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` | Passed |
+| `npm run build` | Passed |
+| `npm test` | 41 passed in 9 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | Could not run: `KLEVA_TEST_PG_DATABASE` is not set to the required `kleva_integration_control`; PostgreSQL integration cases did not execute successfully in this environment |
+| Dashboard lint/typecheck/build | Passed |
+| Dashboard component tests | 4 passed |
+| Dashboard browser smoke | 2 passed: OIDC cookie bridge, onboarding, CSRF profile edit, safe GET retry, pending WhatsApp, logout, invalid business selection and mobile navigation |
+| `npm audit` / `npm audit --omit=dev` | 0 vulnerabilities after updating Vitest and the vulnerable transitive minimatch dependency |
+
+Browser journeys use a local API fixture and do not establish real identity-provider behavior. Configure the production OIDC callback to the dashboard origin and verify login, session expiry and cookie policy in staging; hosted CI remains outstanding. DASHBOARD-001 is VERIFIED locally. Remaining MVP estimate: 61 hours plus 11 hours of contingency. Next task: INBOX-002.
