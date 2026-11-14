@@ -1,6 +1,7 @@
 import {
   Controller,
   Body,
+  Header,
   Get,
   Headers,
   Param,
@@ -23,6 +24,7 @@ export class MerchantInboxController {
   constructor(private readonly inbox: MerchantInboxService) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store')
   list(
     @Req() request: MerchantRequest,
     @Param('businessId') businessId: string,
@@ -33,6 +35,7 @@ export class MerchantInboxController {
   }
 
   @Get(':conversationId')
+  @Header('Cache-Control', 'no-store')
   conversation(
     @Req() request: MerchantRequest,
     @Param('businessId') businessId: string,
@@ -46,6 +49,7 @@ export class MerchantInboxController {
   }
 
   @Get(':conversationId/messages')
+  @Header('Cache-Control', 'no-store')
   messages(
     @Req() request: MerchantRequest,
     @Param('businessId') businessId: string,
@@ -63,6 +67,7 @@ export class MerchantInboxController {
   }
 
   @Post(':conversationId/takeover')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(MerchantCsrfGuard)
   takeover(
     @Req() request: MerchantRequest,
@@ -78,6 +83,7 @@ export class MerchantInboxController {
   }
 
   @Post(':conversationId/release')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(MerchantCsrfGuard)
   release(
     @Req() request: MerchantRequest,
@@ -93,6 +99,7 @@ export class MerchantInboxController {
   }
 
   @Post(':conversationId/replies')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(MerchantCsrfGuard)
   reply(
     @Req() request: MerchantRequest,

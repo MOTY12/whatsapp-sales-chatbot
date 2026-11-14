@@ -71,16 +71,27 @@ export class OutboundMessageService {
       throw new OutboundPolicyError('Invalid outbound idempotency key.');
     }
     const [prior] = await this.database.query<
-      { id: string; content: string; recipient_whatsapp_id: string }[]
+      {
+        id: string;
+        content: string;
+        recipient_whatsapp_id: string;
+        conversation_id: string | null;
+        authorization_kind: string;
+      }[]
     >(
-      `SELECT id, content, recipient_whatsapp_id FROM public.whatsapp_outbound_messages
+      `SELECT id, content, recipient_whatsapp_id, conversation_id, authorization_kind
+         FROM public.whatsapp_outbound_messages
         WHERE business_id = $1 AND idempotency_key = $2`,
       [businessId, idempotencyKey],
     );
     if (prior) {
       if (
         prior.content !== message.message ||
-        prior.recipient_whatsapp_id !== recipient
+        prior.recipient_whatsapp_id !== recipient ||
+        (authorization.conversationId !== undefined &&
+          prior.conversation_id !== authorization.conversationId) ||
+        (authorization.kind !== undefined &&
+          prior.authorization_kind !== authorization.kind)
       ) {
         throw new OutboundPolicyError(
           'Outbound idempotency key is already bound to another message.',

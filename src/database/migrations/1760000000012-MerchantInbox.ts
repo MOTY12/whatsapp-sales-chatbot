@@ -103,7 +103,8 @@ export class MerchantInbox1760000000012 implements MigrationInterface {
       DECLARE tenant_id uuid := NULLIF(current_setting('kleva.business_id', true), '')::uuid;
         actor_id uuid := public.kleva_current_account(); old_mode text; version_value bigint; changed_at timestamptz;
       BEGIN
-        IF public.kleva_current_role() NOT IN ('owner','agent') OR next_mode NOT IN ('AUTO','HUMAN') THEN
+        IF public.kleva_current_role() IS NULL OR public.kleva_current_role() NOT IN ('owner','agent')
+          OR next_mode IS NULL OR next_mode NOT IN ('AUTO','HUMAN') OR actor_id IS NULL THEN
           RAISE EXCEPTION 'inbox access denied' USING ERRCODE = '42501';
         END IF;
         PERFORM pg_advisory_xact_lock(hashtextextended('conversation:' || tenant_id::text || ':' || target_id::text, 0));

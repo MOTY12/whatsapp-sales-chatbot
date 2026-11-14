@@ -137,6 +137,15 @@ describe('durable WhatsApp outbound messages', () => {
       key,
     );
 
+  const queueFencedAiMessage = (controlVersion: number, key = randomUUID()) =>
+    outbound.enqueueTextMessage(
+      businessId,
+      { to: recipient, message: 'Automated reply.' },
+      key,
+      undefined,
+      { conversationId, kind: 'AI', controlVersion },
+    );
+
   async function outboxFor(id: string) {
     return runtime.getRepository(OutboxOperation).findOneByOrFail({ id });
   }
@@ -154,6 +163,49 @@ describe('durable WhatsApp outbound messages', () => {
     );
     return row;
   }
+
+  it('suppresses queued AI intents after takeover and keeps them stale after release', async () => {
+    const id = await queueFencedAiMessage(1);
+    await admin.query(
+      `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2
+        WHERE id = $1 AND "businessId" = $2`,
+      [conversationId, businessId],
+    );
+    await outbound.execute({ ...(await outboxFor(id)) });
+    await expect(outboundRow(id)).resolves.toMatchObject({
+      status: 'SUPPRESSED',
+    });
+    expect(cloud.sendTextMessage).not.toHaveBeenCalled();
+
+    await admin.query(
+      `UPDATE public.conversations SET control_mode = 'AUTO', control_version = 3
+        WHERE id = $1 AND "businessId" = $2`,
+      [conversationId, businessId],
+    );
+    await outbound.execute({ ...(await outboxFor(id)) });
+    expect(cloud.sendTextMessage).not.toHaveBeenCalled();
+    await expect(outboundRow(id)).resolves.toMatchObject({
+      status: 'SUPPRESSED',
+    });
+  });
+
+  it('allows a human reply while takeover is active', async () => {
+    await admin.query(
+      `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2
+        WHERE id = $1 AND "businessId" = $2`,
+      [conversationId, businessId],
+    );
+    const id = await outbound.enqueueTextMessage(
+      businessId,
+      { to: recipient, message: 'Merchant reply.' },
+      randomUUID(),
+      undefined,
+      { conversationId, kind: 'HUMAN' },
+    );
+    await outbound.execute({ ...(await outboxFor(id)) });
+    expect(cloud.sendTextMessage).toHaveBeenCalledTimes(1);
+    await expect(outboundRow(id)).resolves.toMatchObject({ status: 'ACCEPTED' });
+  });
 
   it('persists intent and reserves quota before the worker calls Meta, then charges acceptance once', async () => {
     const id = await queueMessage();

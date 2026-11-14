@@ -414,6 +414,85 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(404);
   });
 
+  it('serves tenant-scoped inbox pages and serializes idempotent takeover changes', async () => {
+    const owner = await login('inbox-owner');
+    const staff = await login('inbox-staff');
+    const members = admin.getRepository(BusinessMember);
+    await members.insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: staff.accountId,
+        role: 'staff',
+      },
+    ]);
+    const base = `/merchant/businesses/${first.business.id}/conversations`;
+    const listing = await request(server)
+      .get(base)
+      .query({ limit: 1 })
+      .set('Cookie', owner.session)
+      .expect(200)
+      .expect('Cache-Control', 'no-store');
+    expect(listing.body.items).toHaveLength(1);
+    expect(listing.body.items[0]).toMatchObject({
+      id: first.conversation.id,
+      customer_name: first.customer.name,
+      customer_whatsapp_id: first.customer.whatsappId,
+      control_mode: 'AUTO',
+    });
+    await request(server)
+      .get(`${base}/${second.conversation.id}`)
+      .set('Cookie', owner.session)
+      .expect(404);
+    await request(server)
+      .get(base)
+      .set('Cookie', staff.session)
+      .expect(403);
+    const history = await request(server)
+      .get(`${base}/${first.conversation.id}/messages`)
+      .query({ limit: 1 })
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(history.body.items).toMatchObject([
+      { id: first.message.id, direction: 'inbound', content: 'Tenant 1 text' },
+    ]);
+
+    const takeover = () =>
+      request(server)
+        .post(`${base}/${first.conversation.id}/takeover`)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .expect(201);
+    const firstTakeover = await takeover();
+    const duplicateTakeover = await takeover();
+    expect(firstTakeover.body).toMatchObject({ mode: 'HUMAN', changed: true });
+    expect(duplicateTakeover.body).toMatchObject({
+      mode: 'HUMAN',
+      changed: false,
+      controlVersion: firstTakeover.body.controlVersion,
+    });
+    await expect(
+      admin.query<{ count: string }[]>(
+        'SELECT count(*)::text AS count FROM public.conversation_control_audit WHERE conversation_id = $1',
+        [first.conversation.id],
+      ),
+    ).resolves.toMatchObject([[{ count: '1' }]]);
+    await request(server)
+      .post(`${base}/${first.conversation.id}/release`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ mode: 'AUTO', changed: true });
+      });
+  });
+
   it('uses restricted SQL, fails closed without context and clears tenant state on pooled connections', async () => {
     const one = await login('pool-one');
     const two = await login('pool-two');

@@ -36,6 +36,9 @@ const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const uuidV4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function validateConversationId(value: string) {
+  if (!uuid.test(value)) throw new NotFoundException();
+}
 const cursorEncode = (value: Cursor) =>
   Buffer.from(JSON.stringify(value)).toString('base64url');
 function cursorDecode(value?: string): Cursor | undefined {
@@ -116,6 +119,7 @@ export class MerchantInboxService {
     businessId: string,
     conversationId: string,
   ) {
+    validateConversationId(conversationId);
     return this.access.withBusiness(
       actor,
       businessId,
@@ -138,6 +142,7 @@ export class MerchantInboxService {
     limit?: string,
     rawCursor?: string,
   ) {
+    validateConversationId(conversationId);
     const size = pageLimit(limit);
     const cursor = cursorDecode(rawCursor);
     return this.access.withBusiness(
@@ -178,6 +183,7 @@ export class MerchantInboxService {
     conversationId: string,
     mode: 'AUTO' | 'HUMAN',
   ) {
+    validateConversationId(conversationId);
     return this.access.withBusiness(
       actor,
       businessId,
@@ -214,6 +220,7 @@ export class MerchantInboxService {
     key: string | undefined,
     body: unknown,
   ) {
+    validateConversationId(conversationId);
     if (!key || !uuidV4.test(key)) {
       throw new BadRequestException(
         'Idempotency-Key must be a version 4 UUID.',
