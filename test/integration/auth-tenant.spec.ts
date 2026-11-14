@@ -508,6 +508,26 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(({ body }) => {
         expect(body).toMatchObject({ mode: 'AUTO', changed: true });
       });
+    const concurrentControl = await Promise.all([
+      takeover(),
+      request(server)
+        .post(`${base}/${first.conversation.id}/release`)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .expect(201),
+    ]);
+    expect(concurrentControl[0].status).toBe(201);
+    const finalState = await request(server)
+      .get(`${base}/${first.conversation.id}`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    const finalStateBody = finalState.body as {
+      control_mode: string;
+      control_version: number | string;
+    };
+    expect(['AUTO', 'HUMAN']).toContain(finalStateBody.control_mode);
+    expect(Number(finalStateBody.control_version)).toBeGreaterThanOrEqual(4);
     await admin.query(
       'DELETE FROM public.conversation_control_audit WHERE conversation_id = $1',
       [first.conversation.id],
@@ -957,7 +977,9 @@ describe('merchant OIDC and tenant isolation', () => {
     });
     expect(created.text).not.toContain(payload.accessToken);
     await request(server)
-      .post(`/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/takeover`)
+      .post(
+        `/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/takeover`,
+      )
       .set(headers(owner))
       .expect(201);
     const replyKey = randomUUID();
@@ -971,21 +993,38 @@ describe('merchant OIDC and tenant isolation', () => {
         .expect(201);
     const firstReply = await reply();
     const duplicateReply = await reply();
-    expect(firstReply.body).toMatchObject({ status: 'QUEUED' });
-    expect(duplicateReply.body.outboundMessageId).toBe(
-      firstReply.body.outboundMessageId,
+    const firstReplyBody = firstReply.body as {
+      status: string;
+      outboundMessageId: string;
+    };
+    const duplicateReplyBody = duplicateReply.body as {
+      outboundMessageId: string;
+    };
+    expect(firstReplyBody).toMatchObject({ status: 'QUEUED' });
+    expect(duplicateReplyBody.outboundMessageId).toBe(
+      firstReplyBody.outboundMessageId,
     );
     const [manualRows] = await admin.query<{ count: string }[]>(
       `SELECT count(*)::text AS count FROM public.whatsapp_outbound_messages
         WHERE id = $1 AND business_id = $2 AND authorization_kind = 'HUMAN'`,
-      [firstReply.body.outboundMessageId, first.business.id],
+      [firstReplyBody.outboundMessageId, first.business.id],
     );
     expect(manualRows.count).toBe('1');
     const inboxMessages = await request(server)
-      .get(`/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/messages`)
+      .get(
+        `/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/messages`,
+      )
       .set('Cookie', owner.session)
       .expect(200);
-    expect(inboxMessages.body.items).toEqual(
+    const inboxMessagesBody = inboxMessages.body as {
+      items: {
+        direction: string;
+        content: string;
+        authorization_kind: string;
+        status: string;
+      }[];
+    };
+    expect(inboxMessagesBody.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           direction: 'outbound',

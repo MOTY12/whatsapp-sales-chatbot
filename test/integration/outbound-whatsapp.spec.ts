@@ -189,6 +189,69 @@ describe('durable WhatsApp outbound messages', () => {
     });
   });
 
+  it('serializes takeover ahead of a waiting worker send claim', async () => {
+    const id = await queueFencedAiMessage(1);
+    let send: Promise<void> | undefined;
+    await admin.transaction(async (manager) => {
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`conversation:${businessId}:${conversationId}`],
+      );
+      await manager.query(
+        `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2
+          WHERE id = $1 AND "businessId" = $2`,
+        [conversationId, businessId],
+      );
+      send = outbound.execute(await outboxFor(id));
+    });
+    await send;
+    expect(cloud.sendTextMessage).not.toHaveBeenCalled();
+    await expect(outboundRow(id)).resolves.toMatchObject({
+      status: 'SUPPRESSED',
+    });
+  });
+
+  it('keeps a provider request that won the fence visible as in flight during takeover', async () => {
+    let providerStarted!: () => void;
+    let finishProvider!: (id: string) => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    const providerResult = new Promise<string>((resolve) => {
+      finishProvider = resolve;
+    });
+    cloud.sendTextMessage.mockImplementation(async () => {
+      providerStarted();
+      return providerResult;
+    });
+    const id = await queueFencedAiMessage(1);
+    const send = outbound.execute(await outboxFor(id));
+    await started;
+    await admin.transaction(async (manager) => {
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`conversation:${businessId}:${conversationId}`],
+      );
+      await manager.query(
+        `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2
+          WHERE id = $1 AND "businessId" = $2`,
+        [conversationId, businessId],
+      );
+    });
+    await expect(outboundRow(id)).resolves.toMatchObject({ status: 'SENDING' });
+    const [inFlight] = await admin.query<{ count: string }[]>(
+      `SELECT count(*)::text AS count FROM public.whatsapp_outbound_messages
+        WHERE business_id = $1 AND conversation_id = $2 AND status = 'SENDING'`,
+      [businessId, conversationId],
+    );
+    expect(inFlight.count).toBe('1');
+    finishProvider(`wamid.${randomUUID()}`);
+    await send;
+    await expect(outboundRow(id)).resolves.toMatchObject({
+      status: 'ACCEPTED',
+    });
+  });
+
   it('allows a human reply while takeover is active', async () => {
     await admin.query(
       `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2

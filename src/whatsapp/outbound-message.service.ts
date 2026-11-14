@@ -174,6 +174,11 @@ export class OutboundMessageService {
           'Outbound idempotency key is already bound to another message.',
         );
       }
+      await manager.query(
+        `UPDATE public.conversations SET "updatedAt" = now()
+          WHERE id = $1 AND "businessId" = $2`,
+        [conversationId, businessId],
+      );
       return id;
     });
     return persistedId;

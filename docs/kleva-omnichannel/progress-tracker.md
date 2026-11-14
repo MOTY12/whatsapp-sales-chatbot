@@ -23,7 +23,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | WHATSAPP-002 | Paid pilot | VERIFIED locally | WHATSAPP-001 | PostgreSQL outbox worker persists tenant-scoped inbound messages, classifies verified owner commands and legacy onboarding, and retains pending response intents. Actual response delivery and unmatched status reconciliation continue in WHATSAPP-003. |
 | WHATSAPP-003 | Paid pilot | VERIFIED locally | WHATSAPP-001, METER-001 | PostgreSQL outbox dispatch persists tenant-scoped outbound intent, reserves usage, enforces the 24-hour free-form window, dispatches owner/onboarding responses separately, and reconciles monotonic delivery statuses plus unmatched receipts. Local Meta fixture and PostgreSQL tests pass; approved templates, live Meta policy verification and staging uncertainty recovery remain release work. |
 | KNOWLEDGE-003 | Paid pilot | NOT_STARTED | KNOWLEDGE-001, KNOWLEDGE-002, FOUNDATION-004 | Add chunking, embeddings and reindex jobs. |
-| INBOX-001 | Paid pilot | NOT_STARTED | WHATSAPP-002, WHATSAPP-003 | Add conversation and handoff APIs. |
+| INBOX-001 | Paid pilot | VERIFIED locally | WHATSAPP-002, WHATSAPP-003 | Merchant conversation/history APIs, idempotent takeover/release audit, manual replies via the metered outbox, and versioned AI send fencing are covered by PostgreSQL integration tests. Staging/live provider validation remains open. |
 | KNOWLEDGE-004 | Paid pilot | NOT_STARTED | DASHBOARD-001, KNOWLEDGE-002, KNOWLEDGE-003 | Build knowledge management screens. |
 | RAG-001 | Paid pilot | NOT_STARTED | KNOWLEDGE-003 | Evaluate tenant-scoped hybrid retrieval. |
 | INBOX-002 | Paid pilot | NOT_STARTED | DASHBOARD-001, INBOX-001 | Ship the shared inbox. |

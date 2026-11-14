@@ -10,7 +10,8 @@
 - [x] Local Meta fixtures and PostgreSQL verify tenant-bound encrypted provisioning, rotation, revocation and disconnect.
 - [ ] Approved WhatsApp assets and encrypted credentials map to the correct tenant. Verify send windows, delivery status and uncertain-send recovery.
 - [ ] Merchant publishes an FAQ and product, sees grounded replies and observes handoff for insufficient evidence. Unknown price, stock, payment and policy facts are omitted.
-- [ ] Lead and conversation history persist. Manual takeover prevents pending AI sends and permits a merchant reply.
+- [x] Local PostgreSQL integration verifies tenant-scoped conversation/history APIs, audited takeover/release, manual reply idempotency and suppression of stale AI sends.
+- [ ] Staging with approved Meta assets verifies send-window enforcement, delivery reconciliation and the documented in-flight takeover boundary.
 - [x] Per-tenant WhatsApp and AI token budgets reserve atomically and reconcile idempotently in local PostgreSQL integration.
 - [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
 
@@ -32,3 +33,4 @@
 - [x] Pending owner-command and legacy-onboarding responses are generated once and queued as separate metered outbounds. Customer AI replies remain disabled.
 - [ ] Verify approved template availability and live Meta messaging-window behavior. Free-form messages outside the 24-hour service window currently fail closed.
 - [ ] Exercise operator reconciliation of `UNCERTAIN` sends against Meta provider history in staging; Meta does not guarantee idempotent send requests.
+- [ ] Exercise merchant inbox browser flow after INBOX-002 and run the hosted CI browser journey.

@@ -118,7 +118,7 @@ export class MerchantInbox1760000000012 implements MigrationInterface {
         UPDATE public.conversations SET control_mode = next_mode, control_version = version_value + 1,
           takeover_actor_account_id = CASE WHEN next_mode = 'HUMAN' THEN actor_id ELSE NULL END,
           takeover_at = CASE WHEN next_mode = 'HUMAN' THEN now() ELSE NULL END,
-          control_changed_at = now(), "updatedAt" = now()
+          control_changed_at = now()
           WHERE conversations.id = target_id AND conversations."businessId" = tenant_id
           RETURNING conversations.control_version, conversations.control_changed_at INTO version_value, changed_at;
         INSERT INTO public.conversation_control_audit
@@ -146,6 +146,10 @@ export class MerchantInbox1760000000012 implements MigrationInterface {
       DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM public.conversation_control_audit) THEN
           RAISE EXCEPTION 'Conversation control audit exists; preserve the schema for rollback.';
+        END IF;
+        IF EXISTS (SELECT 1 FROM public.whatsapp_outbound_messages WHERE status = 'SUPPRESSED')
+           OR EXISTS (SELECT 1 FROM public.whatsapp_response_intents WHERE status = 'SUPPRESSED') THEN
+          RAISE EXCEPTION 'Suppressed AI response history exists; preserve the schema for rollback.';
         END IF;
       END $$;
       DROP FUNCTION public.kleva_inbox_recipient(uuid);
