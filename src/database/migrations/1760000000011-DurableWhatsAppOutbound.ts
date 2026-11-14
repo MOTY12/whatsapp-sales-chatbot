@@ -11,6 +11,8 @@ export class DurableWhatsAppOutbound1760000000011 implements MigrationInterface 
         ON public.outbox_operations(id, "businessId");
       CREATE UNIQUE INDEX "UQ_whatsapp_response_tenant_id"
         ON public.whatsapp_response_intents(id, business_id);
+      CREATE POLICY kleva_worker_membership_read ON public.business_members FOR SELECT
+        USING (current_user::text !~ '^kleva_(merchant|identity)_');
       CREATE TABLE public.whatsapp_outbound_messages (
         id uuid PRIMARY KEY,
         business_id uuid NOT NULL,
@@ -100,6 +102,7 @@ export class DurableWhatsAppOutbound1760000000011 implements MigrationInterface 
       END $$;
       DROP TABLE public.whatsapp_unmatched_statuses;
       DROP TABLE public.whatsapp_outbound_messages;
+      DROP POLICY kleva_worker_membership_read ON public.business_members;
       DROP INDEX public."UQ_outbox_tenant_id";
       DROP INDEX public."UQ_whatsapp_response_tenant_id";
       DROP INDEX public."UQ_channel_connections_tenant_id";

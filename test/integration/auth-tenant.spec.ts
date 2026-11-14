@@ -912,7 +912,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await rotate('revoked-token').expect(200);
       await expect(send()).rejects.toThrow('WhatsApp provider send failed');
       await expect(resolve()).resolves.toBeNull();
-      await send();
+      await expect(send()).rejects.toThrow('WhatsApp provider send failed');
       expect(meta.sent).toEqual(['rotated-fixture-token', 'revoked-token']);
 
       await rotate('recovered-token').expect(200);

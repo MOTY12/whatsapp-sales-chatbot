@@ -85,7 +85,7 @@ export class OutboundMessageService {
     await this.usage.reserveWhatsAppMessage(businessId, idempotencyKey);
     const id = randomUUID();
 
-    await this.database.transaction(async (manager) => {
+    const persistedId = await this.database.transaction(async (manager) => {
       await manager.query(
         'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
         [`outbound:${businessId}:${idempotencyKey}`],
@@ -106,7 +106,7 @@ export class OutboundMessageService {
             'Outbound idempotency key is already bound to another message.',
           );
         }
-        return;
+        return existing.id;
       }
       await this.outbox.write(manager, {
         id,
@@ -148,8 +148,9 @@ export class OutboundMessageService {
           'Outbound idempotency key is already bound to another message.',
         );
       }
+      return id;
     });
-    return id;
+    return persistedId;
   }
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
