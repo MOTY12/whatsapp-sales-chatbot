@@ -12,8 +12,60 @@ export type WhatsAppStatus = {
   phoneNumberId?: string; wabaId?: string;
 };
 
+export type InboxMode = 'AUTO' | 'HUMAN';
+export type Conversation = {
+  id: string;
+  customer_name: string;
+  customer_whatsapp_id: string;
+  last_activity: string;
+  preview: string | null;
+  status: string | null;
+  control_mode: InboxMode;
+  control_version: number | string;
+  in_flight: number | string;
+};
+export type ConversationDetail = Omit<Conversation, 'last_activity' | 'preview'> & {
+  control_changed_at: string;
+};
+export type InboxMessage = {
+  id: string;
+  direction: 'inbound' | 'outbound' | string;
+  content: string;
+  status: string;
+  provider_message_id: string | null;
+  created_at: string;
+  authorization_kind: 'AI' | 'HUMAN' | 'SYSTEM' | string | null;
+  error_classification: string | null;
+};
+export type CursorPage<T> = { items: T[]; nextCursor: string | null };
+export type InboxControlResult = {
+  conversationId: string;
+  mode: InboxMode;
+  controlVersion: number;
+  changedAt: string;
+  changed: boolean;
+};
+export type QueuedReply = { outboundMessageId: string; status: 'QUEUED' };
+
+export type ApiErrorCode =
+  | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'quota_exceeded'
+  | 'whatsapp_disconnected' | 'service_window_closed' | 'control_required'
+  | 'validation' | 'unavailable';
+
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) { super(message); }
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code: ApiErrorCode = 'unavailable',
+  ) { super(message); }
+}
+
+function backendErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const message = (payload as { message?: unknown }).message;
+  if (typeof message === 'string') return message;
+  if (Array.isArray(message) && message.every((item) => typeof item === 'string')) return message.join(' ');
+  return undefined;
 }
 
 const backend = () => {
@@ -53,12 +105,25 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!response) throw new ApiError(0, 'Kleva is temporarily unavailable. Please try again.');
   if (!response.ok) {
-    if (response.status === 401) throw new ApiError(401, 'Your session has expired. Sign in again.');
-    const message = response.status === 403 ? 'You do not have permission to make this change.'
-      : response.status === 409 ? 'This request conflicts with a recent change. Refresh and try again.'
-      : response.status >= 500 ? 'Kleva could not complete that request. Please try again.'
-      : 'Please check the information and try again.';
-    throw new ApiError(response.status, message);
+    let payload: unknown;
+    try { payload = await response.json(); } catch { payload = undefined; }
+    const backendMessage = backendErrorMessage(payload);
+    if (response.status === 401) throw new ApiError(401, 'Your session has expired. Sign in again.', 'unauthorized');
+    if (response.status === 403) throw new ApiError(403, 'You do not have permission to access this inbox.', 'forbidden');
+    if (response.status === 404) throw new ApiError(404, 'This conversation is no longer available.', 'not_found');
+    if (response.status === 409) throw new ApiError(409, 'This request conflicts with a recent change. Refresh and try again.', 'conflict');
+    if (response.status === 429) throw new ApiError(429, 'Your WhatsApp message allowance has been reached. Try again after your allowance resets.', 'quota_exceeded');
+    if (response.status === 400 && backendMessage === 'Verified WhatsApp connection is unavailable.') {
+      throw new ApiError(400, 'WhatsApp is disconnected. Contact your Kleva support representative to restore the connection.', 'whatsapp_disconnected');
+    }
+    if (response.status === 400 && (backendMessage?.includes('window is closed') || backendMessage?.includes('open customer-service window'))) {
+      throw new ApiError(400, 'The 24-hour WhatsApp service window has closed. Wait for the customer to message again before replying.', 'service_window_closed');
+    }
+    if (response.status === 400 && backendMessage === 'Take over this conversation before replying.') {
+      throw new ApiError(400, 'Take over the conversation before sending a reply.', 'control_required');
+    }
+    const message = response.status >= 500 ? 'Kleva could not complete that request. Please try again.' : 'Please check the information and try again.';
+    throw new ApiError(response.status, message, response.status >= 500 ? 'unavailable' : 'validation');
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -72,5 +137,25 @@ export const api = {
   updateBusiness: (id: string, body: Partial<Pick<Business, 'name' | 'industry' | 'phone' | 'timezone' | 'description' | 'openingHours'>>) =>
     request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   whatsapp: (id: string) => request<WhatsAppStatus>(`/merchant/businesses/${encodeURIComponent(id)}/whatsapp`),
+  conversations: (businessId: string, limit = 30, cursor?: string) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return request<CursorPage<Conversation>>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations?${query}`);
+  },
+  conversation: (businessId: string, conversationId: string) =>
+    request<ConversationDetail>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}`),
+  messages: (businessId: string, conversationId: string, limit = 30, cursor?: string) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return request<CursorPage<InboxMessage>>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/messages?${query}`);
+  },
+  takeover: (businessId: string, conversationId: string) =>
+    request<InboxControlResult>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/takeover`, { method: 'POST' }),
+  release: (businessId: string, conversationId: string) =>
+    request<InboxControlResult>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/release`, { method: 'POST' }),
+  reply: (businessId: string, conversationId: string, text: string, idempotencyKey: string) =>
+    request<QueuedReply>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/replies`, {
+      method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ text }),
+    }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };
