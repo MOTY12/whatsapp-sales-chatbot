@@ -21,6 +21,10 @@ type IntentRow = {
   occurred_at: Date | null;
   owner_id: string | null;
   timezone: string | null;
+  conversation_id: string;
+  authorized_control_version: number | string;
+  control_mode: string;
+  control_version: number | string;
 };
 
 @Injectable()
@@ -45,9 +49,12 @@ export class WhatsAppResponseIntentDispatcher {
             THEN to_timestamp((r.payload->>'occurredAt')::double precision / 1000)
             ELSE NULLIF(r.payload->>'occurredAt','')::timestamptz END AS occurred_at,
           bm."legacyUserId" AS owner_id, b.timezone
+          , i.authorized_control_version, m."conversationId" AS conversation_id,
+          v.control_mode, v.control_version
         FROM public.whatsapp_response_intents i
         JOIN public.webhook_receipts r ON r.id = i.receipt_id AND r.business_id = i.business_id
         JOIN public.messages m ON m.id = i.message_id AND m."businessId" = i.business_id
+        JOIN public.conversations v ON v.id = m."conversationId" AND v."businessId" = i.business_id
         JOIN public.businesses b ON b.id = i.business_id
         LEFT JOIN public.business_members bm ON bm."businessId" = i.business_id
           AND bm."verifiedWhatsappId" = r.payload->>'senderId' AND bm.role = 'owner' AND bm.status = 'active'
@@ -55,6 +62,17 @@ export class WhatsAppResponseIntentDispatcher {
       [intentId, operation.businessId],
     );
     if (!row) throw new Error('WhatsApp response intent is unavailable.');
+    if (
+      row.control_mode !== 'AUTO' ||
+      String(row.control_version) !== String(row.authorized_control_version)
+    ) {
+      await this.database.query(
+        `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
+          WHERE id = $1 AND business_id = $2 AND status IN ('PENDING','GENERATED')`,
+        [row.id, row.business_id],
+      );
+      return;
+    }
     if (['QUEUED', 'COMPLETED', 'FAILED', 'UNCERTAIN'].includes(row.status))
       return;
 
@@ -103,6 +121,8 @@ export class WhatsAppResponseIntentDispatcher {
       row.business_id,
       row.sender,
       response,
+      row.conversation_id,
+      row.authorized_control_version,
     );
   }
 

@@ -277,14 +277,16 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
   if (membership || onboarding) {
     const [intent] = await manager.query<{ id: string }[]>(
       `INSERT INTO public.whatsapp_response_intents
-         (id, business_id, receipt_id, message_id, response_kind)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4)
+         (id, business_id, receipt_id, message_id, response_kind, authorized_control_version)
+       SELECT gen_random_uuid(), $1, $2, $3, $4, v.control_version
+         FROM public.conversations v WHERE v.id = $5 AND v."businessId" = $1
        ON CONFLICT (receipt_id) DO NOTHING RETURNING id`,
       [
         receipt.business_id,
         receipt.id,
         message.id,
         membership ? 'owner_command' : 'legacy_onboarding',
+        conversation.id,
       ],
     );
     if (intent) {

@@ -30,6 +30,13 @@ export const secureWhatsAppFunctions = [
   'kleva_write_whatsapp(text,integer,uuid,text,text,text,jsonb,timestamptz)',
   'kleva_whatsapp_candidate(text)',
 ];
+export const inboxFunctions = [
+  'kleva_inbox_list(integer,timestamptz,uuid)',
+  'kleva_inbox_messages(uuid,integer,timestamptz,uuid)',
+  'kleva_inbox_conversation(uuid)',
+  'kleva_inbox_change_control(uuid,text)',
+  'kleva_inbox_recipient(uuid)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -63,6 +70,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${inboxFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

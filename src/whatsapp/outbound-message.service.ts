@@ -24,9 +24,17 @@ type OutboundRow = {
   provider_message_id: string | null;
   attempt_count: number;
   response_intent_id: string | null;
+  authorization_kind: 'AI' | 'HUMAN' | 'SYSTEM';
+  control_version: number | string | null;
 };
 
 export class OutboundPolicyError extends Error {}
+
+export interface OutboundAuthorization {
+  conversationId?: string;
+  kind?: 'AI' | 'HUMAN' | 'SYSTEM';
+  controlVersion?: number | string;
+}
 
 @Injectable()
 export class OutboundMessageService {
@@ -45,6 +53,7 @@ export class OutboundMessageService {
     message: OutgoingWhatsAppMessage,
     idempotencyKey: string = randomUUID(),
     responseIntentId?: string,
+    authorization: OutboundAuthorization = {},
   ): Promise<string> {
     const recipient = message.to.replace(/\D/g, '');
     if (
@@ -80,7 +89,11 @@ export class OutboundMessageService {
       return prior.id;
     }
     const route = await this.validateRoute(businessId);
-    const conversationId = await this.validateWindow(businessId, recipient);
+    const conversationId = await this.validateWindow(
+      businessId,
+      recipient,
+      authorization.conversationId,
+    );
     await this.usage.reserveWhatsAppMessage(businessId, idempotencyKey);
     const id = randomUUID();
 
@@ -126,8 +139,9 @@ export class OutboundMessageService {
       await manager.query(
         `INSERT INTO public.whatsapp_outbound_messages
           (id, business_id, connection_id, conversation_id, message_id, recipient_whatsapp_id,
-           content, idempotency_key, usage_idempotency_key, status, response_intent_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'RESERVED',$10)
+           content, idempotency_key, usage_idempotency_key, status, response_intent_id,
+           authorization_kind, control_version)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'RESERVED',$10,$11,$12)
          ON CONFLICT (business_id, idempotency_key) DO NOTHING`,
         [
           id,
@@ -140,6 +154,8 @@ export class OutboundMessageService {
           idempotencyKey,
           idempotencyKey,
           responseIntentId ?? null,
+          authorization.kind ?? (responseIntentId ? 'AI' : 'SYSTEM'),
+          authorization.controlVersion ?? null,
         ],
       );
       if (!messageRow) {
@@ -162,10 +178,18 @@ export class OutboundMessageService {
     );
     if (!row) throw new Error('Outbound message is unavailable.');
     if (
-      ['ACCEPTED', 'DELIVERED', 'READ', 'FAILED', 'UNCERTAIN'].includes(
+        ['ACCEPTED', 'DELIVERED', 'READ', 'FAILED', 'UNCERTAIN', 'SUPPRESSED'].includes(
         row.status,
       )
     ) {
+      if (row.status === 'SUPPRESSED') {
+        await this.usage.reconcileWhatsAppStatus(
+          row.business_id,
+          row.idempotency_key,
+          'failed',
+        );
+        return;
+      }
       const usageStatus =
         row.status === 'FAILED'
           ? 'failed'
@@ -193,13 +217,17 @@ export class OutboundMessageService {
     if (row.status !== 'RESERVED')
       throw new Error('Outbound message has an invalid state.');
 
-    const [claimed] = await this.database.query<OutboundRow[]>(
-      `UPDATE public.whatsapp_outbound_messages SET status = 'SENDING',
-         attempt_count = attempt_count + 1, updated_at = now()
-        WHERE id = $1 AND business_id = $2 AND status = 'RESERVED' RETURNING *`,
-      [row.id, row.business_id],
-    );
-    if (!claimed) return;
+    const claim = await this.claimSendAuthorization(row);
+    if (claim === 'suppressed') {
+      await this.usage.reconcileWhatsAppStatus(
+        row.business_id,
+        row.idempotency_key,
+        'failed',
+      );
+      await this.markResponseIntent(row, 'SUPPRESSED');
+      return;
+    }
+    if (claim !== 'claimed') return;
 
     let providerMessageId: string | null;
     try {
@@ -370,11 +398,34 @@ export class OutboundMessageService {
     businessId: string,
     recipient: string,
     response: string,
+    conversationId: string,
+    controlVersion: number | string,
   ): Promise<void> {
+    const [state] = await this.database.query<{
+      control_mode: string;
+      control_version: number | string;
+    }[]>(
+      `SELECT control_mode, control_version FROM public.conversations
+        WHERE id = $1 AND "businessId" = $2`,
+      [conversationId, businessId],
+    );
+    if (
+      !state ||
+      state.control_mode !== 'AUTO' ||
+      String(state.control_version) !== String(controlVersion)
+    ) {
+      await this.database.query(
+        `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
+          WHERE id = $1 AND business_id = $2 AND status IN ('GENERATED','QUEUED')`,
+        [intentId, businessId],
+      );
+      return;
+    }
     const outboundId = await this.enqueueTextMessage(
       businessId,
       { to: recipient, message: response },
       intentId,
+      { conversationId, kind: 'AI', controlVersion },
       intentId,
     );
     await this.database.query(
@@ -384,9 +435,66 @@ export class OutboundMessageService {
     );
   }
 
+  private async claimSendAuthorization(
+    row: OutboundRow,
+  ): Promise<'claimed' | 'suppressed' | 'lost'> {
+    return this.database.transaction(async (manager) => {
+      if (row.authorization_kind === 'AI') {
+        if (!row.conversation_id || row.control_version === null) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'MISSING_CONTROL_FENCE', updated_at = now()
+              WHERE id = $1 AND business_id = $2 AND status = 'RESERVED'`,
+            [row.id, row.business_id],
+          );
+          return 'suppressed';
+        }
+        await manager.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`conversation:${row.business_id}:${row.conversation_id}`],
+        );
+        const [control] = await manager.query<{
+          control_mode: string;
+          control_version: number | string;
+        }[]>(
+          `SELECT control_mode, control_version FROM public.conversations
+            WHERE id = $1 AND "businessId" = $2 FOR UPDATE`,
+          [row.conversation_id, row.business_id],
+        );
+        if (
+          !control ||
+          control.control_mode !== 'AUTO' ||
+          String(control.control_version) !== String(row.control_version)
+        ) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'TAKEOVER_FENCE', updated_at = now()
+              WHERE id = $1 AND business_id = $2 AND status = 'RESERVED'`,
+            [row.id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.messages SET status = 'suppressed' WHERE id = $1 AND "businessId" = $2`,
+            [row.message_id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
+              WHERE id = $1 AND business_id = $2`,
+            [row.response_intent_id, row.business_id],
+          );
+          return 'suppressed';
+        }
+      }
+      const [claim] = await manager.query<{ id: string }[]>(
+        `UPDATE public.whatsapp_outbound_messages SET status = 'SENDING',
+           attempt_count = attempt_count + 1, updated_at = now()
+          WHERE id = $1 AND business_id = $2 AND status = 'RESERVED' RETURNING id`,
+        [row.id, row.business_id],
+      );
+      return claim ? 'claimed' : 'lost';
+    });
+  }
+
   private async markResponseIntent(row: OutboundRow, status: string) {
     if (!row.response_intent_id) return;
-    const next = ['FAILED', 'UNCERTAIN'].includes(status)
+    const next = ['FAILED', 'UNCERTAIN', 'SUPPRESSED'].includes(status)
       ? status
       : status === 'READ' || status === 'DELIVERED' || status === 'ACCEPTED'
         ? 'COMPLETED'
@@ -504,8 +612,23 @@ export class OutboundMessageService {
       window.conversation_id !== preferredConversationId
     ) {
       const [preferred] = await this.database.query<{ valid: boolean }[]>(
-        `SELECT EXISTS (SELECT 1 FROM public.messages WHERE "businessId" = $1 AND "conversationId" = $2 AND direction = 'inbound' AND "createdAt" >= now() - interval '24 hours' AND "createdAt" <= now()) AS valid`,
-        [businessId, preferredConversationId],
+        `SELECT EXISTS (SELECT 1 FROM public.messages m JOIN public.conversations v ON v.id = m."conversationId"
+          JOIN public.customers c ON c.id = v."customerId"
+          WHERE m."businessId" = $1 AND m."conversationId" = $2 AND c."whatsappId" = $3
+            AND m.direction = 'inbound' AND m."createdAt" >= now() - interval '24 hours' AND m."createdAt" <= now()) AS valid`,
+        [businessId, preferredConversationId, recipient],
+      );
+      if (!preferred?.valid)
+        throw new OutboundPolicyError('Conversation window is closed.');
+      return preferredConversationId;
+    }
+    if (preferredConversationId) {
+      const [preferred] = await this.database.query<{ valid: boolean }[]>(
+        `SELECT EXISTS (SELECT 1 FROM public.messages m JOIN public.conversations v ON v.id = m."conversationId"
+          JOIN public.customers c ON c.id = v."customerId"
+          WHERE m."businessId" = $1 AND m."conversationId" = $2 AND c."whatsappId" = $3
+            AND m.direction = 'inbound' AND m."createdAt" >= now() - interval '24 hours' AND m."createdAt" <= now()) AS valid`,
+        [businessId, preferredConversationId, recipient],
       );
       if (!preferred?.valid)
         throw new OutboundPolicyError('Conversation window is closed.');
