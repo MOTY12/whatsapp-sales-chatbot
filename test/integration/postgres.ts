@@ -236,6 +236,14 @@ export async function createIntegrationDatabase() {
             `GRANT SELECT, UPDATE (expires_at, revision) ON public.whatsapp_credentials TO "${runtimeRole}"`,
           );
         }
+        const [usageTables] = await migrator.query<{ exists: boolean }[]>(
+          "SELECT to_regclass('public.usage_reservations') IS NOT NULL AS exists",
+        );
+        if (usageTables.exists) {
+          await migrator.query(
+            `GRANT SELECT, INSERT, UPDATE, DELETE ON public.business_usage_limits, public.usage_reservations TO "${runtimeRole}"`,
+          );
+        }
         await migrator.query(
           `GRANT SELECT, INSERT, UPDATE, DELETE ON ${names.join(', ')} TO "${runtimeRole}"`,
         );

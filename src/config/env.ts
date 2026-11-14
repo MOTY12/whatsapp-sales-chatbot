@@ -267,6 +267,46 @@ export function workerConfig(env = process.env) {
   return { redis, prefix, concurrency };
 }
 
+function usageLimit(env: NodeJS.ProcessEnv, name: string, fallback: number) {
+  const value = env[name]?.trim() ?? String(fallback);
+  const parsed = Number(value);
+  if (
+    !/^\d+$/.test(value) ||
+    !Number.isSafeInteger(parsed) ||
+    parsed > 2_147_483_647
+  ) {
+    throw new Error(
+      `${name} must be a non-negative integer no greater than 2147483647.`,
+    );
+  }
+  return parsed;
+}
+
+export function usageConfig(env = process.env) {
+  return {
+    monthlyWhatsAppMessages: usageLimit(
+      env,
+      'USAGE_DEFAULT_MONTHLY_WHATSAPP_MESSAGES',
+      1000,
+    ),
+    monthlyAiInputTokens: usageLimit(
+      env,
+      'USAGE_DEFAULT_MONTHLY_AI_INPUT_TOKENS',
+      100000,
+    ),
+    monthlyAiOutputTokens: usageLimit(
+      env,
+      'USAGE_DEFAULT_MONTHLY_AI_OUTPUT_TOKENS',
+      50000,
+    ),
+    aiTokensPerRequest: usageLimit(
+      env,
+      'USAGE_DEFAULT_AI_TOKENS_PER_REQUEST',
+      4096,
+    ),
+  };
+}
+
 export function appConfig(env = process.env) {
   const environment = applicationEnvironment(env);
   const production = environment === 'production';

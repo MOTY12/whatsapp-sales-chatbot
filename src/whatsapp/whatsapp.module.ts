@@ -12,6 +12,7 @@ import { WhatsAppCloudApiService } from './whatsapp-cloud-api.service';
 import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { WhatsAppService } from './whatsapp.service';
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
+import { UsageModule } from '../metering/usage.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
     DatabaseModule,
     CredentialCipherModule,
     OutboxModule,
+    UsageModule,
   ],
   controllers: [WhatsAppWebhookController],
   providers: [

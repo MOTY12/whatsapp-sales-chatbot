@@ -1,4 +1,4 @@
-import { appConfig, databaseConfig, metaConfig } from './env';
+import { appConfig, databaseConfig, metaConfig, usageConfig } from './env';
 
 const database = {
   DATABASE_HOST: 'localhost',
@@ -15,6 +15,22 @@ const meta = {
 };
 
 describe('environment configuration', () => {
+  it('provides configurable per-tenant usage defaults and rejects invalid limits', () => {
+    expect(usageConfig({})).toEqual({
+      monthlyWhatsAppMessages: 1000,
+      monthlyAiInputTokens: 100000,
+      monthlyAiOutputTokens: 50000,
+      aiTokensPerRequest: 4096,
+    });
+    expect(
+      usageConfig({ USAGE_DEFAULT_MONTHLY_WHATSAPP_MESSAGES: '25' })
+        .monthlyWhatsAppMessages,
+    ).toBe(25);
+    expect(() =>
+      usageConfig({ USAGE_DEFAULT_MONTHLY_AI_INPUT_TOKENS: '-1' }),
+    ).toThrow('USAGE_DEFAULT_MONTHLY_AI_INPUT_TOKENS');
+  });
+
   it('reports missing required database settings by name', () => {
     expect(() => databaseConfig({})).toThrow(
       /Missing required environment variables: DATABASE_HOST, DATABASE_USER, DATABASE_PASSWORD, DATABASE_NAME/,

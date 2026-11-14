@@ -16,6 +16,7 @@ import { OutboxProcessor } from './outbox.processor';
 import { OutboxRelay } from './outbox.relay';
 import { JobHandler, OutboxStore } from './outbox.store';
 import { createQueue, createWorker } from './queue';
+import { UsageModule } from '../metering/usage.module';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -74,7 +75,7 @@ export class WorkerRuntime
 export class OutboxModule {}
 
 @Module({
-  imports: [OutboxModule],
+  imports: [OutboxModule, UsageModule],
   providers: [
     WorkerRuntime,
     {

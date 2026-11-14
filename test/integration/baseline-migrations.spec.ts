@@ -6,6 +6,7 @@ const expectedTables = [
   'assistant_sessions',
   'audit_logs',
   'business_members',
+  'business_usage_limits',
   'businesses',
   'channel_connections',
   'conversations',
@@ -21,6 +22,7 @@ const expectedTables = [
   'pipeline_stages',
   'sales',
   'tasks',
+  'usage_reservations',
   'users',
   'webhook_receipts',
   'whatsapp_credentials',
@@ -72,6 +74,7 @@ describe('PostgreSQL migration baseline', () => {
         'FK_audit_logs_business',
         'FK_audit_logs_user',
         'FK_conversations_business',
+        'FK_business_usage_limits_business',
         'FK_channel_connections_business',
         'FK_whatsapp_credentials_tenant',
         'FK_webhook_connection_tenant',
@@ -113,6 +116,7 @@ describe('PostgreSQL migration baseline', () => {
         'FK_sales_customerId_tenant',
         'FK_sales_ownerId_tenant',
         'FK_tasks_ownerId_tenant',
+        'FK_usage_reservations_business',
       ].sort(),
     );
 
