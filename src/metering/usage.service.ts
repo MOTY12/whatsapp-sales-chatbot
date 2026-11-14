@@ -150,6 +150,31 @@ export class UsageService {
 
     await this.database.transaction(async (manager) => {
       await this.lockLimitConfiguration(manager, businessId);
+      const currentUsage = await manager.query<
+        { category: UsageCategory; used: number | string }[]
+      >(
+        `SELECT category, COALESCE(sum(reserved_amount - released_amount), 0)::bigint AS used
+           FROM public.usage_reservations
+          WHERE business_id = $1 AND period_start = $2::date
+          GROUP BY category`,
+        [businessId, usagePeriodStart(new Date())],
+      );
+      const used = new Map(
+        currentUsage.map((row) => [row.category, numberOf(row.used)]),
+      );
+      const proposedCaps: Record<UsageCategory, number> = {
+        whatsapp_outbound:
+          limits.monthlyWhatsAppMessages ??
+          this.defaults.monthlyWhatsAppMessages,
+        ai_input_tokens:
+          limits.monthlyAiInputTokens ?? this.defaults.monthlyAiInputTokens,
+        ai_output_tokens:
+          limits.monthlyAiOutputTokens ?? this.defaults.monthlyAiOutputTokens,
+      };
+      for (const category of categories) {
+        if ((used.get(category) ?? 0) > proposedCaps[category])
+          throw new UsageLimitExceededError(category);
+      }
       await manager.query(
         `INSERT INTO public.business_usage_limits
            (business_id, monthly_whatsapp_messages, monthly_ai_input_tokens,
@@ -351,11 +376,12 @@ export class UsageService {
         return this.releaseWhatsAppRow(manager, row, 'FAILED');
       }
       if (row.status !== 'RESERVED') return this.toReservation(row);
-      const [uncertain] = await manager.query<ReservationRow[]>(
+      await manager.query(
         `UPDATE public.usage_reservations SET status = 'UNCERTAIN', updated_at = now()
-          WHERE id = $1 RETURNING *, period_start::text AS period_start`,
+          WHERE id = $1`,
         [row.id],
       );
+      const [uncertain] = await this.loadReservation(manager, row.id);
       return this.toReservation(uncertain);
     });
   }
@@ -603,12 +629,13 @@ export class UsageService {
     row: ReservationRow,
     consumed: number,
   ) {
-    const [result] = await manager.query<ReservationRow[]>(
+    await manager.query(
       `UPDATE public.usage_reservations SET consumed_amount = $2,
           released_amount = reserved_amount - $2, status = 'COMMITTED', updated_at = now()
-          WHERE id = $1 RETURNING *, period_start::text AS period_start`,
+          WHERE id = $1`,
       [row.id, consumed],
     );
+    const [result] = await this.loadReservation(manager, row.id);
     return result;
   }
 
@@ -616,12 +643,13 @@ export class UsageService {
     if (row.status === 'RELEASED' || row.status === 'FAILED') return row;
     if (!['RESERVED', 'UNCERTAIN'].includes(row.status))
       throw new UsageReservationStateError();
-    const [result] = await manager.query<ReservationRow[]>(
+    await manager.query(
       `UPDATE public.usage_reservations SET released_amount = reserved_amount,
           status = 'FAILED', updated_at = now()
-        WHERE id = $1 RETURNING *, period_start::text AS period_start`,
+        WHERE id = $1`,
       [row.id],
     );
+    const [result] = await this.loadReservation(manager, row.id);
     return result;
   }
 
@@ -631,12 +659,13 @@ export class UsageService {
     status: 'PROVIDER_ACCEPTED' | 'DELIVERED',
   ) {
     if (row.status === 'DELIVERED') return this.toReservation(row);
-    const [result] = await manager.query<ReservationRow[]>(
+    await manager.query(
       `UPDATE public.usage_reservations SET consumed_amount = 1,
           released_amount = 0, status = $2, updated_at = now()
-        WHERE id = $1 RETURNING *, period_start::text AS period_start`,
+        WHERE id = $1`,
       [row.id, status],
     );
+    const [result] = await this.loadReservation(manager, row.id);
     return this.toReservation(result);
   }
 
@@ -649,19 +678,17 @@ export class UsageService {
       return this.toReservation(row);
     if (row.status !== 'RESERVED' && row.status !== 'UNCERTAIN')
       throw new UsageReservationStateError();
-    const [result] = await manager.query<ReservationRow[]>(
+    await manager.query(
       `UPDATE public.usage_reservations SET released_amount = reserved_amount,
           status = $2, updated_at = now()
-        WHERE id = $1 RETURNING *, period_start::text AS period_start`,
+        WHERE id = $1`,
       [row.id, status],
     );
+    const [result] = await this.loadReservation(manager, row.id);
     return this.toReservation(result);
   }
 
   private toReservation(row: ReservationRow): UsageReservation {
-    if (row.reserved_amount === undefined) {
-      throw new Error(`Usage ledger row missing fields: ${Object.keys(row).join(',')}`);
-    }
     return {
       id: row.id,
       businessId: row.business_id,
@@ -673,6 +700,14 @@ export class UsageService {
       releasedAmount: numberOf(row.released_amount),
       status: row.status,
     };
+  }
+
+  private loadReservation(manager: EntityManager, id: string) {
+    return manager.query<ReservationRow[]>(
+      `SELECT *, period_start::text AS period_start
+         FROM public.usage_reservations WHERE id = $1`,
+      [id],
+    );
   }
 
   private validateBusinessId(businessId: string) {

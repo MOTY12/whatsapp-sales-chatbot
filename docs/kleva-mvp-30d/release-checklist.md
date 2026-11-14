@@ -11,7 +11,8 @@
 - [ ] Approved WhatsApp assets and encrypted credentials map to the correct tenant. Verify send windows, delivery status and uncertain-send recovery.
 - [ ] Merchant publishes an FAQ and product, sees grounded replies and observes handoff for insufficient evidence. Unknown price, stock, payment and policy facts are omitted.
 - [ ] Lead and conversation history persist. Manual takeover prevents pending AI sends and permits a merchant reply.
-- [ ] Per-tenant delivery and model budgets survive retries and concurrent requests. Alert on limits and degraded dependencies.
+- [x] Per-tenant WhatsApp and AI token budgets reserve atomically and reconcile idempotently in local PostgreSQL integration.
+- [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
 
 ## Staging and live release
 
@@ -25,3 +26,4 @@
 - [x] Local signed intake rolls back on PostgreSQL failure and recovers queued handoff after Redis outage.
 - [x] Worker creates tenant-scoped customer, conversation and inbound message; verified owner commands and legacy onboarding create durable pending response intents without sending in a transaction.
 - [ ] Verify live Meta intake, deliver pending owner/onboarding responses through WHATSAPP-003, and complete outbound delivery reconciliation before routing pilot traffic.
+- [x] Metering migration and PostgreSQL integration verify quota boundaries, concurrent reservations, reconciliation, uncertain sends, tenant role denial and recovery without Redis.

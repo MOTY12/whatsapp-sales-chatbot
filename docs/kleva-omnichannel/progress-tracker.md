@@ -15,7 +15,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | TENANT-003 | Paid pilot | IN_PROGRESS | TENANT-001, TENANT-002 | December merchant creation and profile slice verified locally. Legacy claims, invitations, team management and broader audit workflow remain open. |
 | TENANT-004 | Paid pilot | IN_PROGRESS | FOUNDATION-003, FOUNDATION-004, TENANT-002, TENANT-003, CHANNEL-001 | Supervised credential setup verified locally. Live Meta proof, self-service Embedded Signup and external key-management integration remain open. |
 | KNOWLEDGE-001 | Paid pilot | NOT_STARTED | TENANT-003 | Implement knowledge source and revision lifecycle. |
-| METER-001 | Paid pilot | NOT_STARTED | FOUNDATION-004, TENANT-003 | Reserve and reconcile model and delivery budgets. |
+| METER-001 | Paid pilot | VERIFIED locally | FOUNDATION-004, TENANT-003 | PostgreSQL ledger enforces UTC monthly WhatsApp/input-token/output-token budgets, per-request token ceilings, idempotent reservations, conservative uncertain outcomes and merchant-role isolation. Hosted CI and production limit provisioning remain deployment checks. |
 | DASHBOARD-001 | Paid pilot | NOT_STARTED | TENANT-002, TENANT-003, TENANT-004 | Build dashboard shell and onboarding. |
 | WHATSAPP-001 | Paid pilot | VERIFIED | TENANT-004, FOUNDATION-004, CHANNEL-001 | Signed raw intake and atomic receipt/outbox handoff verified locally. |
 | KNOWLEDGE-002 | Paid pilot | NOT_STARTED | KNOWLEDGE-001 | Add private upload and PDF extraction. |

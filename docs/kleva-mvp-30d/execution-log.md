@@ -97,3 +97,21 @@ The new additive migration `ProcessWhatsAppReceipts1760000000009` adds receipt p
 | `npm run test:integration` | 64 passed in 10 suites against disposable PostgreSQL 16 and Redis 7 |
 
 Integration evidence covers duplicate signed intake, tenant joins, verified owner classification, onboarding classification, customer reuse, matching and unmatched delivery statuses, rollback of partial processing, bounded retries and visible terminal failure. Existing outbox tests cover Redis outage recovery and restart/redelivery; migration tests validate the new foreign keys and rollback protections. Live Meta verification, pending response delivery, and outbound reconciliation remain release work. WHATSAPP-002 is VERIFIED locally. The remaining implementation estimate is 94 hours plus 11 contingency hours. The next task is METER-001, then WHATSAPP-003 for pending response delivery and complete outbound reconciliation.
+
+## November 14, 2026 · METER-001
+
+Started at clean `main` commit `04712363e84f494569d5e12208ce9f78977b3009`. Added PostgreSQL tenant limit overrides and a usage ledger for `whatsapp_outbound`, `ai_input_tokens`, and `ai_output_tokens`. Default caps are configurable with `USAGE_DEFAULT_MONTHLY_WHATSAPP_MESSAGES`, `USAGE_DEFAULT_MONTHLY_AI_INPUT_TOKENS`, `USAGE_DEFAULT_MONTHLY_AI_OUTPUT_TOKENS`, and `USAGE_DEFAULT_AI_TOKENS_PER_REQUEST`. Periods use UTC calendar months. Tenant limit changes are internal-only, and cannot lower monthly caps below usage already committed or reserved.
+
+`UsageService` provides `reserveWhatsAppMessage`, `reconcileWhatsAppStatus`, `reserveAiTokens`, `commitAiTokens`, `releaseAiTokens`, `getUsageSummary`, `getRemainingAllowance`, and expired-reservation recovery. PostgreSQL advisory transaction locks serialize reservations and configuration changes by tenant/category; uniqueness constraints enforce per-business/category idempotency. AI calls reserve a bounded input/output budget before the external call, then commit actual amounts and release unused capacity. Missing model usage metadata charges the full reservation. An actual overrun is rejected while the reservation stays held. WhatsApp provider acceptance consumes one message; definitive failure releases it, delivery confirmation keeps it consumed, and unknown or expired operations become `UNCERTAIN` and retain their hold. No Redis counter is used for metering.
+
+Migration `AddTenantUsageLedger1760000000010` adds `business_usage_limits` and `usage_reservations`, business foreign keys, indexes, checks and internal-only RLS policies. Merchant and identity database roles have no access to the tables. Rollback refuses when any tenant limits or ledger records exist. The sender and model clients are not wired to reservations in this phase; WHATSAPP-003 and the later AI integration must call this contract.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` | Passed |
+| `npm run build` | Passed |
+| `npm test` | 41 passed in 9 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | 75 passed in 11 suites against disposable PostgreSQL 16 and Redis 7 |
+
+The metering integration suite verifies quota boundaries and concurrency, duplicate reservations, repeated commits, AI reconciliation and release, overrun rejection, conservative missing metadata, uncertain and definitive WhatsApp outcomes, UTC rollover, tenant isolation, simulated Redis unavailability, restart recovery, expired reservations, negative amounts, and merchant-role denial. The broader integration suite retains WhatsApp intake, owner-command and outbox recovery regressions. METER-001 is VERIFIED locally. Hosted CI and deployment of environment defaults remain release checks. The remaining implementation estimate is 89 hours plus 11 contingency hours. The next task is WHATSAPP-003, which should reserve usage before sends and reconcile provider outcomes through the same idempotency key.

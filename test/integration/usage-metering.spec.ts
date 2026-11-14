@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import Redis from 'ioredis';
+import { createServer } from 'node:net';
 import { DataSource } from 'typeorm';
 import { Business } from '../../src/database/entities/business.entity';
-import { UsageService } from '../../src/metering/usage.service';
+import {
+  UsageService,
+  usagePeriodStart,
+} from '../../src/metering/usage.service';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
 describe('tenant usage metering with PostgreSQL', () => {
@@ -56,6 +61,9 @@ describe('tenant usage metering with PostgreSQL', () => {
     await expect(
       usage.reserveWhatsAppMessage(businessA, 'send-three'),
     ).rejects.toThrow('Usage allowance exceeded');
+    await expect(usage.setBusinessLimits(businessA, limits(1))).rejects.toThrow(
+      'Usage allowance exceeded',
+    );
 
     await usage.setBusinessLimits(businessB, limits(3));
     const attempts = await Promise.allSettled(
@@ -135,6 +143,24 @@ describe('tenant usage metering with PostgreSQL', () => {
     expect(conservative.output.consumedAmount).toBe(
       missing.output.reservedAmount,
     );
+
+    const failedCall = await usage.reserveAiTokens(
+      businessA,
+      'ai-definitive-failure',
+      2,
+      2,
+    );
+    const released = await usage.releaseAiTokens(
+      businessA,
+      'ai-definitive-failure',
+    );
+    const repeatedRelease = await usage.releaseAiTokens(
+      businessA,
+      'ai-definitive-failure',
+    );
+    expect(released.input.status).toBe('FAILED');
+    expect(repeatedRelease.input.id).toBe(failedCall.input.id);
+    expect(released.input.releasedAmount).toBe(2);
   });
 
   it('rejects requests above their ceiling and token overruns without freeing the hold', async () => {
@@ -230,6 +256,7 @@ describe('tenant usage metering with PostgreSQL', () => {
       businessA,
       'month-boundary-send',
     );
+    expect(reservation.periodStart).toBe(usagePeriodStart(new Date()));
     const nextMonth = new Date(
       Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 2),
     );
@@ -314,6 +341,35 @@ describe('tenant usage metering with PostgreSQL', () => {
       ).rejects.toMatchObject({ driverError: { code: '42501' } });
     } finally {
       if (merchant.isInitialized) await merchant.destroy();
+    }
+  });
+
+  it('continues PostgreSQL metering while Redis connections are unavailable', async () => {
+    const unavailable = createServer((socket) => socket.destroy());
+    await new Promise<void>((resolve, reject) => {
+      unavailable.once('error', reject);
+      unavailable.listen(0, '127.0.0.1', resolve);
+    });
+    const address = unavailable.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Expected a local Redis outage fixture.');
+    const redis = new Redis(`redis://127.0.0.1:${address.port}`, {
+      lazyConnect: true,
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+    });
+    redis.on('error', () => undefined);
+    try {
+      await expect(redis.connect()).rejects.toThrow();
+      const reservation = await usage.reserveWhatsAppMessage(
+        businessA,
+        'postgres-while-redis-down',
+      );
+      expect(reservation.status).toBe('RESERVED');
+    } finally {
+      redis.disconnect();
+      await new Promise<void>((resolve) => unavailable.close(() => resolve()));
     }
   });
 });
