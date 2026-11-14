@@ -225,7 +225,10 @@ export async function createIntegrationDatabase() {
         );
         if (receiptTable.exists) {
           await migrator.query(
-            `GRANT SELECT, INSERT, UPDATE (handed_off_at) ON public.webhook_receipts TO "${runtimeRole}"`,
+            `GRANT SELECT, INSERT, UPDATE (handed_off_at, processed_at, processing_outcome) ON public.webhook_receipts TO "${runtimeRole}"`,
+          );
+          await migrator.query(
+            `GRANT SELECT, INSERT, UPDATE, DELETE ON public.whatsapp_response_intents TO "${runtimeRole}"`,
           );
         }
         if (credentialTable.exists) {

@@ -24,6 +24,7 @@ const expectedTables = [
   'users',
   'webhook_receipts',
   'whatsapp_credentials',
+  'whatsapp_response_intents',
 ];
 
 type IntegrationDatabase = Awaited<
@@ -75,6 +76,8 @@ describe('PostgreSQL migration baseline', () => {
         'FK_whatsapp_credentials_tenant',
         'FK_webhook_connection_tenant',
         'FK_webhook_outbox_tenant',
+        'FK_whatsapp_response_receipt_tenant',
+        'FK_whatsapp_response_message_tenant',
         'FK_conversations_customer',
         'FK_customers_business',
         'FK_customers_owner',

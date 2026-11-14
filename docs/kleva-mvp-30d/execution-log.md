@@ -81,3 +81,19 @@ Started from clean `main` at `774a9f977d8f48625e40d75ae961ac29a5e68158`. Reused 
 | `npm run test:integration` | 59 passed in 10 suites |
 
 Local integration used real PostgreSQL and Redis plus signed fixtures. It covered raw tampering, missing secret, size limits, GET challenge, concurrent duplicate messages and statuses, multi-tenant batches, WABA mismatch, inactive assets, rollback, unavailable Redis and replay. Existing owner command logic still passes its direct regression. WHATSAPP-002 must restore downstream handling through the worker before live cutover. Live Meta and staging remain unverified. The remaining estimate is 102 implementation hours plus 11 hours of contingency.
+
+## November 14, 2026 · WHATSAPP-002
+
+Started at clean `main` commit `953e3cec0ca625d2aca9101ed60eb82a88044b2f`. Replaced the receipt-only handoff with transactional inbound processing in the existing outbox worker. The handler validates the receipt, active verified connection, and tenant relationship; reuses or creates a business-scoped customer and conversation; inserts one provider-ID-deduplicated inbound message; and records the receipt outcome with outbox completion. The handler does no external network work.
+
+The new additive migration `ProcessWhatsAppReceipts1760000000009` adds receipt processing state, tenant composite keys, and a `whatsapp_response_intents` table. Owner classification requires an active owner membership with an exact verified WhatsApp ID. Legacy onboarding sessions are classified separately. Both create a pending response intent for WHATSAPP-003; actual assistant responses and delivery are not part of this phase. Delivery events reconcile only matching outbound messages and preserve unmatched status receipts. Statuses cannot downgrade a delivered, read, or failed message.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` | Passed |
+| `npm run build` | Passed |
+| `npm test` | 40 passed in 9 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | 64 passed in 10 suites against disposable PostgreSQL 16 and Redis 7 |
+
+Integration evidence covers duplicate signed intake, tenant joins, verified owner classification, onboarding classification, customer reuse, matching and unmatched delivery statuses, rollback of partial processing, bounded retries and visible terminal failure. Existing outbox tests cover Redis outage recovery and restart/redelivery; migration tests validate the new foreign keys and rollback protections. Live Meta verification, pending response delivery, and outbound reconciliation remain release work. WHATSAPP-002 is VERIFIED locally. The remaining implementation estimate is 94 hours plus 11 contingency hours. The next task is METER-001, then WHATSAPP-003 for pending response delivery and complete outbound reconciliation.

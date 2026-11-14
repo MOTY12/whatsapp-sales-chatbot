@@ -17,10 +17,10 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | KNOWLEDGE-001 | Paid pilot | NOT_STARTED | TENANT-003 | Implement knowledge source and revision lifecycle. |
 | METER-001 | Paid pilot | NOT_STARTED | FOUNDATION-004, TENANT-003 | Reserve and reconcile model and delivery budgets. |
 | DASHBOARD-001 | Paid pilot | NOT_STARTED | TENANT-002, TENANT-003, TENANT-004 | Build dashboard shell and onboarding. |
-| WHATSAPP-001 | Paid pilot | VERIFIED | TENANT-004, FOUNDATION-004, CHANNEL-001 | Signed raw intake and atomic receipt/outbox handoff verified locally. WHATSAPP-002 handles downstream effects. |
+| WHATSAPP-001 | Paid pilot | VERIFIED | TENANT-004, FOUNDATION-004, CHANNEL-001 | Signed raw intake and atomic receipt/outbox handoff verified locally. |
 | KNOWLEDGE-002 | Paid pilot | NOT_STARTED | KNOWLEDGE-001 | Add private upload and PDF extraction. |
 | CATALOG-001 | Paid pilot | NOT_STARTED | TENANT-003, DASHBOARD-001 | Publish native product and service offers. |
-| WHATSAPP-002 | Paid pilot | NOT_STARTED | WHATSAPP-001 | Process inbound turns and legacy commands safely. |
+| WHATSAPP-002 | Paid pilot | VERIFIED locally | WHATSAPP-001 | PostgreSQL outbox worker persists tenant-scoped inbound messages, classifies verified owner commands and legacy onboarding, and retains pending response intents. Actual response delivery and unmatched status reconciliation continue in WHATSAPP-003. |
 | WHATSAPP-003 | Paid pilot | NOT_STARTED | WHATSAPP-001, METER-001 | Implement safe send and status reconciliation. |
 | KNOWLEDGE-003 | Paid pilot | NOT_STARTED | KNOWLEDGE-001, KNOWLEDGE-002, FOUNDATION-004 | Add chunking, embeddings and reindex jobs. |
 | INBOX-001 | Paid pilot | NOT_STARTED | WHATSAPP-002, WHATSAPP-003 | Add conversation and handoff APIs. |

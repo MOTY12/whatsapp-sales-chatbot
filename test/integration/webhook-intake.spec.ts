@@ -99,15 +99,13 @@ describe('durable signed WhatsApp intake', () => {
     }
   });
 
-  function change(asset: string, id: string) {
+  function change(asset: string, id: string, sender = '2348011112222') {
     return {
       field: 'messages',
       value: {
         businessId: other,
         metadata: { phone_number_id: asset },
-        messages: [
-          { id, from: '2348011112222', type: 'text', text: { body: 'hello' } },
-        ],
+        messages: [{ id, from: sender, type: 'text', text: { body: 'hello' } }],
         statuses: [
           { id, status: 'delivered' },
           { id, status: 'delivered' },
@@ -141,9 +139,11 @@ describe('durable signed WhatsApp intake', () => {
         business_id: string;
         event_type: string;
         handed_off_at: Date | null;
+        processed_at: Date | null;
+        processing_outcome: string | null;
       }[]
     >(
-      "SELECT id, business_id, event_type, handed_off_at FROM public.webhook_receipts WHERE payload->>'messageId' = $1",
+      "SELECT id, business_id, event_type, handed_off_at, processed_at, processing_outcome FROM public.webhook_receipts WHERE payload->>'messageId' = $1",
       [id],
     );
   }
@@ -221,8 +221,9 @@ describe('durable signed WhatsApp intake', () => {
     expect(await receipts('rollback')).toHaveLength(3);
   });
 
-  it('hands off durable intents on replay without running downstream effects', async () => {
+  it('processes durable receipts once and resumes work after Redis recovery', async () => {
     const raw = body(change('111', 'handoff'));
+    await post(raw, sign(raw)).expect(200);
     await post(raw, sign(raw)).expect(200);
     const rows = await receipts('handoff');
     expect(rows).toHaveLength(3);
@@ -286,10 +287,11 @@ describe('durable signed WhatsApp intake', () => {
       await worker.waitUntilReady();
       await new OutboxRelay(recovered, queue).dispatch();
       const deadline = Date.now() + 5000;
-      while (
-        (await recovered.status(tenant, rows[0].id))?.status !== 'COMPLETED' &&
-        Date.now() < deadline
-      ) {
+      while (Date.now() < deadline) {
+        const statuses = await Promise.all(
+          rows.map(({ id }) => recovered.status(tenant, id)),
+        );
+        if (statuses.every((status) => status?.status === 'COMPLETED')) break;
         await delay(20);
       }
       await processor.process({ id: rows[0].id }, rows[0].id + '-0');
@@ -301,10 +303,262 @@ describe('durable signed WhatsApp intake', () => {
         (await receipts('handoff')).find(({ id }) => id === rows[0].id)
           ?.handed_off_at,
       ).toBeInstanceOf(Date);
+      const processed = await receipts('handoff');
+      expect(processed.every((row) => row.processed_at instanceof Date)).toBe(
+        true,
+      );
+      expect(
+        processed.find((row) => row.event_type === 'message')
+          ?.processing_outcome,
+      ).toBe('customer_inquiry');
+      expect(
+        await admin.query(
+          `SELECT m.id, m."businessId", m."whatsappMessageId", m.metadata,
+                c."businessId" AS customer_business, v."businessId" AS conversation_business
+           FROM public.messages m
+           JOIN public.conversations v ON v.id = m."conversationId"
+           JOIN public.customers c ON c.id = v."customerId"
+          WHERE m."whatsappMessageId" = 'handoff'`,
+        ),
+      ).toMatchObject([
+        {
+          businessId: tenant,
+          whatsappMessageId: 'handoff',
+          customer_business: tenant,
+          conversation_business: tenant,
+        },
+      ]);
+      expect(
+        await admin.query(
+          `SELECT id FROM public.customers WHERE "businessId" = $1 AND "whatsappId" = $2`,
+          [tenant, '2348011112222'],
+        ),
+      ).toHaveLength(1);
     } finally {
       await worker.close();
       await queue.obliterate({ force: true });
       await queue.close();
     }
   });
+
+  it('recognizes only a verified tenant owner and defers the response durably', async () => {
+    const accountId = randomUUID();
+    const verifiedOwner = '2348200000099';
+    await admin.query(
+      `INSERT INTO public.accounts (id, issuer, subject) VALUES ($1, 'integration', $2)`,
+      [accountId, randomUUID()],
+    );
+    await admin.query(
+      `INSERT INTO public.business_members
+         ("businessId", "accountId", role, status, "verifiedWhatsappId")
+       VALUES ($1, $2, 'owner', 'active', $3)`,
+      [tenant, accountId, verifiedOwner],
+    );
+
+    const raw = body(change('111', 'verified-owner-command', verifiedOwner));
+    await post(raw, sign(raw)).expect(200);
+    const messageReceipt = (await receipts('verified-owner-command')).find(
+      ({ event_type }) => event_type === 'message',
+    );
+    if (!messageReceipt) throw new Error('Expected a durable owner receipt.');
+
+    await admin.query(
+      `UPDATE public.outbox_operations SET status = 'DISPATCHED', "dueAt" = now() WHERE id = $1`,
+      [messageReceipt.id],
+    );
+    const store = new OutboxStore(runtime);
+    const job = await store.begin(messageReceipt.id, 0);
+    if (!job) throw new Error('Expected a claimable owner receipt.');
+    await store.complete(job, handoffWhatsAppReceipt);
+
+    const [message] = await admin.query<
+      { metadata: Record<string, unknown> }[]
+    >(`SELECT metadata FROM public.messages WHERE "whatsappMessageId" = $1`, [
+      'verified-owner-command',
+    ]);
+    expect(message.metadata.classification).toBe('owner_command');
+    expect(
+      await admin.query(
+        `SELECT response_kind, status FROM public.whatsapp_response_intents WHERE receipt_id = $1`,
+        [messageReceipt.id],
+      ),
+    ).toEqual([{ response_kind: 'owner_command', status: 'PENDING' }]);
+  });
+
+  it('reuses an existing tenant customer and conversation', async () => {
+    const sender = '2348300000000';
+    const before = await admin.query<{ id: string }[]>(
+      `SELECT id FROM public.customers WHERE "businessId" = $1 AND phone = $2`,
+      [tenant, sender],
+    );
+    expect(before).toHaveLength(1);
+    const raw = body(change('111', 'existing-customer-message', sender));
+    await post(raw, sign(raw)).expect(200);
+    const receipt = (await receipts('existing-customer-message')).find(
+      ({ event_type }) => event_type === 'message',
+    );
+    if (!receipt) throw new Error('Expected a customer message receipt.');
+    await processReceipt(receipt.id);
+    const [stored] = await admin.query<{ customerId: string; id: string }[]>(
+      `SELECT c.id, v."customerId" FROM public.messages m
+         JOIN public.conversations v ON v.id = m."conversationId"
+         JOIN public.customers c ON c.id = v."customerId"
+        WHERE m."whatsappMessageId" = $1 AND c."businessId" = $2`,
+      ['existing-customer-message', tenant],
+    );
+    expect(stored.id).toBe(before[0].id);
+    expect(
+      await admin.query(
+        `SELECT id FROM public.customers WHERE "businessId" = $1 AND phone = $2`,
+        [tenant, sender],
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('keeps legacy onboarding separate and stores a pending response intent', async () => {
+    const sender = '2348999999911';
+    await admin.query(
+      `INSERT INTO public.onboarding_sessions ("whatsappId", step) VALUES ($1, 'ASK_REGISTER')`,
+      [sender],
+    );
+    const raw = body(change('111', 'legacy-onboarding-message', sender));
+    await post(raw, sign(raw)).expect(200);
+    const receipt = (await receipts('legacy-onboarding-message')).find(
+      ({ event_type }) => event_type === 'message',
+    );
+    if (!receipt) throw new Error('Expected a legacy onboarding receipt.');
+    await processReceipt(receipt.id);
+    const [stored] = await admin.query<{ metadata: Record<string, unknown> }[]>(
+      `SELECT metadata FROM public.messages WHERE "whatsappMessageId" = $1`,
+      ['legacy-onboarding-message'],
+    );
+    expect(stored.metadata.classification).toBe('legacy_onboarding');
+    expect(
+      await admin.query(
+        `SELECT response_kind, status FROM public.whatsapp_response_intents WHERE receipt_id = $1`,
+        [receipt.id],
+      ),
+    ).toEqual([{ response_kind: 'legacy_onboarding', status: 'PENDING' }]);
+  });
+
+  it('reconciles only matching outbound messages and retains unmatched statuses', async () => {
+    const [conversation] = await admin.query<{ id: string }[]>(
+      `SELECT id FROM public.conversations WHERE "businessId" = $1 LIMIT 1`,
+      [tenant],
+    );
+    const outboundId = randomUUID();
+    await admin.query(
+      `INSERT INTO public.messages
+         (id, "businessId", "conversationId", direction, content, status, "whatsappMessageId")
+       VALUES ($1, $2, $3, 'outbound', 'hello', 'sent', 'outbound-status-fixture')`,
+      [outboundId, tenant, conversation.id],
+    );
+    const delivery = (messageId: string, status: string) =>
+      JSON.stringify({
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: 'account',
+            changes: [
+              {
+                field: 'messages',
+                value: {
+                  metadata: { phone_number_id: '111' },
+                  statuses: [{ id: messageId, status }],
+                },
+              },
+            ],
+          },
+        ],
+      });
+    const acceptStatus = async (messageId: string, status: string) => {
+      const raw = delivery(messageId, status);
+      await post(raw, sign(raw)).expect(200);
+      const [receipt] = await admin.query<{ id: string }[]>(
+        `SELECT id FROM public.webhook_receipts
+          WHERE payload->>'messageId' = $1 AND payload->>'status' = $2
+            AND processed_at IS NULL ORDER BY received_at DESC LIMIT 1`,
+        [messageId, status],
+      );
+      if (!receipt) throw new Error('Expected a delivery status receipt.');
+      await processReceipt(receipt.id);
+      return receipts(messageId);
+    };
+
+    await acceptStatus('outbound-status-fixture', 'delivered');
+    await acceptStatus('outbound-status-fixture', 'read');
+    const [outbound] = await admin.query<{ status: string }[]>(
+      `SELECT status FROM public.messages WHERE id = $1 AND "businessId" = $2`,
+      [outboundId, tenant],
+    );
+    expect(outbound.status).toBe('read');
+    const unmatched = await acceptStatus(
+      'unknown-outbound-fixture',
+      'delivered',
+    );
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0].processing_outcome).toBe('unmatched_delivery');
+    expect(
+      await admin.query(
+        `SELECT id FROM public.messages WHERE "whatsappMessageId" = 'unknown-outbound-fixture'`,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('rolls back partial writes on failure and exposes terminal retry state', async () => {
+    const raw = body(change('111', 'terminal-failure', '2348999999922'));
+    await post(raw, sign(raw)).expect(200);
+    const receipt = (await receipts('terminal-failure')).find(
+      ({ event_type }) => event_type === 'message',
+    );
+    if (!receipt) throw new Error('Expected a failing receipt.');
+    await admin.query(`ALTER TABLE public.messages ADD CONSTRAINT test_fail_inbound
+      CHECK ("whatsappMessageId" <> 'terminal-failure') NOT VALID`);
+    try {
+      const processor = new OutboxProcessor(
+        new OutboxStore(runtime),
+        new Map([[whatsappReceiptOperation, handoffWhatsAppReceipt]]),
+      );
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await admin.query(
+          `UPDATE public.outbox_operations SET status = 'DISPATCHED', "dueAt" = now() WHERE id = $1`,
+          [receipt.id],
+        );
+        await processor.process({ id: receipt.id }, `${receipt.id}-${attempt}`);
+      }
+      expect(
+        await new OutboxStore(runtime).status(tenant, receipt.id),
+      ).toMatchObject({
+        status: 'FAILED',
+        attempts: 5,
+        lastError: 'HANDLER_FAILED',
+      });
+      expect(
+        await admin.query(
+          `SELECT id FROM public.customers WHERE "businessId" = $1 AND phone = '2348999999922'`,
+          [tenant],
+        ),
+      ).toHaveLength(0);
+      expect(
+        (await receipts('terminal-failure')).find(
+          ({ id }) => id === receipt.id,
+        ),
+      ).toMatchObject({ processed_at: null });
+    } finally {
+      await admin.query(
+        'ALTER TABLE public.messages DROP CONSTRAINT test_fail_inbound',
+      );
+    }
+  });
+
+  async function processReceipt(id: string) {
+    await admin.query(
+      `UPDATE public.outbox_operations SET status = 'DISPATCHED', "dueAt" = now() WHERE id = $1`,
+      [id],
+    );
+    const store = new OutboxStore(runtime);
+    const job = await store.begin(id, 0);
+    if (!job) throw new Error('Expected a claimable receipt.');
+    await store.complete(job, handoffWhatsAppReceipt);
+  }
 });

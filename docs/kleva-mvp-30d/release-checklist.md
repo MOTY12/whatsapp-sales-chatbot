@@ -6,7 +6,7 @@
 - [ ] Hosted CI passes lint, build, unit, HTTP, database, queue and browser journey checks.
 - [x] Backend tests prove atomic creation, idempotent retry, role checks, and cross-tenant denial.
 - [ ] Browser onboarding proves same-origin sessions, atomic ownership, profile edits and cross-business denial.
-- [ ] Signed webhook commits to PostgreSQL before acknowledgement. Duplicate events, Redis outage, worker restart and replay preserve intended effects.
+- [x] Signed webhook commits to PostgreSQL before acknowledgement. Duplicate events, Redis outage, worker restart and replay preserve intended inbound message effects in local integration.
 - [x] Local Meta fixtures and PostgreSQL verify tenant-bound encrypted provisioning, rotation, revocation and disconnect.
 - [ ] Approved WhatsApp assets and encrypted credentials map to the correct tenant. Verify send windows, delivery status and uncertain-send recovery.
 - [ ] Merchant publishes an FAQ and product, sees grounded replies and observes handoff for insufficient evidence. Unknown price, stock, payment and policy facts are omitted.
@@ -23,4 +23,5 @@
 - [ ] Enable the agent only for approved pilot tenants. Keep a tested disable switch and an operator-run inbox during the pilot.
 
 - [x] Local signed intake rolls back on PostgreSQL failure and recovers queued handoff after Redis outage.
-- [ ] Verify live Meta intake and restore downstream owner/customer handling before routing pilot traffic.
+- [x] Worker creates tenant-scoped customer, conversation and inbound message; verified owner commands and legacy onboarding create durable pending response intents without sending in a transaction.
+- [ ] Verify live Meta intake, deliver pending owner/onboarding responses through WHATSAPP-003, and complete outbound delivery reconciliation before routing pilot traffic.
