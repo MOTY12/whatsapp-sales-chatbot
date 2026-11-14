@@ -13,13 +13,17 @@ import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-c
 import { MerchantWhatsAppController } from '../channels/secure-whatsapp/merchant-whatsapp.controller';
 import { MerchantWhatsAppService } from '../channels/secure-whatsapp/merchant-whatsapp.service';
 import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { MerchantInboxController } from './merchant-inbox.controller';
+import { MerchantInboxService } from './merchant-inbox.service';
 
 @Module({
-  imports: [CredentialCipherModule],
+  imports: [CredentialCipherModule, WhatsAppModule],
   controllers: [
     MerchantAuthController,
     MerchantBusinessController,
     MerchantWhatsAppController,
+    MerchantInboxController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -29,6 +33,7 @@ import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier'
     MerchantAccess,
     MerchantBusinessService,
     MerchantWhatsAppService,
+    MerchantInboxService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

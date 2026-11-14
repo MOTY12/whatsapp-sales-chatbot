@@ -178,9 +178,14 @@ export class OutboundMessageService {
     );
     if (!row) throw new Error('Outbound message is unavailable.');
     if (
-        ['ACCEPTED', 'DELIVERED', 'READ', 'FAILED', 'UNCERTAIN', 'SUPPRESSED'].includes(
-        row.status,
-      )
+      [
+        'ACCEPTED',
+        'DELIVERED',
+        'READ',
+        'FAILED',
+        'UNCERTAIN',
+        'SUPPRESSED',
+      ].includes(row.status)
     ) {
       if (row.status === 'SUPPRESSED') {
         await this.usage.reconcileWhatsAppStatus(
@@ -401,10 +406,12 @@ export class OutboundMessageService {
     conversationId: string,
     controlVersion: number | string,
   ): Promise<void> {
-    const [state] = await this.database.query<{
-      control_mode: string;
-      control_version: number | string;
-    }[]>(
+    const [state] = await this.database.query<
+      {
+        control_mode: string;
+        control_version: number | string;
+      }[]
+    >(
       `SELECT control_mode, control_version FROM public.conversations
         WHERE id = $1 AND "businessId" = $2`,
       [conversationId, businessId],
@@ -425,8 +432,8 @@ export class OutboundMessageService {
       businessId,
       { to: recipient, message: response },
       intentId,
-      { conversationId, kind: 'AI', controlVersion },
       intentId,
+      { conversationId, kind: 'AI', controlVersion },
     );
     await this.database.query(
       `UPDATE public.whatsapp_response_intents SET outbound_message_id = $3, status = 'QUEUED', updated_at = now()
@@ -452,10 +459,12 @@ export class OutboundMessageService {
           'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
           [`conversation:${row.business_id}:${row.conversation_id}`],
         );
-        const [control] = await manager.query<{
-          control_mode: string;
-          control_version: number | string;
-        }[]>(
+        const [control] = await manager.query<
+          {
+            control_mode: string;
+            control_version: number | string;
+          }[]
+        >(
           `SELECT control_mode, control_version FROM public.conversations
             WHERE id = $1 AND "businessId" = $2 FOR UPDATE`,
           [row.conversation_id, row.business_id],
