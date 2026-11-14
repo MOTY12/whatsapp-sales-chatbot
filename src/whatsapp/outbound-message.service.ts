@@ -10,7 +10,6 @@ import type { OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import type { OutboxOperation } from '../database/entities/outbox-operation.entity';
 
 export const whatsappOutboundOperation = 'whatsapp.outbound';
-const serviceWindowMs = 24 * 60 * 60 * 1000;
 
 type OutboundRow = {
   id: string;
@@ -172,12 +171,19 @@ export class OutboundMessageService {
           ? 'failed'
           : row.status === 'UNCERTAIN'
             ? 'unknown'
+            : row.status === 'DELIVERED' || row.status === 'READ'
+              ? 'delivered'
             : 'accepted';
       await this.usage.reconcileWhatsAppStatus(
         row.business_id,
         row.idempotency_key,
         usageStatus,
       );
+      if (row.provider_message_id)
+        await this.reconcileUnmatchedStatuses(
+          row.business_id,
+          row.provider_message_id,
+        );
       return;
     }
     if (row.status === 'SENDING') {
@@ -254,48 +260,82 @@ export class OutboundMessageService {
     providerMessageId: string,
     status: string,
   ): Promise<boolean> {
+    const next = status === 'read' ? 'READ' : status === 'delivered' ? 'DELIVERED' : status === 'sent' ? 'ACCEPTED' : 'FAILED';
+    const precedence: Record<string, number> = { RESERVED: 0, SENDING: 1, UNCERTAIN: 1, ACCEPTED: 2, FAILED: 3, DELIVERED: 4, READ: 5 };
+    const result = await this.database.transaction(async (manager) => {
+      const [row] = await manager.query<OutboundRow[]>(
+        `SELECT * FROM public.whatsapp_outbound_messages
+          WHERE business_id = $1 AND provider_message_id = $2 FOR UPDATE`,
+        [businessId, providerMessageId],
+      );
+      if (!row) return null;
+      if (precedence[row.status] >= precedence[next]) return { row, changed: false };
+      await manager.query(
+        `UPDATE public.whatsapp_outbound_messages SET status = $3, updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [row.id, businessId, next],
+      );
+      await manager.query(
+        `UPDATE public.messages SET status = CASE WHEN $3 = 'READ' THEN 'read'
+            WHEN $3 = 'DELIVERED' THEN 'delivered' WHEN $3 = 'FAILED' THEN 'failed' ELSE 'sent' END
+          WHERE id = $1 AND "businessId" = $2`,
+        [row.message_id, businessId, next],
+      );
+      return { row, changed: true };
+    });
+    if (!result) return false;
+    if (!result.changed) return true;
+    await this.usage.reconcileWhatsAppStatus(
+      businessId,
+      result.row.idempotency_key,
+      status === 'failed' ? 'accepted' : status,
+    );
+    await this.markResponseIntent(result.row, next);
+    return true;
+  }
+
+  async resolveUncertain(
+    businessId: string,
+    outboundId: string,
+    confirmedStatus: 'accepted' | 'failed',
+    providerMessageId?: string,
+  ): Promise<void> {
     const [row] = await this.database.query<OutboundRow[]>(
       `SELECT * FROM public.whatsapp_outbound_messages
-        WHERE business_id = $1 AND provider_message_id = $2 FOR UPDATE`,
-      [businessId, providerMessageId],
+        WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN' FOR UPDATE`,
+      [outboundId, businessId],
     );
-    if (!row) return false;
-    const next =
-      status === 'read'
-        ? 'READ'
-        : status === 'delivered'
-          ? 'DELIVERED'
-          : status === 'sent'
-            ? 'ACCEPTED'
-            : 'FAILED';
-    const precedence: Record<string, number> = {
-      RESERVED: 0,
-      SENDING: 1,
-      UNCERTAIN: 1,
-      ACCEPTED: 2,
-      FAILED: 2,
-      DELIVERED: 3,
-      READ: 4,
-    };
-    if (precedence[row.status] >= precedence[next]) return true;
+    if (!row) throw new Error('Uncertain outbound record was not found.');
+    if (confirmedStatus === 'accepted' && !providerMessageId) {
+      throw new Error(
+        'A provider message ID is required to confirm acceptance.',
+      );
+    }
+    const status = confirmedStatus === 'accepted' ? 'ACCEPTED' : 'FAILED';
     await this.database.query(
-      `UPDATE public.whatsapp_outbound_messages SET status = $3, updated_at = now()
-        WHERE id = $1 AND business_id = $2`,
-      [row.id, businessId, next],
+      `UPDATE public.whatsapp_outbound_messages SET status = $3,
+         provider_message_id = COALESCE($4, provider_message_id), last_error = 'MANUAL_RECONCILIATION', updated_at = now()
+        WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN'`,
+      [outboundId, businessId, status, providerMessageId ?? null],
     );
     await this.database.query(
-      `UPDATE public.messages SET status = CASE WHEN $3 = 'READ' THEN 'read'
-          WHEN $3 = 'DELIVERED' THEN 'delivered' WHEN $3 = 'FAILED' THEN 'failed' ELSE 'sent' END
+      `UPDATE public.messages SET status = $3, "whatsappMessageId" = COALESCE($4, "whatsappMessageId")
         WHERE id = $1 AND "businessId" = $2`,
-      [row.message_id, businessId, next],
+      [
+        row.message_id,
+        businessId,
+        status === 'ACCEPTED' ? 'sent' : 'failed',
+        providerMessageId ?? null,
+      ],
     );
     await this.usage.reconcileWhatsAppStatus(
       businessId,
       row.idempotency_key,
-      status,
+      confirmedStatus,
     );
-    await this.markResponseIntent(row, next);
-    return true;
+    await this.markResponseIntent(row, status);
+    if (providerMessageId)
+      await this.reconcileUnmatchedStatuses(businessId, providerMessageId);
   }
 
   async markGeneratedIntent(intentId: string, response: string): Promise<void> {
@@ -334,7 +374,7 @@ export class OutboundMessageService {
         : 'QUEUED';
     await this.database.query(
       `UPDATE public.whatsapp_response_intents SET status = $3, updated_at = now()
-        WHERE id = $1 AND business_id = $2 AND status <> 'FAILED'`,
+        WHERE id = $1 AND business_id = $2`,
       [row.response_intent_id, row.business_id, next],
     );
   }
@@ -425,19 +465,17 @@ export class OutboundMessageService {
     preferredConversationId?: string | null,
   ) {
     const [window] = await this.database.query<
-      { last_inbound: Date | null; conversation_id: string | null }[]
+      { conversation_id: string | null; is_open: boolean }[]
     >(
-      `SELECT m."createdAt" AS last_inbound, m."conversationId" AS conversation_id
+      `SELECT m."conversationId" AS conversation_id,
+          (m."createdAt" >= now() - interval '24 hours' AND m."createdAt" <= now()) AS is_open
          FROM public.messages m JOIN public.conversations v ON v.id = m."conversationId"
          JOIN public.customers c ON c.id = v."customerId"
         WHERE m."businessId" = $1 AND m.direction = 'inbound' AND c."whatsappId" = $2
         ORDER BY m."createdAt" DESC LIMIT 1`,
       [businessId, recipient],
     );
-    const lastInbound = window?.last_inbound
-      ? new Date(window.last_inbound).getTime()
-      : 0;
-    if (lastInbound === 0 || Date.now() - lastInbound > serviceWindowMs) {
+    if (!window?.is_open) {
       throw new OutboundPolicyError(
         'Free-form WhatsApp messages require an open customer-service window.',
       );
@@ -447,7 +485,7 @@ export class OutboundMessageService {
       window.conversation_id !== preferredConversationId
     ) {
       const [preferred] = await this.database.query<{ valid: boolean }[]>(
-        `SELECT EXISTS (SELECT 1 FROM public.messages WHERE "businessId" = $1 AND "conversationId" = $2 AND direction = 'inbound' AND "createdAt" > now() - interval '24 hours') AS valid`,
+        `SELECT EXISTS (SELECT 1 FROM public.messages WHERE "businessId" = $1 AND "conversationId" = $2 AND direction = 'inbound' AND "createdAt" >= now() - interval '24 hours' AND "createdAt" <= now()) AS valid`,
         [businessId, preferredConversationId],
       );
       if (!preferred?.valid)

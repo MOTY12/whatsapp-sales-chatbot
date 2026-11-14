@@ -115,3 +115,23 @@ Migration `AddTenantUsageLedger1760000000010` adds `business_usage_limits` and `
 | `npm run test:integration` | 75 passed in 11 suites against disposable PostgreSQL 16 and Redis 7 |
 
 The metering integration suite verifies quota boundaries and concurrency, duplicate reservations, repeated commits, AI reconciliation and release, overrun rejection, conservative missing metadata, uncertain and definitive WhatsApp outcomes, UTC rollover, tenant isolation, simulated Redis unavailability, restart recovery, expired reservations, negative amounts, and merchant-role denial. The broader integration suite retains WhatsApp intake, owner-command and outbox recovery regressions. METER-001 is VERIFIED locally. Hosted CI and deployment of environment defaults remain release checks. The remaining implementation estimate is 89 hours plus 11 contingency hours. The next task is WHATSAPP-003, which should reserve usage before sends and reconcile provider outcomes through the same idempotency key.
+
+## November 14, 2026 · WHATSAPP-003
+
+Started from clean `main` at reviewed commit `77b7a717b25831984f9d893e52fe188acdcdd08d`. Added `whatsapp_outbound_messages` with tenant, verified connection, conversation and message references; logical idempotency; reserved usage key; provider ID; attempt metadata; and explicit `RESERVED → SENDING → ACCEPTED/DELIVERED/READ/FAILED/UNCERTAIN` lifecycle. Each outbound message and minimal outbox reference are committed before any provider call. Queue payloads contain only the outbound UUID.
+
+The worker rechecks the tenant business, active verified connection, encrypted credential eligibility, and the 24-hour customer-service window before sending. It makes the Meta call outside a database transaction. Provider acceptance consumes the existing METER-001 reservation; a definitive synchronous rejection releases it; a timeout or worker restart while `SENDING` marks the record `UNCERTAIN` and keeps the hold. A repeated job never resends an accepted or uncertain message. Because Meta does not promise send idempotency, uncertain messages require an operator to inspect provider history and call the guarded `OutboundMessageService.resolveUncertain` operation. Provider delivery failure remains charged after acceptance.
+
+Receipt processing now matches by tenant, connection and provider message ID. Duplicate and out-of-order statuses are monotonic; unmatched receipts are retained in `whatsapp_unmatched_statuses` and replayed when the send result provides its ID. Owner-command and legacy-onboarding response intents now get a separate durable generation step and outbound job. Generated text is saved before enqueue; an interrupted generation is fenced for review rather than rerun, preventing repeated assistant actions. Customer inquiries remain stored without automated AI responses. No approved template sender exists yet, so free-form text is blocked outside the 24-hour window.
+
+The additive migration `DurableWhatsAppOutbound1760000000011` adds the tenant-scoped outbound and unmatched-status tables, foreign keys, indexes, RLS, the worker-only membership read policy, and response-intent generation state. Existing receipts, conversations, messages and usage rows are preserved; rollback refuses once outbound history or progressed response intents exist. Merchant and identity roles cannot query the new internal tables.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` | Passed |
+| `npm run build` | Passed |
+| `npm test` | 41 passed in 9 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | Pending final run against disposable PostgreSQL 16 and Redis 7 |
+
+Outbound integration coverage includes the local Meta HTTP fixture and encrypted tenant credential, quota-before-send, acceptance, definitive and ambiguous failures, duplicate and concurrent logical sends, quota exhaustion, disconnected channels, expired windows, worker restart, owner and onboarding dispatch, monotonic delivery callbacks and unmatched-status replay. Existing suites cover Redis outage recovery, signed intake, migration rollback, tenant isolation and metering regression. Live Meta behavior, approved template delivery, hosted CI, staging migration/permissions and operations monitoring remain production blockers. WHATSAPP-003 is locally implemented. Remaining MVP estimate: 78 hours plus 11 contingency hours. Next task: INBOX-001.

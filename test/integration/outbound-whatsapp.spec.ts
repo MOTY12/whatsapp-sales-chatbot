@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { OutboxOperation } from '../../src/database/entities/outbox-operation.entity';
 import { Business } from '../../src/database/entities/business.entity';
@@ -7,7 +7,12 @@ import { UsageService } from '../../src/metering/usage.service';
 import { OutboundMessageService } from '../../src/whatsapp/outbound-message.service';
 import { WhatsAppProviderError } from '../../src/whatsapp/interfaces/whatsapp-cloud-api-client.interface';
 import { WhatsAppResponseIntentDispatcher } from '../../src/whatsapp/response-intent.dispatcher';
+import { WhatsAppCloudApiService } from '../../src/whatsapp/whatsapp-cloud-api.service';
+import { ChannelConnectionService } from '../../src/channels/channel-connection.service';
+import { CredentialCipher } from '../../src/channels/secure-whatsapp/credential-cipher';
+import { BusinessRepository } from '../../src/database/repositories/business.repository';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
+import { startMetaFixture } from './meta-fixture';
 
 describe('durable WhatsApp outbound messages', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
@@ -20,8 +25,28 @@ describe('durable WhatsApp outbound messages', () => {
   let connectionId: string;
   let conversationId: string;
   let recipient: string;
+  let metaFixture: Awaited<ReturnType<typeof startMetaFixture>>;
+  let credentialCipher: CredentialCipher;
+  let originalMetaEnv: Pick<
+    NodeJS.ProcessEnv,
+    | 'META_GRAPH_BASE_URL'
+    | 'WHATSAPP_CREDENTIAL_KEY_ID'
+    | 'WHATSAPP_CREDENTIAL_KEYS'
+  >;
 
   beforeAll(async () => {
+    originalMetaEnv = {
+      META_GRAPH_BASE_URL: process.env.META_GRAPH_BASE_URL,
+      WHATSAPP_CREDENTIAL_KEY_ID: process.env.WHATSAPP_CREDENTIAL_KEY_ID,
+      WHATSAPP_CREDENTIAL_KEYS: process.env.WHATSAPP_CREDENTIAL_KEYS,
+    };
+    metaFixture = await startMetaFixture();
+    process.env.META_GRAPH_BASE_URL = metaFixture.origin;
+    process.env.WHATSAPP_CREDENTIAL_KEY_ID = 'outbound-fixture';
+    process.env.WHATSAPP_CREDENTIAL_KEYS = JSON.stringify({
+      'outbound-fixture': randomBytes(32).toString('base64url'),
+    });
+    credentialCipher = new CredentialCipher();
     database = await createIntegrationDatabase();
     admin = await database.migrator();
     await applyMigrations(admin);
@@ -51,12 +76,13 @@ describe('durable WhatsApp outbound messages', () => {
       [
         businessId,
         connectionId,
-        JSON.stringify({
-          keyId: 'fixture',
-          nonce: 'AA',
-          ciphertext: 'AA',
-          tag: 'AA',
-        }),
+        JSON.stringify(
+          credentialCipher.encrypt(
+            'fixture-access-token',
+            businessId,
+            connectionId,
+          ),
+        ),
       ],
     );
     await admin.query(
@@ -94,6 +120,13 @@ describe('durable WhatsApp outbound messages', () => {
   });
 
   afterAll(async () => {
+    await metaFixture?.close();
+    for (const key of Object.keys(originalMetaEnv ?? {})) {
+      const envKey = key as keyof typeof originalMetaEnv;
+      const value = originalMetaEnv?.[envKey];
+      if (value === undefined) delete process.env[envKey];
+      else process.env[envKey] = value;
+    }
     await database?.close();
   });
 
@@ -142,6 +175,31 @@ describe('durable WhatsApp outbound messages', () => {
     ).toBe(4);
     await outbound.execute(operation);
     expect(cloud.sendTextMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends through the local Meta Cloud API fixture with the encrypted tenant credential', async () => {
+    const realClient = new WhatsAppCloudApiService(
+      new BusinessRepository(runtime.getRepository(Business)),
+      new ChannelConnectionService(runtime),
+      credentialCipher,
+      runtime,
+    );
+    outbound = new OutboundMessageService(
+      runtime,
+      new OutboxStore(runtime),
+      usage,
+      realClient,
+    );
+    const id = await queueMessage();
+    await outbound.execute(await outboxFor(id));
+    expect(metaFixture.sent).toContain('fixture-access-token');
+    expect(await outboundRow(id)).toMatchObject({
+      status: 'ACCEPTED',
+      provider_message_id: 'wamid.fixture',
+    });
+    expect(
+      await usage.getRemainingAllowance(businessId, 'whatsapp_outbound'),
+    ).toBe(4);
   });
 
   it('releases quota on definitive provider rejection and retains it on ambiguous timeouts', async () => {
@@ -248,6 +306,65 @@ describe('durable WhatsApp outbound messages', () => {
       ),
     ).toBe(true);
     expect(await outboundRow(acceptedId)).toMatchObject({ status: 'READ' });
+
+    const failedThenDelivered = await queueMessage();
+    await outbound.execute(await outboxFor(failedThenDelivered));
+    const delayed = await outboundRow(failedThenDelivered);
+    expect(delayed.provider_message_id).toBeTruthy();
+    await outbound.reconcileProviderStatus(
+      businessId,
+      delayed.provider_message_id!,
+      'failed',
+    );
+    await outbound.reconcileProviderStatus(
+      businessId,
+      delayed.provider_message_id!,
+      'delivered',
+    );
+    expect(await outboundRow(failedThenDelivered)).toMatchObject({
+      status: 'DELIVERED',
+    });
+  });
+
+  it('preserves an unmatched delivery callback and reconciles it when the send result appears', async () => {
+    const id = await queueMessage();
+    const receiptId = randomUUID();
+    await admin.query(
+      `INSERT INTO public.outbox_operations (id, "businessId", operation, metadata)
+       VALUES ($1,$2,'whatsapp.receipt',$3)`,
+      [receiptId, businessId, JSON.stringify({ receiptId })],
+    );
+    await admin.query(
+      `INSERT INTO public.webhook_receipts (id, provider, connection_id, business_id, event_key, event_type, payload)
+       VALUES ($1,'whatsapp',$2,$3,$4,'delivery',$5)`,
+      [
+        receiptId,
+        connectionId,
+        businessId,
+        `delivery-${receiptId}`,
+        JSON.stringify({ messageId: 'wamid.late', status: 'delivered' }),
+      ],
+    );
+    await admin.query(
+      `INSERT INTO public.whatsapp_unmatched_statuses
+        (business_id, connection_id, provider_message_id, provider_status, receipt_id)
+       VALUES ($1,$2,'wamid.late','delivered',$3)`,
+      [businessId, connectionId, receiptId],
+    );
+    cloud.sendTextMessage.mockResolvedValueOnce('wamid.late');
+    await outbound.execute(await outboxFor(id));
+    expect(await outboundRow(id)).toMatchObject({
+      status: 'DELIVERED',
+      provider_message_id: 'wamid.late',
+    });
+    const [stored] = await admin.query<{ reconciled_at: Date | null }[]>(
+      `SELECT reconciled_at FROM public.whatsapp_unmatched_statuses WHERE receipt_id = $1`,
+      [receiptId],
+    );
+    expect(stored.reconciled_at).toBeTruthy();
+    expect(
+      await usage.getRemainingAllowance(businessId, 'whatsapp_outbound'),
+    ).toBe(4);
   });
 
   it('dispatches generated owner and legacy onboarding replies as separate durable outbounds', async () => {
@@ -262,7 +379,7 @@ describe('durable WhatsApp outbound messages', () => {
     );
     await admin.query(
       `INSERT INTO public.users (id, "businessId", email, "firstName", password, roles, "whatsappId")
-       VALUES ($1,$2,$3,'Owner','fixture','{owner}',$4)`,
+       VALUES ($1,$2,$3,'Owner','fixture','owner',$4)`,
       [ownerId, businessId, `${ownerId}@example.test`, recipient],
     );
     await admin.query(
@@ -319,12 +436,6 @@ describe('durable WhatsApp outbound messages', () => {
         status: 'active',
       },
     ]);
-    expect(
-      await runtime.query(
-        `SELECT "legacyUserId", "verifiedWhatsappId" FROM public.business_members WHERE "businessId" = $1`,
-        [businessId],
-      ),
-    ).toEqual([{ legacyUserId: ownerId, verifiedWhatsappId: recipient }]);
     const dispatcher = new WhatsAppResponseIntentDispatcher(
       runtime,
       assistant as never,

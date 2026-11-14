@@ -78,7 +78,9 @@ export class DurableWhatsAppOutbound1760000000011 implements MigrationInterface 
         receipt_id uuid NOT NULL,
         UNIQUE (business_id, receipt_id),
         FOREIGN KEY (connection_id, business_id)
-          REFERENCES public.channel_connections(id, "businessId") ON DELETE RESTRICT
+          REFERENCES public.channel_connections(id, "businessId") ON DELETE RESTRICT,
+        FOREIGN KEY (receipt_id, business_id)
+          REFERENCES public.webhook_receipts(id, business_id) ON DELETE RESTRICT
       );
       CREATE INDEX "IDX_wa_unmatched_status_lookup"
         ON public.whatsapp_unmatched_statuses(business_id, provider_message_id)

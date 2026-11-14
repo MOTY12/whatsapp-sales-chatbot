@@ -27,3 +27,8 @@
 - [x] Worker creates tenant-scoped customer, conversation and inbound message; verified owner commands and legacy onboarding create durable pending response intents without sending in a transaction.
 - [ ] Verify live Meta intake, deliver pending owner/onboarding responses through WHATSAPP-003, and complete outbound delivery reconciliation before routing pilot traffic.
 - [x] Metering migration and PostgreSQL integration verify quota boundaries, concurrent reservations, reconciliation, uncertain sends, tenant role denial and recovery without Redis.
+- [x] Outbound sends persist tenant-scoped intent and usage holds before the worker calls Meta; local PostgreSQL tests cover rejection, timeout, idempotency and restart behavior.
+- [x] Delivery callbacks reconcile by tenant and connection, retain unmatched provider IDs, and do not downgrade newer delivery states.
+- [x] Pending owner-command and legacy-onboarding responses are generated once and queued as separate metered outbounds. Customer AI replies remain disabled.
+- [ ] Verify approved template availability and live Meta messaging-window behavior. Free-form messages outside the 24-hour service window currently fail closed.
+- [ ] Exercise operator reconciliation of `UNCERTAIN` sends against Meta provider history in staging; Meta does not guarantee idempotent send requests.

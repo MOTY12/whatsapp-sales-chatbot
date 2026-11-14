@@ -126,6 +126,7 @@ describe('PostgreSQL migration baseline', () => {
         'FK_wa_outbound_outbox_tenant',
         'FK_wa_outbound_response_tenant',
         'whatsapp_unmatched_statuses_connection_id_business_id_fkey',
+        'whatsapp_unmatched_statuses_receipt_id_business_id_fkey',
       ].sort(),
     );
 

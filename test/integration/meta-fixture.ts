@@ -25,7 +25,7 @@ export async function startMetaFixture() {
       body = { data: [{ id: '789', verified_name: 'Fixture shop' }] };
     } else if (url.pathname.endsWith('/456/subscribed_apps')) {
       body = { data: [{ whatsapp_business_api_data: { id: '123' } }] };
-    } else if (url.pathname.endsWith('/789/messages')) {
+    } else if (/\/[^/]+\/messages$/.test(url.pathname)) {
       sent.push(token ?? '');
       body =
         token === 'revoked-token'

@@ -918,7 +918,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await rotate('recovered-token').expect(200);
       await request(server).delete(path).set(headers(owner)).expect(200);
       expect(await stored()).toBeNull();
-      await send();
+      await expect(send()).rejects.toThrow('WhatsApp provider send failed');
       await expect(resolve()).resolves.toBeNull();
       await expect(
         admin

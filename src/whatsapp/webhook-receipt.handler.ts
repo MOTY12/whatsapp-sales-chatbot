@@ -50,8 +50,8 @@ async function processDelivery(manager: EntityManager, receipt: Receipt) {
     }[]
   >(
     `SELECT id, message_id, usage_idempotency_key, status, response_intent_id FROM public.whatsapp_outbound_messages
-      WHERE provider_message_id = $1 AND business_id = $2 FOR UPDATE`,
-    [receipt.message_id, receipt.business_id],
+      WHERE provider_message_id = $1 AND business_id = $2 AND connection_id = $3 FOR UPDATE`,
+    [receipt.message_id, receipt.business_id, receipt.connection_id],
   );
   const [legacyMessage] = intent
     ? []
@@ -104,9 +104,9 @@ async function processDelivery(manager: EntityManager, receipt: Receipt) {
       SENDING: 1,
       UNCERTAIN: 1,
       ACCEPTED: 2,
-      FAILED: 2,
-      DELIVERED: 3,
-      READ: 4,
+      FAILED: 3,
+      DELIVERED: 4,
+      READ: 5,
     };
     if ((precedence[intent.status] ?? 0) < precedence[nextStatus]) {
       await manager.query(
@@ -128,30 +128,18 @@ async function processDelivery(manager: EntityManager, receipt: Receipt) {
         [receipt.business_id, intent.usage_idempotency_key],
       );
       if (usage && !['FAILED', 'RELEASED'].includes(usage.status)) {
-        if (
-          status === 'failed' &&
-          ['PROVIDER_ACCEPTED', 'DELIVERED'].includes(usage.status)
-        ) {
-          // Provider acceptance already consumed this unit; a later failure receipt does not refund it.
-        } else if (status === 'failed') {
-          await manager.query(
-            `UPDATE public.usage_reservations SET released_amount = reserved_amount, status = 'FAILED', updated_at = now() WHERE id = $1`,
-            [usage.id],
-          );
-        } else {
-          await manager.query(
-            `UPDATE public.usage_reservations SET consumed_amount = reserved_amount, released_amount = 0,
-               status = CASE WHEN $2 = 'read' OR $2 = 'delivered' THEN 'DELIVERED' ELSE 'PROVIDER_ACCEPTED' END,
-               updated_at = now() WHERE id = $1`,
-            [usage.id, status],
-          );
-        }
+        await manager.query(
+          `UPDATE public.usage_reservations SET consumed_amount = reserved_amount, released_amount = 0,
+             status = CASE WHEN $2 = 'read' OR $2 = 'delivered' THEN 'DELIVERED' ELSE 'PROVIDER_ACCEPTED' END,
+             updated_at = now() WHERE id = $1`,
+          [usage.id, status],
+        );
       }
       if (intent.response_intent_id) {
         const responseStatus = nextStatus === 'FAILED' ? 'FAILED' : 'COMPLETED';
         await manager.query(
           `UPDATE public.whatsapp_response_intents SET status = $3, updated_at = now()
-            WHERE id = $1 AND business_id = $2 AND status <> 'FAILED'`,
+            WHERE id = $1 AND business_id = $2`,
           [intent.response_intent_id, receipt.business_id, responseStatus],
         );
       }

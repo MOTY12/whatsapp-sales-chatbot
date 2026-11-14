@@ -9,7 +9,8 @@ import {
 import { Conversation } from './conversation.entity';
 
 export type MessageDirection = 'inbound' | 'outbound';
-export type MessageStatus = 'sent' | 'delivered' | 'read' | 'failed';
+export type MessageStatus =
+  'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 @Entity('messages')
 @Index(['conversationId', 'createdAt'])
