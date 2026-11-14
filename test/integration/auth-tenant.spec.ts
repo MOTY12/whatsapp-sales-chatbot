@@ -437,8 +437,16 @@ describe('merchant OIDC and tenant isolation', () => {
       .set('Cookie', owner.session)
       .expect(200)
       .expect('Cache-Control', 'no-store');
-    expect(listing.body.items).toHaveLength(1);
-    expect(listing.body.items[0]).toMatchObject({
+    const listingBody = listing.body as {
+      items: {
+        id: string;
+        customer_name: string;
+        customer_whatsapp_id: string;
+        control_mode: string;
+      }[];
+    };
+    expect(listingBody.items).toHaveLength(1);
+    expect(listingBody.items[0]).toMatchObject({
       id: first.conversation.id,
       customer_name: first.customer.name,
       customer_whatsapp_id: first.customer.whatsappId,
@@ -448,16 +456,16 @@ describe('merchant OIDC and tenant isolation', () => {
       .get(`${base}/${second.conversation.id}`)
       .set('Cookie', owner.session)
       .expect(404);
-    await request(server)
-      .get(base)
-      .set('Cookie', staff.session)
-      .expect(403);
+    await request(server).get(base).set('Cookie', staff.session).expect(403);
     const history = await request(server)
       .get(`${base}/${first.conversation.id}/messages`)
       .query({ limit: 1 })
       .set('Cookie', owner.session)
       .expect(200);
-    expect(history.body.items).toMatchObject([
+    const historyBody = history.body as {
+      items: { id: string; direction: string; content: string }[];
+    };
+    expect(historyBody.items).toMatchObject([
       { id: first.message.id, direction: 'inbound', content: 'Tenant 1 text' },
     ]);
 
@@ -470,11 +478,21 @@ describe('merchant OIDC and tenant isolation', () => {
         .expect(201);
     const firstTakeover = await takeover();
     const duplicateTakeover = await takeover();
-    expect(firstTakeover.body).toMatchObject({ mode: 'HUMAN', changed: true });
-    expect(duplicateTakeover.body).toMatchObject({
+    const firstTakeoverBody = firstTakeover.body as {
+      mode: string;
+      changed: boolean;
+      controlVersion: number;
+    };
+    const duplicateTakeoverBody = duplicateTakeover.body as {
+      mode: string;
+      changed: boolean;
+      controlVersion: number;
+    };
+    expect(firstTakeoverBody).toMatchObject({ mode: 'HUMAN', changed: true });
+    expect(duplicateTakeoverBody).toMatchObject({
       mode: 'HUMAN',
       changed: false,
-      controlVersion: firstTakeover.body.controlVersion,
+      controlVersion: firstTakeoverBody.controlVersion,
     });
     await expect(
       admin.query<{ count: string }[]>(

@@ -204,7 +204,9 @@ describe('durable WhatsApp outbound messages', () => {
     );
     await outbound.execute({ ...(await outboxFor(id)) });
     expect(cloud.sendTextMessage).toHaveBeenCalledTimes(1);
-    await expect(outboundRow(id)).resolves.toMatchObject({ status: 'ACCEPTED' });
+    await expect(outboundRow(id)).resolves.toMatchObject({
+      status: 'ACCEPTED',
+    });
   });
 
   it('persists intent and reserves quota before the worker calls Meta, then charges acceptance once', async () => {
