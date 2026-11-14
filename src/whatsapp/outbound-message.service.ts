@@ -173,7 +173,7 @@ export class OutboundMessageService {
             ? 'unknown'
             : row.status === 'DELIVERED' || row.status === 'READ'
               ? 'delivered'
-            : 'accepted';
+              : 'accepted';
       await this.usage.reconcileWhatsAppStatus(
         row.business_id,
         row.idempotency_key,
@@ -260,8 +260,23 @@ export class OutboundMessageService {
     providerMessageId: string,
     status: string,
   ): Promise<boolean> {
-    const next = status === 'read' ? 'READ' : status === 'delivered' ? 'DELIVERED' : status === 'sent' ? 'ACCEPTED' : 'FAILED';
-    const precedence: Record<string, number> = { RESERVED: 0, SENDING: 1, UNCERTAIN: 1, ACCEPTED: 2, FAILED: 3, DELIVERED: 4, READ: 5 };
+    const next =
+      status === 'read'
+        ? 'READ'
+        : status === 'delivered'
+          ? 'DELIVERED'
+          : status === 'sent'
+            ? 'ACCEPTED'
+            : 'FAILED';
+    const precedence: Record<string, number> = {
+      RESERVED: 0,
+      SENDING: 1,
+      UNCERTAIN: 1,
+      ACCEPTED: 2,
+      FAILED: 3,
+      DELIVERED: 4,
+      READ: 5,
+    };
     const result = await this.database.transaction(async (manager) => {
       const [row] = await manager.query<OutboundRow[]>(
         `SELECT * FROM public.whatsapp_outbound_messages
@@ -269,7 +284,8 @@ export class OutboundMessageService {
         [businessId, providerMessageId],
       );
       if (!row) return null;
-      if (precedence[row.status] >= precedence[next]) return { row, changed: false };
+      if (precedence[row.status] >= precedence[next])
+        return { row, changed: false };
       await manager.query(
         `UPDATE public.whatsapp_outbound_messages SET status = $3, updated_at = now()
           WHERE id = $1 AND business_id = $2`,

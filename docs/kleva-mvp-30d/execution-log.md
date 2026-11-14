@@ -132,6 +132,6 @@ The additive migration `DurableWhatsAppOutbound1760000000011` adds the tenant-sc
 | `npm run build` | Passed |
 | `npm test` | 41 passed in 9 suites |
 | `npm run test:e2e` | 3 passed |
-| `npm run test:integration` | Pending final run against disposable PostgreSQL 16 and Redis 7 |
+| `npm run test:integration` | 83 passed in 12 suites against disposable PostgreSQL 16 and Redis 7 |
 
 Outbound integration coverage includes the local Meta HTTP fixture and encrypted tenant credential, quota-before-send, acceptance, definitive and ambiguous failures, duplicate and concurrent logical sends, quota exhaustion, disconnected channels, expired windows, worker restart, owner and onboarding dispatch, monotonic delivery callbacks and unmatched-status replay. Existing suites cover Redis outage recovery, signed intake, migration rollback, tenant isolation and metering regression. Live Meta behavior, approved template delivery, hosted CI, staging migration/permissions and operations monitoring remain production blockers. WHATSAPP-003 is locally implemented. Remaining MVP estimate: 78 hours plus 11 contingency hours. Next task: INBOX-001.

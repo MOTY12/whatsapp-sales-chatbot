@@ -25,7 +25,7 @@
 
 - [x] Local signed intake rolls back on PostgreSQL failure and recovers queued handoff after Redis outage.
 - [x] Worker creates tenant-scoped customer, conversation and inbound message; verified owner commands and legacy onboarding create durable pending response intents without sending in a transaction.
-- [ ] Verify live Meta intake, deliver pending owner/onboarding responses through WHATSAPP-003, and complete outbound delivery reconciliation before routing pilot traffic.
+- [ ] Verify live Meta intake, owner/onboarding reply delivery and outbound status reconciliation against approved staging assets before routing pilot traffic.
 - [x] Metering migration and PostgreSQL integration verify quota boundaries, concurrent reservations, reconciliation, uncertain sends, tenant role denial and recovery without Redis.
 - [x] Outbound sends persist tenant-scoped intent and usage holds before the worker calls Meta; local PostgreSQL tests cover rejection, timeout, idempotency and restart behavior.
 - [x] Delivery callbacks reconcile by tenant and connection, retain unmatched provider IDs, and do not downgrade newer delivery states.
