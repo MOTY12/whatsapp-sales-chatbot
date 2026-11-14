@@ -1,7 +1,11 @@
 # compiled output
 /dist
 /node_modules
+**/node_modules
 /build
+**/.next
+apps/merchant-dashboard/playwright-report
+apps/merchant-dashboard/test-results
 
 # Logs
 logs

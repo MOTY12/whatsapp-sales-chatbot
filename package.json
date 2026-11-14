@@ -24,7 +24,14 @@
     "auth:grant": "npm run build && node dist/database/grant-merchant.js",
     "tenant:preflight": "npm run build && node dist/database/tenant-preflight.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
-    "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js"
+    "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js",
+    "dashboard:dev": "npm --prefix apps/merchant-dashboard run dev",
+    "dashboard:build": "npm --prefix apps/merchant-dashboard run build",
+    "dashboard:start": "npm --prefix apps/merchant-dashboard run start",
+    "dashboard:lint": "npm --prefix apps/merchant-dashboard run lint",
+    "dashboard:typecheck": "npm --prefix apps/merchant-dashboard run typecheck",
+    "dashboard:test": "npm --prefix apps/merchant-dashboard run test",
+    "dashboard:test:browser": "npm --prefix apps/merchant-dashboard run test:browser"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
