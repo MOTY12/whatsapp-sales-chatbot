@@ -13,12 +13,12 @@ import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-c
 import { MerchantWhatsAppController } from '../channels/secure-whatsapp/merchant-whatsapp.controller';
 import { MerchantWhatsAppService } from '../channels/secure-whatsapp/merchant-whatsapp.service';
 import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier';
-import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { OutboundModule } from '../whatsapp/outbound.module';
 import { MerchantInboxController } from './merchant-inbox.controller';
 import { MerchantInboxService } from './merchant-inbox.service';
 
 @Module({
-  imports: [CredentialCipherModule, WhatsAppModule],
+  imports: [CredentialCipherModule, OutboundModule],
   controllers: [
     MerchantAuthController,
     MerchantBusinessController,

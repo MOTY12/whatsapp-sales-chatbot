@@ -17,7 +17,7 @@ export class OnboardingSession {
   @Column()
   whatsappId: string;
 
-  @Column({ default: 'IDLE' })
+  @Column({ type: 'varchar', default: 'IDLE' })
   step: OnboardingStep;
 
   @Column({ type: 'jsonb', default: {} })

@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   Injectable,
+  HttpException,
   NotFoundException,
 } from '@nestjs/common';
 import type { MerchantPrincipal } from './auth.service';
 import { MerchantAccess } from './merchant-access.service';
 import { OutboundMessageService } from '../whatsapp/outbound-message.service';
+import { OutboundPolicyError } from '../whatsapp/outbound-message.service';
+import { UsageLimitExceededError } from '../metering/usage.service';
 
 type Cursor = { at: string; id: string };
 type InboxListRow = {
@@ -261,13 +264,24 @@ export class MerchantInboxService {
         return result.whatsapp_id;
       },
     );
-    const outboundId = await this.outbound.enqueueTextMessage(
-      businessId,
-      { to: recipient, message: text.trim() },
-      key,
-      undefined,
-      { conversationId, kind: 'HUMAN' },
-    );
+    let outboundId: string;
+    try {
+      outboundId = await this.outbound.enqueueTextMessage(
+        businessId,
+        { to: recipient, message: text.trim() },
+        key,
+        undefined,
+        { conversationId, kind: 'HUMAN' },
+      );
+    } catch (error) {
+      if (error instanceof OutboundPolicyError) {
+        throw new BadRequestException(error.message);
+      }
+      if (error instanceof UsageLimitExceededError) {
+        throw new HttpException('WhatsApp message allowance exceeded.', 429);
+      }
+      throw error;
+    }
     return { outboundMessageId: outboundId, status: 'QUEUED' };
   }
 }

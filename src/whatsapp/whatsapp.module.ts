@@ -1,49 +1,30 @@
-import { ChannelConnectionService } from '../channels/channel-connection.service';
 import { WhatsAppChannelAdapter } from '../channels/adapters/whatsapp/whatsapp.adapter';
-import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
+import { OutboundModule } from './outbound.module';
 import { OutboxModule } from '../jobs/outbox.module';
+import { DatabaseModule } from '../database/database.module';
 import { WhatsAppWebhookIntake } from './webhook-intake.service';
 import { Module } from '@nestjs/common';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AssistantModule } from '../assistant/assistant.module';
-import { DatabaseModule } from '../database/database.module';
-import { WHATSAPP_CLOUD_API_CLIENT } from './interfaces/whatsapp-cloud-api-client.interface';
-import { WhatsAppCloudApiService } from './whatsapp-cloud-api.service';
 import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { WhatsAppService } from './whatsapp.service';
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
-import { UsageModule } from '../metering/usage.module';
-import { OutboundMessageService } from './outbound-message.service';
 
 @Module({
   imports: [
     OnboardingModule,
     AssistantModule,
-    DatabaseModule,
-    CredentialCipherModule,
+    OutboundModule,
     OutboxModule,
-    UsageModule,
+    DatabaseModule,
   ],
   controllers: [WhatsAppWebhookController],
   providers: [
-    ChannelConnectionService,
     WhatsAppChannelAdapter,
     WhatsAppWebhookIntake,
     WhatsAppService,
     WebhookLeadCaptureService,
-    WhatsAppCloudApiService,
-    OutboundMessageService,
-    {
-      provide: WHATSAPP_CLOUD_API_CLIENT,
-      useExisting: WhatsAppCloudApiService,
-    },
   ],
-  exports: [
-    WhatsAppService,
-    ChannelConnectionService,
-    WhatsAppChannelAdapter,
-    OutboundMessageService,
-    WHATSAPP_CLOUD_API_CLIENT,
-  ],
+  exports: [OutboundModule, WhatsAppService, WhatsAppChannelAdapter],
 })
 export class WhatsAppModule {}

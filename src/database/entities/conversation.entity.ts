@@ -31,21 +31,6 @@ export class Conversation {
   @Column({ type: 'text', nullable: true })
   summary: string;
 
-  @Column({ type: 'varchar', default: 'AUTO' })
-  controlMode: 'AUTO' | 'HUMAN';
-
-  @Column({ type: 'bigint', default: 1 })
-  controlVersion: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  takeoverActorAccountId: string | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  takeoverAt: Date | null;
-
-  @Column({ type: 'timestamptz', default: () => 'now()' })
-  controlChangedAt: Date;
-
   @CreateDateColumn()
   createdAt: Date;
 

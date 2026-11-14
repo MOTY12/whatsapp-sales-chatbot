@@ -494,12 +494,11 @@ describe('merchant OIDC and tenant isolation', () => {
       changed: false,
       controlVersion: firstTakeoverBody.controlVersion,
     });
-    await expect(
-      admin.query<{ count: string }[]>(
-        'SELECT count(*)::text AS count FROM public.conversation_control_audit WHERE conversation_id = $1',
-        [first.conversation.id],
-      ),
-    ).resolves.toMatchObject([[{ count: '1' }]]);
+    const [auditCount] = await admin.query<{ count: string }[]>(
+      'SELECT count(*)::text AS count FROM public.conversation_control_audit WHERE conversation_id = $1',
+      [first.conversation.id],
+    );
+    expect(auditCount.count).toBe('1');
     await request(server)
       .post(`${base}/${first.conversation.id}/release`)
       .set('Cookie', owner.session)
@@ -509,6 +508,10 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(({ body }) => {
         expect(body).toMatchObject({ mode: 'AUTO', changed: true });
       });
+    await admin.query(
+      'DELETE FROM public.conversation_control_audit WHERE conversation_id = $1',
+      [first.conversation.id],
+    );
   });
 
   it('uses restricted SQL, fails closed without context and clears tenant state on pooled connections', async () => {
@@ -857,6 +860,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );
@@ -952,6 +956,45 @@ describe('merchant OIDC and tenant isolation', () => {
       revision: 1,
     });
     expect(created.text).not.toContain(payload.accessToken);
+    await request(server)
+      .post(`/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/takeover`)
+      .set(headers(owner))
+      .expect(201);
+    const replyKey = randomUUID();
+    const replyPath = `/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/replies`;
+    const reply = () =>
+      request(server)
+        .post(replyPath)
+        .set(headers(owner))
+        .set('Idempotency-Key', replyKey)
+        .send({ text: 'A merchant reply from the inbox.' })
+        .expect(201);
+    const firstReply = await reply();
+    const duplicateReply = await reply();
+    expect(firstReply.body).toMatchObject({ status: 'QUEUED' });
+    expect(duplicateReply.body.outboundMessageId).toBe(
+      firstReply.body.outboundMessageId,
+    );
+    const [manualRows] = await admin.query<{ count: string }[]>(
+      `SELECT count(*)::text AS count FROM public.whatsapp_outbound_messages
+        WHERE id = $1 AND business_id = $2 AND authorization_kind = 'HUMAN'`,
+      [firstReply.body.outboundMessageId, first.business.id],
+    );
+    expect(manualRows.count).toBe('1');
+    const inboxMessages = await request(server)
+      .get(`/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/messages`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(inboxMessages.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          direction: 'outbound',
+          content: 'A merchant reply from the inbox.',
+          authorization_kind: 'HUMAN',
+          status: 'RESERVED',
+        }),
+      ]),
+    );
     await request(server)
       .post(otherPath)
       .set(headers(other))
