@@ -316,34 +316,37 @@ export class OutboundMessageService {
     confirmedStatus: 'accepted' | 'failed',
     providerMessageId?: string,
   ): Promise<void> {
-    const [row] = await this.database.query<OutboundRow[]>(
-      `SELECT * FROM public.whatsapp_outbound_messages
-        WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN' FOR UPDATE`,
-      [outboundId, businessId],
-    );
-    if (!row) throw new Error('Uncertain outbound record was not found.');
     if (confirmedStatus === 'accepted' && !providerMessageId) {
       throw new Error(
         'A provider message ID is required to confirm acceptance.',
       );
     }
     const status = confirmedStatus === 'accepted' ? 'ACCEPTED' : 'FAILED';
-    await this.database.query(
-      `UPDATE public.whatsapp_outbound_messages SET status = $3,
-         provider_message_id = COALESCE($4, provider_message_id), last_error = 'MANUAL_RECONCILIATION', updated_at = now()
-        WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN'`,
-      [outboundId, businessId, status, providerMessageId ?? null],
-    );
-    await this.database.query(
-      `UPDATE public.messages SET status = $3, "whatsappMessageId" = COALESCE($4, "whatsappMessageId")
-        WHERE id = $1 AND "businessId" = $2`,
-      [
-        row.message_id,
-        businessId,
-        status === 'ACCEPTED' ? 'sent' : 'failed',
-        providerMessageId ?? null,
-      ],
-    );
+    const row = await this.database.transaction(async (manager) => {
+      const [locked] = await manager.query<OutboundRow[]>(
+        `SELECT * FROM public.whatsapp_outbound_messages
+          WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN' FOR UPDATE`,
+        [outboundId, businessId],
+      );
+      if (!locked) throw new Error('Uncertain outbound record was not found.');
+      await manager.query(
+        `UPDATE public.whatsapp_outbound_messages SET status = $3,
+           provider_message_id = COALESCE($4, provider_message_id), last_error = 'MANUAL_RECONCILIATION', updated_at = now()
+          WHERE id = $1 AND business_id = $2 AND status = 'UNCERTAIN'`,
+        [outboundId, businessId, status, providerMessageId ?? null],
+      );
+      await manager.query(
+        `UPDATE public.messages SET status = $3, "whatsappMessageId" = COALESCE($4, "whatsappMessageId")
+          WHERE id = $1 AND "businessId" = $2`,
+        [
+          locked.message_id,
+          businessId,
+          status === 'ACCEPTED' ? 'sent' : 'failed',
+          providerMessageId ?? null,
+        ],
+      );
+      return locked;
+    });
     await this.usage.reconcileWhatsAppStatus(
       businessId,
       row.idempotency_key,

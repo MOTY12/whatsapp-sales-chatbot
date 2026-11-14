@@ -226,6 +226,11 @@ describe('durable WhatsApp outbound messages', () => {
     ).toBe(4);
     await outbound.execute(await outboxFor(uncertainId));
     expect(cloud.sendTextMessage).toHaveBeenCalledTimes(2);
+    await outbound.resolveUncertain(businessId, uncertainId, 'failed');
+    expect(await outboundRow(uncertainId)).toMatchObject({ status: 'FAILED' });
+    expect(
+      await usage.getRemainingAllowance(businessId, 'whatsapp_outbound'),
+    ).toBe(5);
   });
 
   it('deduplicates concurrent logical sends and keeps the same outbox ID and charge', async () => {
