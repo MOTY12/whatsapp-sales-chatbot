@@ -759,6 +759,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );
@@ -909,7 +910,7 @@ describe('merchant OIDC and tenant isolation', () => {
       expect(meta.sent).toEqual(['rotated-fixture-token']);
 
       await rotate('revoked-token').expect(200);
-      await send();
+      await expect(send()).rejects.toThrow('WhatsApp provider send failed');
       await expect(resolve()).resolves.toBeNull();
       await send();
       expect(meta.sent).toEqual(['rotated-fixture-token', 'revoked-token']);

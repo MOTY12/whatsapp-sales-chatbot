@@ -1,5 +1,6 @@
 import type { EntityManager } from 'typeorm';
 import type { JobHandler } from '../jobs/outbox.store';
+import { whatsappResponseOperation } from './response-intent.dispatcher';
 
 export const whatsappReceiptOperation = 'whatsapp.receipt';
 
@@ -39,27 +40,123 @@ async function processDelivery(manager: EntityManager, receipt: Receipt) {
     await updateReceipt(manager, receipt, 'unsupported_delivery_status');
     return;
   }
-  const [outbound] = await manager.query<{ id: string }[]>(
-    `SELECT id FROM public.messages
-      WHERE "whatsappMessageId" = $1 AND "businessId" = $2 AND direction = 'outbound'
-      FOR UPDATE`,
+  const [intent] = await manager.query<
+    {
+      id: string;
+      message_id: string;
+      usage_idempotency_key: string;
+      status: string;
+      response_intent_id: string | null;
+    }[]
+  >(
+    `SELECT id, message_id, usage_idempotency_key, status, response_intent_id FROM public.whatsapp_outbound_messages
+      WHERE provider_message_id = $1 AND business_id = $2 FOR UPDATE`,
     [receipt.message_id, receipt.business_id],
   );
-  if (!outbound) {
+  const [legacyMessage] = intent
+    ? []
+    : await manager.query<{ id: string }[]>(
+        `SELECT id FROM public.messages WHERE "whatsappMessageId" = $1
+      AND "businessId" = $2 AND direction = 'outbound' FOR UPDATE`,
+        [receipt.message_id, receipt.business_id],
+      );
+  if (!intent && !legacyMessage) {
+    await manager.query(
+      `INSERT INTO public.whatsapp_unmatched_statuses
+         (business_id, connection_id, provider_message_id, provider_status, occurred_at, receipt_id)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (business_id, receipt_id) DO NOTHING`,
+      [
+        receipt.business_id,
+        receipt.connection_id,
+        receipt.message_id,
+        status,
+        receipt.occurred_at,
+        receipt.id,
+      ],
+    );
     await updateReceipt(manager, receipt, 'unmatched_delivery');
     return;
   }
+  const messageId = intent?.message_id ?? legacyMessage?.id;
   await manager.query(
     `UPDATE public.messages
        SET status = CASE
          WHEN status = 'read' OR $3 = 'read' THEN 'read'
-         WHEN status IN ('delivered', 'failed') THEN status
+         WHEN $3 = 'delivered' THEN 'delivered'
+         WHEN status = 'delivered' THEN 'delivered'
          WHEN $3 = 'failed' THEN 'failed'
-         WHEN $3 = 'delivered' AND status <> 'read' THEN 'delivered'
+         WHEN status = 'failed' THEN 'failed'
          ELSE status END
      WHERE id = $1 AND "businessId" = $2`,
-    [outbound.id, receipt.business_id, status],
+    [messageId, receipt.business_id, status],
   );
+  if (intent) {
+    const nextStatus =
+      status === 'read'
+        ? 'READ'
+        : status === 'delivered'
+          ? 'DELIVERED'
+          : status === 'sent'
+            ? 'ACCEPTED'
+            : 'FAILED';
+    const precedence: Record<string, number> = {
+      RESERVED: 0,
+      SENDING: 1,
+      UNCERTAIN: 1,
+      ACCEPTED: 2,
+      FAILED: 2,
+      DELIVERED: 3,
+      READ: 4,
+    };
+    if ((precedence[intent.status] ?? 0) < precedence[nextStatus]) {
+      await manager.query(
+        `UPDATE public.whatsapp_outbound_messages SET status = $3, updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [intent.id, receipt.business_id, nextStatus],
+      );
+      const [usage] = await manager.query<
+        {
+          id: string;
+          status: string;
+          reserved_amount: number;
+          consumed_amount: number;
+          released_amount: number;
+        }[]
+      >(
+        `SELECT id, status, reserved_amount, consumed_amount, released_amount FROM public.usage_reservations
+          WHERE business_id = $1 AND category = 'whatsapp_outbound' AND idempotency_key = $2 FOR UPDATE`,
+        [receipt.business_id, intent.usage_idempotency_key],
+      );
+      if (usage && !['FAILED', 'RELEASED'].includes(usage.status)) {
+        if (
+          status === 'failed' &&
+          ['PROVIDER_ACCEPTED', 'DELIVERED'].includes(usage.status)
+        ) {
+          // Provider acceptance already consumed this unit; a later failure receipt does not refund it.
+        } else if (status === 'failed') {
+          await manager.query(
+            `UPDATE public.usage_reservations SET released_amount = reserved_amount, status = 'FAILED', updated_at = now() WHERE id = $1`,
+            [usage.id],
+          );
+        } else {
+          await manager.query(
+            `UPDATE public.usage_reservations SET consumed_amount = reserved_amount, released_amount = 0,
+               status = CASE WHEN $2 = 'read' OR $2 = 'delivered' THEN 'DELIVERED' ELSE 'PROVIDER_ACCEPTED' END,
+               updated_at = now() WHERE id = $1`,
+            [usage.id, status],
+          );
+        }
+      }
+      if (intent.response_intent_id) {
+        const responseStatus = nextStatus === 'FAILED' ? 'FAILED' : 'COMPLETED';
+        await manager.query(
+          `UPDATE public.whatsapp_response_intents SET status = $3, updated_at = now()
+            WHERE id = $1 AND business_id = $2 AND status <> 'FAILED'`,
+          [intent.response_intent_id, receipt.business_id, responseStatus],
+        );
+      }
+    }
+  }
   await updateReceipt(manager, receipt, 'delivery_reconciled');
 }
 
@@ -155,8 +252,8 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
       : 'customer_inquiry';
   const [message] = await manager.query<{ id: string }[]>(
     `INSERT INTO public.messages
-       ("businessId", "conversationId", direction, content, status, "whatsappMessageId", metadata)
-     VALUES ($1, $2, 'inbound', $3, 'delivered', $4, $5)
+       ("businessId", "conversationId", direction, content, status, "whatsappMessageId", metadata, "createdAt")
+     VALUES ($1, $2, 'inbound', $3, 'delivered', $4, $5, COALESCE($6, now()))
      ON CONFLICT ("whatsappMessageId") DO NOTHING
      RETURNING id`,
     [
@@ -170,6 +267,7 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
         classification,
         processingState: 'ready_for_downstream',
       }),
+      occurredAt,
     ],
   );
   if (!message) {
@@ -189,19 +287,30 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
   );
 
   if (membership || onboarding) {
-    await manager.query(
+    const [intent] = await manager.query<{ id: string }[]>(
       `INSERT INTO public.whatsapp_response_intents
          (id, business_id, receipt_id, message_id, response_kind)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (receipt_id) DO NOTHING`,
+       VALUES (gen_random_uuid(), $1, $2, $3, $4)
+       ON CONFLICT (receipt_id) DO NOTHING RETURNING id`,
       [
-        receipt.id,
         receipt.business_id,
         receipt.id,
         message.id,
         membership ? 'owner_command' : 'legacy_onboarding',
       ],
     );
+    if (intent) {
+      await manager.query(
+        `INSERT INTO public.outbox_operations (id, "businessId", operation, metadata)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
+        [
+          intent.id,
+          receipt.business_id,
+          whatsappResponseOperation,
+          JSON.stringify({ responseIntentId: intent.id }),
+        ],
+      );
+    }
   }
   await updateReceipt(manager, receipt, classification);
 }

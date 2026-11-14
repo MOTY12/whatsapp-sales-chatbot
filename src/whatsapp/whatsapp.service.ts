@@ -13,6 +13,7 @@ import { AssistantCommandParserService } from '../assistant/assistant-command-pa
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
 import { BusinessRepository } from '../database/repositories/business.repository';
 import { UserRepository } from '../database/repositories/user.repository';
+import { OutboundMessageService } from './outbound-message.service';
 
 @Injectable()
 export class WhatsAppService {
@@ -29,6 +30,7 @@ export class WhatsAppService {
     private readonly businesses: BusinessRepository,
     @Inject(WHATSAPP_CLOUD_API_CLIENT)
     private readonly cloudApiClient: WhatsAppCloudApiClient,
+    private readonly outbound: OutboundMessageService,
   ) {}
 
   async processIncomingMessage(
@@ -53,7 +55,7 @@ export class WhatsAppService {
         message,
         context,
       );
-      await this.cloudApiClient.sendTextMessage(reply);
+      await this.outbound.enqueueTextMessage(context.businessId, reply);
       return reply;
     }
 
@@ -88,7 +90,7 @@ export class WhatsAppService {
         ownerId: disposition.ownerId,
         timezone: disposition.timezone,
       });
-      await this.cloudApiClient.sendTextMessage(reply, disposition.businessId);
+      await this.outbound.enqueueTextMessage(disposition.businessId, reply);
       return;
     }
 
@@ -97,13 +99,10 @@ export class WhatsAppService {
       disposition.isNewLead &&
       disposition.ownerWhatsappId
     ) {
-      await this.cloudApiClient.sendTextMessage(
-        {
-          to: disposition.ownerWhatsappId,
-          message: `New lead: ${disposition.customerName} sent you a WhatsApp message.`,
-        },
-        disposition.businessId,
-      );
+      await this.outbound.enqueueTextMessage(disposition.businessId, {
+        to: disposition.ownerWhatsappId,
+        message: `New lead: ${disposition.customerName} sent you a WhatsApp message.`,
+      });
     }
 
     if (

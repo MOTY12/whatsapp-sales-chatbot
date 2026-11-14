@@ -9,6 +9,7 @@ import {
 } from '../channels/secure-whatsapp/credential-cipher';
 import { metaConfig } from '../config/env';
 import type { WhatsAppCloudApiClient } from './interfaces/whatsapp-cloud-api-client.interface';
+import { WhatsAppProviderError } from './interfaces/whatsapp-cloud-api-client.interface';
 import { OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import { BusinessRepository } from '../database/repositories/business.repository';
 
@@ -27,13 +28,13 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
   async sendTextMessage(
     message: OutgoingWhatsAppMessage,
     businessId?: string,
-  ): Promise<void> {
+  ): Promise<string | null> {
     let connection:
       | Awaited<ReturnType<WhatsAppCloudApiService['resolveConnection']>>
       | undefined;
     try {
       connection = await this.resolveConnection(businessId);
-      await axios.post(
+      const response = await axios.post<{ messages?: { id?: string }[] }>(
         `${this.config.graphBaseUrl}/${this.config.apiVersion}/${connection.phoneNumberId}/messages`,
         {
           messaging_product: 'whatsapp',
@@ -54,7 +55,13 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
         },
       );
 
-      this.logger.log('Sent WhatsApp message.');
+      this.logger.log({
+        event: 'whatsapp.provider_accepted',
+        businessId: businessId ?? null,
+      });
+      return typeof response.data?.messages?.[0]?.id === 'string'
+        ? response.data.messages[0].id
+        : null;
     } catch (error) {
       if (
         businessId &&
@@ -72,10 +79,19 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
           this.logger.error('Could not fence the revoked WhatsApp credential.');
         }
       }
-      this.logger.error({
-        event: 'whatsapp.send_failed',
-        status: axios.isAxiosError(error) ? error.response?.status : undefined,
-      });
+      const status = axios.isAxiosError(error)
+        ? error.response?.status
+        : undefined;
+      this.logger.error({ event: 'whatsapp.send_failed', status });
+      throw new WhatsAppProviderError(
+        !axios.isAxiosError(error) ||
+          (status !== undefined && status >= 400 && status < 500),
+        status === 401
+          ? 'PROVIDER_AUTH_REJECTED'
+          : status
+            ? `PROVIDER_HTTP_${status}`
+            : 'PROVIDER_OUTCOME_UNKNOWN',
+      );
     }
   }
 

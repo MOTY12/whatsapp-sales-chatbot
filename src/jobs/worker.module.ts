@@ -11,12 +11,21 @@ import {
   whatsappReceiptOperation,
 } from '../whatsapp/webhook-receipt.handler';
 import { workerConfig } from '../config/env';
-import { DatabaseModule } from '../database/database.module';
 import { OutboxProcessor } from './outbox.processor';
 import { OutboxRelay } from './outbox.relay';
-import { JobHandler, OutboxStore } from './outbox.store';
+import { OutboxHandler, OutboxStore } from './outbox.store';
 import { createQueue, createWorker } from './queue';
 import { UsageModule } from '../metering/usage.module';
+import { OutboxModule } from './outbox.module';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import {
+  OutboundMessageService,
+  whatsappOutboundOperation,
+} from '../whatsapp/outbound-message.service';
+import {
+  WhatsAppResponseIntentDispatcher,
+  whatsappResponseOperation,
+} from '../whatsapp/response-intent.dispatcher';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -32,7 +41,7 @@ export class WorkerRuntime
 
   constructor(
     outbox: OutboxStore,
-    @Inject(OUTBOX_HANDLERS) handlers: ReadonlyMap<string, JobHandler>,
+    @Inject(OUTBOX_HANDLERS) handlers: ReadonlyMap<string, OutboxHandler>,
   ) {
     this.queue.on('error', () =>
       this.logger.warn('Outbox producer Redis connection error.'),
@@ -68,22 +77,28 @@ export class WorkerRuntime
 }
 
 @Module({
-  imports: [DatabaseModule],
-  providers: [OutboxStore],
-  exports: [OutboxStore],
-})
-export class OutboxModule {}
-
-@Module({
-  imports: [OutboxModule, UsageModule],
+  imports: [OutboxModule, UsageModule, WhatsAppModule],
   providers: [
     WorkerRuntime,
+    WhatsAppResponseIntentDispatcher,
     {
       provide: OUTBOX_HANDLERS,
-      useFactory: () =>
-        new Map<string, JobHandler>([
+      useFactory: (
+        responses: WhatsAppResponseIntentDispatcher,
+        outbound: OutboundMessageService,
+      ) =>
+        new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
+          [
+            whatsappResponseOperation,
+            { execute: (operation) => responses.execute(operation) },
+          ],
+          [
+            whatsappOutboundOperation,
+            { execute: (operation) => outbound.execute(operation) },
+          ],
         ]),
+      inject: [WhatsAppResponseIntentDispatcher, OutboundMessageService],
     },
   ],
 })

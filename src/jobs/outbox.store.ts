@@ -25,6 +25,10 @@ export type JobHandler = (
   manager: EntityManager,
   operation: Readonly<OutboxOperation>,
 ) => Promise<void>;
+export type ExternalJobHandler = (
+  operation: Readonly<OutboxOperation>,
+) => Promise<void>;
+export type OutboxHandler = JobHandler | { execute: ExternalJobHandler };
 
 function retryDelay(failures: number) {
   const delay = Math.min(60_000, 1000 * 2 ** Math.min(6, failures - 1));
@@ -220,6 +224,15 @@ export class OutboxStore {
         retryDelay(job.attempts),
         error,
       ],
+    );
+  }
+
+  async completeExternal(job: OutboxOperation): Promise<void> {
+    await this.database.query(
+      `UPDATE outbox_operations SET status = 'COMPLETED', "leaseToken" = NULL,
+          "lastError" = NULL, "updatedAt" = now()
+        WHERE id = $1 AND status = 'PROCESSING' AND "leaseToken" = $2 AND "dueAt" > now()`,
+      [job.id, job.leaseToken],
     );
   }
 }

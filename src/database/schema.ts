@@ -36,6 +36,7 @@ import { SecureWhatsAppCredentials1760000000007 } from './migrations/17600000000
 import { AddWebhookReceipts1760000000008 } from './migrations/1760000000008-AddWebhookReceipts';
 import { ProcessWhatsAppReceipts1760000000009 } from './migrations/1760000000009-ProcessWhatsAppReceipts';
 import { AddTenantUsageLedger1760000000010 } from './migrations/1760000000010-AddTenantUsageLedger';
+import { DurableWhatsAppOutbound1760000000011 } from './migrations/1760000000011-DurableWhatsAppOutbound';
 
 export const databaseEntities = [
   Business,
@@ -70,4 +71,5 @@ export const databaseMigrations = [
   AddWebhookReceipts1760000000008,
   ProcessWhatsAppReceipts1760000000009,
   AddTenantUsageLedger1760000000010,
+  DurableWhatsAppOutbound1760000000011,
 ];

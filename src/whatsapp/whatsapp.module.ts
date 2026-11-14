@@ -1,7 +1,7 @@
 import { ChannelConnectionService } from '../channels/channel-connection.service';
 import { WhatsAppChannelAdapter } from '../channels/adapters/whatsapp/whatsapp.adapter';
 import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
-import { OutboxModule } from '../jobs/worker.module';
+import { OutboxModule } from '../jobs/outbox.module';
 import { WhatsAppWebhookIntake } from './webhook-intake.service';
 import { Module } from '@nestjs/common';
 import { OnboardingModule } from '../onboarding/onboarding.module';
@@ -13,6 +13,7 @@ import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { WhatsAppService } from './whatsapp.service';
 import { WebhookLeadCaptureService } from './webhook-lead-capture.service';
 import { UsageModule } from '../metering/usage.module';
+import { OutboundMessageService } from './outbound-message.service';
 
 @Module({
   imports: [
@@ -31,11 +32,18 @@ import { UsageModule } from '../metering/usage.module';
     WhatsAppService,
     WebhookLeadCaptureService,
     WhatsAppCloudApiService,
+    OutboundMessageService,
     {
       provide: WHATSAPP_CLOUD_API_CLIENT,
       useExisting: WhatsAppCloudApiService,
     },
   ],
-  exports: [WhatsAppService, ChannelConnectionService, WhatsAppChannelAdapter],
+  exports: [
+    WhatsAppService,
+    ChannelConnectionService,
+    WhatsAppChannelAdapter,
+    OutboundMessageService,
+    WHATSAPP_CLOUD_API_CLIENT,
+  ],
 })
 export class WhatsAppModule {}

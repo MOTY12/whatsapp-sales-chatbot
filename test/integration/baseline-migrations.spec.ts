@@ -26,7 +26,9 @@ const expectedTables = [
   'users',
   'webhook_receipts',
   'whatsapp_credentials',
+  'whatsapp_outbound_messages',
   'whatsapp_response_intents',
+  'whatsapp_unmatched_statuses',
 ];
 
 type IntegrationDatabase = Awaited<
@@ -117,6 +119,13 @@ describe('PostgreSQL migration baseline', () => {
         'FK_sales_ownerId_tenant',
         'FK_tasks_ownerId_tenant',
         'FK_usage_reservations_business',
+        'FK_wa_outbound_business',
+        'FK_wa_outbound_connection_tenant',
+        'FK_wa_outbound_conversation_tenant',
+        'FK_wa_outbound_message_tenant',
+        'FK_wa_outbound_outbox_tenant',
+        'FK_wa_outbound_response_tenant',
+        'whatsapp_unmatched_statuses_connection_id_business_id_fkey',
       ].sort(),
     );
 

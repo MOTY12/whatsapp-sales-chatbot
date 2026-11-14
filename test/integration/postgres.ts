@@ -228,7 +228,10 @@ export async function createIntegrationDatabase() {
             `GRANT SELECT, INSERT, UPDATE (handed_off_at, processed_at, processing_outcome) ON public.webhook_receipts TO "${runtimeRole}"`,
           );
           await migrator.query(
-            `GRANT SELECT, INSERT, UPDATE, DELETE ON public.whatsapp_response_intents TO "${runtimeRole}"`,
+            `GRANT SELECT, INSERT, UPDATE, DELETE ON public.whatsapp_response_intents, public.whatsapp_outbound_messages, public.whatsapp_unmatched_statuses TO "${runtimeRole}"`,
+          );
+          await migrator.query(
+            `GRANT SELECT, INSERT, UPDATE, DELETE ON public.messages, public.outbox_operations TO "${runtimeRole}"`,
           );
         }
         if (credentialTable.exists) {

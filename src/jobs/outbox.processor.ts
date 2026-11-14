@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { JobHandler, OutboxStore, uuidPattern } from './outbox.store';
+import { OutboxHandler, OutboxStore, uuidPattern } from './outbox.store';
 import type { Delivery } from './queue';
 
 export class OutboxProcessor {
@@ -7,7 +7,7 @@ export class OutboxProcessor {
 
   constructor(
     private readonly outbox: OutboxStore,
-    private readonly handlers: ReadonlyMap<string, JobHandler>,
+    private readonly handlers: ReadonlyMap<string, OutboxHandler>,
   ) {}
 
   async process(data: Delivery, jobId: string | undefined): Promise<void> {
@@ -31,7 +31,12 @@ export class OutboxProcessor {
     }
 
     try {
-      await this.outbox.complete(job, handler);
+      if (typeof handler === 'function') {
+        await this.outbox.complete(job, handler);
+      } else {
+        await handler.execute(job);
+        await this.outbox.completeExternal(job);
+      }
     } catch {
       await this.outbox.fail(job, 'HANDLER_FAILED');
       this.logger.warn({
