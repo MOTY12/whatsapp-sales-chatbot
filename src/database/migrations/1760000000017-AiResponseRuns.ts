@@ -93,7 +93,7 @@ export class AiResponseRuns1760000000017 implements MigrationInterface {
   async down(runner: QueryRunner): Promise<void> {
     await runner.query(`
       DO $$ BEGIN
-        IF EXISTS (SELECT 1 FROM public.ai_response_runs WHERE status IN ('QUEUED','COMPLETED')) THEN
+        IF EXISTS (SELECT 1 FROM public.ai_response_runs) THEN
           RAISE EXCEPTION 'AI response history exists; preserve the schema for rollback.';
         END IF;
       END $$;

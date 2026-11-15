@@ -283,7 +283,21 @@ export function aiConfig(env = process.env) {
   if (timeoutMs < 1000 || timeoutMs > 30000) {
     throw new Error('AI_REQUEST_TIMEOUT_MS must be between 1000 and 30000.');
   }
-  return { enabled, apiKey: enabled ? apiKey : undefined, model, timeoutMs };
+  const handoffMessage =
+    env.AI_HANDOFF_MESSAGE?.trim() ||
+    "I don't have enough information to confirm that. Let me connect you with someone from the business.";
+  if (handoffMessage.length < 16 || handoffMessage.length > 500) {
+    throw new Error(
+      'AI_HANDOFF_MESSAGE must be between 16 and 500 characters.',
+    );
+  }
+  return {
+    enabled,
+    apiKey: enabled ? apiKey : undefined,
+    model,
+    timeoutMs,
+    handoffMessage,
+  };
 }
 
 function usageLimit(env: NodeJS.ProcessEnv, name: string, fallback: number) {

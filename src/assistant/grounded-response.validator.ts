@@ -5,7 +5,7 @@ export type ValidationResult =
   { valid: true } | { valid: false; reason: string };
 
 const prohibitedUnverified =
-  /\b(discount(?:ed)?|save\s+\d|free\s+delivery|deliver(?:y|s|ed)?\s+(?:today|tomorrow|within|in\s+\d)|arrive(?:s)?\s+(?:today|tomorrow|within)|guarantee(?:d)?\s+(?:delivery|arrival))\b/i;
+  /\b(discount(?:ed)?|save\s+\d|free\s+delivery|deliver(?:y|s|ed)?\s+(?:today|tomorrow|within|in\s+\d|by\s+\w+)|arrive(?:s|d)?\s+(?:today|tomorrow|within|by\s+\w+)|guarantee(?:d)?\s+(?:delivery|arrival))\b/i;
 const moneyPattern =
   /(?:\b(?:NGN|USD|GHS|KES|EUR|GBP)\s*|[₦$€£])([0-9][0-9,]*(?:\.[0-9]+)?)/gi;
 
@@ -31,6 +31,18 @@ export function validateGroundedResponse(
     return { valid: false, reason: 'UNSUPPORTED_COMMERCIAL_CLAIM' };
 
   const cited = response.evidenceIds.map((id) => byId.get(id)!);
+  const deliveryPromise =
+    /\b(?:deliver(?:y|s|ed)?|shipping|arrive(?:s|d)?)\b/i.test(response.reply);
+  if (
+    deliveryPromise &&
+    !cited.some((item) =>
+      /\b(?:deliver(?:y|s|ed)?|shipping|arrive(?:s|d)?)\b/i.test(
+        `${item.title} ${item.content}`,
+      ),
+    )
+  ) {
+    return { valid: false, reason: 'UNSUPPORTED_DELIVERY_CLAIM' };
+  }
   const groundingText = cited
     .map(
       (item) =>
@@ -97,7 +109,7 @@ export function validateGroundedResponse(
   }
 
   const availabilityClaim =
-    /\b(in stock|available now|out of stock|currently unavailable)\b/i.test(
+    /\b(in stock|available|out of stock|currently unavailable)\b/i.test(
       response.reply,
     );
   if (

@@ -124,6 +124,7 @@ export class AiResponseService {
     }
 
     let evidence: EvidenceItem[] = [];
+    const fallbackMessage = aiConfig().handoffMessage;
     let reply = row.reply;
     let status: 'GENERATED' | 'HANDOFF_REQUIRED' = 'GENERATED';
     let errorCategory: string | null = null;

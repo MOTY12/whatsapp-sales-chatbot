@@ -39,6 +39,9 @@ describe('environment configuration', () => {
     expect(() => aiConfig({ AI_REQUEST_TIMEOUT_MS: '999' })).toThrow(
       'AI_REQUEST_TIMEOUT_MS',
     );
+    expect(() => aiConfig({ AI_HANDOFF_MESSAGE: 'short' })).toThrow(
+      'AI_HANDOFF_MESSAGE',
+    );
   });
   it('provides configurable per-tenant usage defaults and rejects invalid limits', () => {
     expect(usageConfig({})).toEqual({
