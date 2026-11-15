@@ -557,8 +557,9 @@ describe('merchant OIDC and tenant isolation', () => {
       .get(path)
       .set('Cookie', owner.session)
       .expect(200);
-    expect(list.body.items).toHaveLength(1);
-    expect(list.body.items[0]).toMatchObject({
+    const leadList = list.body as { items: Array<Record<string, unknown>> };
+    expect(leadList.items).toHaveLength(1);
+    expect(leadList.items[0]).toMatchObject({
       id: lead.id,
       customer_id: first.customer.id,
       conversation_id: first.conversation.id,
@@ -1115,6 +1116,7 @@ describe('merchant OIDC and tenant isolation', () => {
       ).rejects.toMatchObject({ driverError: { code: '42501' } });
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -1489,6 +1491,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();

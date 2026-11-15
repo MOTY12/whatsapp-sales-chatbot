@@ -3,6 +3,7 @@ import { applyMigrations, createIntegrationDatabase } from './postgres';
 
 const expectedTables = [
   'accounts',
+  'ai_response_runs',
   'assistant_sessions',
   'audit_logs',
   'business_members',
@@ -106,6 +107,10 @@ describe('PostgreSQL migration baseline', () => {
         'merchant_business_requests_business_id_fkey',
         'fk_merchant_leads_customer',
         'fk_merchant_leads_conversation',
+        'fk_ai_response_message',
+        'fk_ai_response_conversation',
+        'fk_ai_response_lead',
+        'fk_ai_response_outbound',
         'merchant_lead_events_business_id_lead_id_fkey',
         'merchant_lead_events_actor_account_id_fkey',
         'FK_messages_conversation',

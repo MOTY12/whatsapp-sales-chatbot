@@ -343,7 +343,12 @@ describe('durable signed WhatsApp intake', () => {
         ),
       ).toHaveLength(1);
       const [aiRun] = await admin.query<
-        { id: string; status: string; lead_id: string | null; operation: string }[]
+        {
+          id: string;
+          status: string;
+          lead_id: string | null;
+          operation: string;
+        }[]
       >(
         `SELECT a.id, a.status, a.lead_id, o.operation
            FROM public.ai_response_runs a
@@ -360,10 +365,15 @@ describe('durable signed WhatsApp intake', () => {
       expect(
         await admin.query(
           `SELECT id FROM public.ai_response_runs WHERE business_id = $1 AND inbound_message_id = $2`,
-          [tenant, (await admin.query<{ id: string }[]>(
-            `SELECT id FROM public.messages WHERE "whatsappMessageId" = 'handoff' AND "businessId" = $1`,
-            [tenant],
-          ))[0].id],
+          [
+            tenant,
+            (
+              await admin.query<{ id: string }[]>(
+                `SELECT id FROM public.messages WHERE "whatsappMessageId" = 'handoff' AND "businessId" = $1`,
+                [tenant],
+              )
+            )[0].id,
+          ],
         ),
       ).toHaveLength(1);
     } finally {

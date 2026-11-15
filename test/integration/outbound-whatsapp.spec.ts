@@ -189,6 +189,34 @@ describe('durable WhatsApp outbound messages', () => {
     });
   });
 
+  it('rejects an AI outbound commit when takeover wins before enqueue', async () => {
+    await admin.query(
+      `UPDATE public.conversations SET control_mode = 'HUMAN', control_version = 2
+        WHERE id = $1 AND "businessId" = $2`,
+      [conversationId, businessId],
+    );
+    const idempotencyKey = randomUUID();
+    await expect(
+      outbound.enqueueTextMessage(
+        businessId,
+        { to: recipient, message: 'Automated reply.' },
+        idempotencyKey,
+        undefined,
+        { conversationId, kind: 'AI', controlVersion: 1 },
+      ),
+    ).rejects.toThrow('AI response was suppressed by conversation takeover.');
+    expect(
+      await admin.query(
+        `SELECT id FROM public.whatsapp_outbound_messages
+          WHERE business_id = $1 AND idempotency_key = $2`,
+        [businessId, idempotencyKey],
+      ),
+    ).toHaveLength(0);
+    await expect(
+      usage.getRemainingAllowance(businessId, 'whatsapp_outbound'),
+    ).resolves.toBe(5);
+  });
+
   it('serializes takeover ahead of a waiting worker send claim', async () => {
     const id = await queueFencedAiMessage(1);
     let send: Promise<void> | undefined;

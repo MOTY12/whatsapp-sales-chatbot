@@ -14,6 +14,7 @@ export const merchantPolicyTables = [
   ...initialMerchantPolicyTables,
   'merchant_leads',
   'merchant_lead_events',
+  'ai_response_runs',
 ];
 
 const identityFunctions = [
