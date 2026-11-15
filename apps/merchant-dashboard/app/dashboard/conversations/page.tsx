@@ -3,8 +3,8 @@ import { ApiError, api, type CursorPage, type Conversation } from '@/lib/api';
 import { BusinessPicker } from '@/components/business-picker';
 import { InboxExperience } from './inbox-experience';
 
-export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ businessId?: string }> }) {
-  const { businessId: requested } = await searchParams;
+export default async function ConversationsPage({ searchParams }: { searchParams: Promise<{ businessId?: string; conversationId?: string }> }) {
+  const { businessId: requested, conversationId } = await searchParams;
   let identity;
   try { identity = await api.identity(); }
   catch (error) {
@@ -38,6 +38,6 @@ export default async function ConversationsPage({ searchParams }: { searchParams
       <div><div className="eyebrow">CUSTOMER SUPPORT</div><h1>Conversations</h1><p className="muted">Reply to customers and manage when automation is active.</p></div>
       {businesses.length > 1 && <BusinessPicker action="/dashboard/conversations" current={membership.businessId} choices={businesses}/>}
     </div>
-    <InboxExperience key={membership.businessId} businessId={membership.businessId} initialPage={initialPage} initialError={initialError}/>
+    <InboxExperience key={membership.businessId} businessId={membership.businessId} initialPage={initialPage} initialError={initialError} initialConversationId={conversationId}/>
   </div>;
 }

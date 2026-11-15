@@ -103,6 +103,11 @@ export type ProductDraft = {
   currency: string;
   availability: MerchantProduct['availability'];
 };
+export type MerchantLead = {
+  id: string; customer_id: string; conversation_id: string; customer_name: string;
+  customer_whatsapp_id: string; source: 'WHATSAPP'; status: 'NEW'|'CONTACTED'|'QUALIFIED'|'WON'|'LOST';
+  first_contact_at: string; last_activity_at: string; version: number; updated_at: string;
+};
 
 export type ApiErrorCode =
   | 'unauthorized'
@@ -422,6 +427,13 @@ export const api = {
     request<ProductPage>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/products?limit=${limit}&offset=${offset}`,
     ),
+  leads: (businessId: string, status?: string) => {
+    const query = new URLSearchParams({ limit: '50' });
+    if (status) query.set('status', status);
+    return request<CursorPage<MerchantLead>>(`/merchant/businesses/${encodeURIComponent(businessId)}/leads?${query}`);
+  },
+  lead: (businessId: string, leadId: string) => request<MerchantLead>(`/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}`),
+  updateLead: (businessId: string, leadId: string, body: {status:MerchantLead['status'];expectedVersion:number}) => request<{leadId:string;status:MerchantLead['status'];version:number;updatedAt:string;changed:boolean}>(`/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}`, {method:'PATCH',body:JSON.stringify(body)}),
   product: (businessId: string, productId: string) =>
     request<MerchantProduct>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}`,

@@ -4,6 +4,8 @@ import { tenantTables } from './tenant-integrity';
 import { identityRolePattern, merchantRolePattern } from '../config/env';
 export const merchantPolicyTables = [
   ...tenantTables,
+  'merchant_leads',
+  'merchant_lead_events',
   'businesses',
   'business_members',
   'accounts',
@@ -53,6 +55,11 @@ export const catalogFunctions = [
   'kleva_product_publish(uuid)',
   'kleva_product_unpublish(uuid)',
 ];
+export const leadFunctions = [
+  'kleva_leads_list(integer,timestamptz,uuid,text)',
+  'kleva_lead_detail(uuid)',
+  'kleva_lead_change_status(uuid,text,bigint)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -95,6 +102,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${catalogFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${leadFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

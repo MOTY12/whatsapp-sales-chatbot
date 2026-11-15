@@ -274,6 +274,29 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
     [conversation.id, receipt.business_id],
   );
 
+  // A lead represents one opportunity per WhatsApp conversation. Keep this
+  // insert in the same transaction as the verified inbound message.
+  if (classification === 'customer_inquiry') {
+    const [lead] = await manager.query<{ id: string }[]>(
+      `INSERT INTO public.merchant_leads
+         (business_id, customer_id, conversation_id, source, status, first_contact_at, last_activity_at)
+       VALUES ($1,$2,$3,'WHATSAPP','NEW',$4,$4)
+       ON CONFLICT (business_id, conversation_id) DO UPDATE
+         SET last_activity_at = GREATEST(merchant_leads.last_activity_at, EXCLUDED.last_activity_at),
+             version = merchant_leads.version + 1, updated_at = now()
+       RETURNING id`,
+      [receipt.business_id, customer.id, conversation.id, occurredAt],
+    );
+    await manager.query(
+      `INSERT INTO public.merchant_lead_events
+         (business_id, lead_id, event_type, next_status, actor_kind)
+       SELECT $1,$2,'CREATED','NEW','SYSTEM'
+       WHERE NOT EXISTS (SELECT 1 FROM public.merchant_lead_events WHERE lead_id = $2 AND event_type = 'CREATED')
+       ON CONFLICT DO NOTHING`,
+      [receipt.business_id, lead.id],
+    );
+  }
+
   if (membership || onboarding) {
     const [intent] = await manager.query<{ id: string }[]>(
       `INSERT INTO public.whatsapp_response_intents

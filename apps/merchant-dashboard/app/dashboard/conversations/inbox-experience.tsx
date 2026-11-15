@@ -11,6 +11,7 @@ type Props = {
   businessId: string;
   initialPage: CursorPage<Conversation> | null;
   initialError: ApiFailure | null;
+  initialConversationId?: string;
 };
 type ThreadData = { detail: ConversationDetail; messages: CursorPage<InboxMessage> };
 
@@ -55,18 +56,18 @@ function displayName(conversation: Pick<Conversation, 'customer_name' | 'custome
 
 function modeLabel(mode: InboxMode) { return mode === 'HUMAN' ? 'Human takeover' : 'Automation active'; }
 
-export function InboxExperience({ businessId, initialPage, initialError }: Props) {
+export function InboxExperience({ businessId, initialPage, initialError, initialConversationId }: Props) {
   const router = useRouter();
   const initialItems = initialPage?.items ?? [];
   const [conversations, setConversations] = useState(initialItems);
   const [listCursor, setListCursor] = useState(initialPage?.nextCursor ?? null);
   const [listError, setListError] = useState<ApiFailure | null>(initialError);
   const [listLoading, setListLoading] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(initialItems[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? initialItems[0]?.id ?? null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [messageCursor, setMessageCursor] = useState<string | null>(null);
-  const [threadLoading, setThreadLoading] = useState(Boolean(initialItems[0]));
+  const [threadLoading, setThreadLoading] = useState(Boolean(initialConversationId || initialItems[0]));
   const [threadError, setThreadError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [olderLoading, setOlderLoading] = useState(false);
