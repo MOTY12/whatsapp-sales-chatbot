@@ -435,9 +435,10 @@ export const api = {
     request<ProductPage>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/products?limit=${limit}&offset=${offset}`,
     ),
-  leads: (businessId: string, status?: string) => {
-    const query = new URLSearchParams({ limit: '50' });
+  leads: (businessId: string, status?: string, limit = 50, cursor?: string) => {
+    const query = new URLSearchParams({ limit: String(limit) });
     if (status) query.set('status', status);
+    if (cursor) query.set('cursor', cursor);
     return request<CursorPage<MerchantLead>>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/leads?${query}`,
     );

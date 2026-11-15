@@ -24,7 +24,7 @@ Configure backend `OIDC_REDIRECT_URI` to `${DASHBOARD_PUBLIC_ORIGIN}/auth/callba
 - Knowledge FAQs are plain text with immutable numbered revisions. Saving edits advances the draft revision; only an explicit publish changes customer-facing retrieval, and unpublishing removes the FAQ from retrieval while retaining its history. FAQ mutations go through the same-origin `/api/knowledge` proxy and are authorized by Nest for the active owner/editor membership. PDF upload and embedding/index management are not part of this FAQ slice.
 - The backend route contract, request shapes, revision rules and retrieval boundary are documented in [the merchant FAQ API reference](../../docs/kleva-mvp-30d/merchant-knowledge-api.md).
 - The native Products catalog stores customer-facing merchant facts with immutable revisions, explicit publish/unpublish actions, optimistic editing, exact decimal prices, and `UNKNOWN` availability when the merchant has not confirmed stock. Mutations pass through the same-origin `/api/products` proxy; Nest enforces owner/editor access and tenant scope. Only published revisions are available to the restricted runtime retrieval function. See [the merchant catalog API reference](../../docs/kleva-mvp-30d/merchant-catalog-api.md).
-- Leads remain a placeholder. No unread counts or analytics are fabricated.
+- Leads are captured from verified customer WhatsApp inbound messages and listed per tenant. One opportunity is stored per conversation; the page supports status filtering, cursor pagination, version-checked status changes and a direct link to the source conversation. See the [merchant leads API reference](../../docs/kleva-mvp-30d/merchant-leads-api.md). The page does not display fabricated conversion or revenue analytics.
 
 ## Verification
 

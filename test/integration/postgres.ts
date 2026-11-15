@@ -225,7 +225,15 @@ export async function createIntegrationDatabase() {
         const [receiptTable] = await migrator.query<{ exists: boolean }[]>(
           "SELECT to_regclass('public.webhook_receipts') IS NOT NULL AS exists",
         );
+        const [leadTable] = await migrator.query<{ exists: boolean }[]>(
+          "SELECT to_regclass('public.merchant_leads') IS NOT NULL AS exists",
+        );
         if (receiptTable.exists) {
+          if (leadTable.exists) {
+            await migrator.query(
+              `GRANT SELECT, INSERT, UPDATE, DELETE ON public.merchant_leads, public.merchant_lead_events TO "${runtimeRole}"`,
+            );
+          }
           await migrator.query(
             `GRANT SELECT, INSERT, UPDATE (handed_off_at, processed_at, processing_outcome) ON public.webhook_receipts TO "${runtimeRole}"`,
           );

@@ -40,6 +40,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
         await api.leads(
           businessId,
           req.nextUrl.searchParams.get('status') ?? undefined,
+          Number(req.nextUrl.searchParams.get('limit') ?? 50),
+          req.nextUrl.searchParams.get('cursor') ?? undefined,
         ),
         { headers: { 'Cache-Control': 'no-store' } },
       );

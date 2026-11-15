@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { ApiError, api, type MerchantLead } from '@/lib/api';
+import { ApiError, api, type CursorPage, type MerchantLead } from '@/lib/api';
 import { BusinessPicker } from '@/components/business-picker';
 import { LeadsExperience } from './leads-experience';
 export default async function LeadsPage({
@@ -43,10 +43,10 @@ export default async function LeadsPage({
       }
     }),
   );
-  let leads: MerchantLead[] = [];
+  let initialPage: CursorPage<MerchantLead> = { items: [], nextCursor: null };
   let error: string | null = null;
   try {
-    leads = (await api.leads(member.businessId)).items;
+    initialPage = await api.leads(member.businessId);
   } catch (e) {
     if (e instanceof ApiError && e.status === 401)
       redirect('/login?error=session');
@@ -76,7 +76,7 @@ export default async function LeadsPage({
       <LeadsExperience
         key={member.businessId}
         businessId={member.businessId}
-        initialLeads={leads}
+        initialPage={initialPage}
         initialError={error}
       />
     </div>

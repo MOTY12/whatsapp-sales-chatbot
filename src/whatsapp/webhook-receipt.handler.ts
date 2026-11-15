@@ -12,6 +12,7 @@ type Receipt = {
   event_type: 'message' | 'delivery';
   payload: Record<string, unknown>;
   status: string;
+  business_status: string;
   verified_at: Date | null;
   message_id: string;
   external_sender_id: string | null;
@@ -151,6 +152,7 @@ async function processDelivery(manager: EntityManager, receipt: Receipt) {
 async function processInbound(manager: EntityManager, receipt: Receipt) {
   if (
     receipt.status !== 'active' ||
+    receipt.business_status !== 'active' ||
     !receipt.verified_at ||
     !/^\d{1,32}$/.test(receipt.external_sender_id ?? '') ||
     typeof receipt.message_text !== 'string'
@@ -337,7 +339,7 @@ export const handoffWhatsAppReceipt: JobHandler = async (
   }
   const [receipt] = await manager.query<Receipt[]>(
     `SELECT r.id, r.business_id, r.connection_id, r.event_key, r.event_type,
-            r.payload, r.processed_at, c.status, c."verifiedAt" AS verified_at,
+            r.payload, r.processed_at, c.status, b.status AS business_status, c."verifiedAt" AS verified_at,
             r.payload->>'messageId' AS message_id,
             r.payload->>'senderId' AS external_sender_id,
             r.payload->>'text' AS message_text,
@@ -347,6 +349,7 @@ export const handoffWhatsAppReceipt: JobHandler = async (
        FROM public.webhook_receipts r
        JOIN public.channel_connections c
          ON c.id = r.connection_id AND c."businessId" = r.business_id
+       JOIN public.businesses b ON b.id = r.business_id
       WHERE r.id = $1 AND r.business_id = $2 AND r.provider = 'whatsapp'
       FOR UPDATE OF r, c`,
     [operation.id, operation.businessId],

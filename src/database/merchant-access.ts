@@ -2,15 +2,18 @@ import type { DataSource } from 'typeorm';
 import { tenantTables } from './tenant-integrity';
 
 import { identityRolePattern, merchantRolePattern } from '../config/env';
-export const merchantPolicyTables = [
+export const initialMerchantPolicyTables = [
   ...tenantTables,
-  'merchant_leads',
-  'merchant_lead_events',
   'businesses',
   'business_members',
   'accounts',
   'merchant_sessions',
   'merchant_login_attempts',
+];
+export const merchantPolicyTables = [
+  ...initialMerchantPolicyTables,
+  'merchant_leads',
+  'merchant_lead_events',
 ];
 
 const identityFunctions = [

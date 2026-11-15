@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 import {
   merchantFunctions,
-  merchantPolicyTables,
+  initialMerchantPolicyTables,
   policyFunctions,
 } from '../merchant-access';
 
@@ -110,7 +110,7 @@ export class AddMerchantAuth1760000000004 implements MigrationInterface {
       `GRANT EXECUTE ON FUNCTION ${policyFunctions.map((fn) => `public.${fn}`).join(', ')} TO PUBLIC`,
     );
 
-    for (const table of merchantPolicyTables) {
+    for (const table of initialMerchantPolicyTables) {
       await runner.query(`
         ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
         ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;
@@ -147,7 +147,7 @@ export class AddMerchantAuth1760000000004 implements MigrationInterface {
     await runner.query(
       'DROP POLICY kleva_merchant_read ON businesses; DROP POLICY kleva_merchant_read ON business_members; DROP POLICY kleva_merchant_login ON merchant_login_attempts',
     );
-    for (const table of merchantPolicyTables) {
+    for (const table of initialMerchantPolicyTables) {
       await runner.query(`
         DROP POLICY kleva_legacy ON ${table};
         ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY;

@@ -47,6 +47,7 @@ let faqs = [];
 let faqKeys = new Map();
 let faqCreateRequests = 0;
 let products = [];
+let leads = [];
 let productKeys = new Map();
 let productCreateRequests = 0;
 
@@ -68,6 +69,7 @@ function reset(search = new URLSearchParams()) {
   faqKeys = new Map();
   faqCreateRequests = 0;
   products = [];
+  leads = [];
   productKeys = new Map();
   productCreateRequests = 0;
   const now = Date.now();
@@ -178,6 +180,26 @@ const server = createServer(async (req, res) => {
     return json(200, { count: faqCreateRequests });
   if (url.pathname === '/test/products')
     return json(200, { count: productCreateRequests });
+  if (url.pathname === '/test/leads' && req.method === 'POST') {
+    leads = [
+      {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        business_id: BUSINESS_ID,
+        customer_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        conversation_id: CONVERSATION_ID,
+        customer_name: 'Amina',
+        customer_whatsapp_id: '2348012345678',
+        source: 'WHATSAPP',
+        status: 'NEW',
+        first_contact_at: new Date().toISOString(),
+        last_activity_at: new Date().toISOString(),
+        version: 1,
+        updated_at: new Date().toISOString(),
+      },
+    ];
+    return json(201, { count: leads.length });
+  }
+  if (url.pathname === '/test/leads') return json(200, { count: leads.length });
   if (url.pathname === '/auth/login') {
     res.writeHead(302, {
       Location:
@@ -361,6 +383,71 @@ const server = createServer(async (req, res) => {
       return json(201, found);
     }
     if (faqId && action && !found) return json(404, { message: 'Not found.' });
+  }
+
+  const leadMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/leads(?:\/([0-9a-f-]+))?$/i,
+  );
+  if (leadMatch) {
+    const [, businessId, leadId] = leadMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'agent'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    if (req.method === 'GET' && !leadId) {
+      const items = businessId === BUSINESS_ID ? leads : [];
+      const cursor = url.searchParams.get('cursor');
+      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const status = url.searchParams.get('status');
+      const filtered = status
+        ? items.filter((item) => item.status === status)
+        : items;
+      return json(200, {
+        items: cursor ? [] : filtered.slice(0, limit),
+        nextCursor: null,
+      });
+    }
+    const found =
+      businessId === BUSINESS_ID
+        ? leads.find((item) => item.id === leadId)
+        : null;
+    if (req.method === 'GET' && leadId)
+      return found ? json(200, found) : json(404, { message: 'Not found.' });
+    if (req.method === 'PATCH' && leadId) {
+      if (!validCsrf) return json(403, { message: 'Forbidden' });
+      if (!found) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const update = JSON.parse(body);
+      if (
+        !['NEW', 'CONTACTED', 'QUALIFIED', 'WON', 'LOST'].includes(
+          update.status,
+        )
+      )
+        return json(400, { message: 'Invalid lead status.' });
+      if (
+        found.status !== update.status &&
+        found.version !== update.expectedVersion
+      )
+        return json(409, { message: 'Lead changed.' });
+      const changed = found.status !== update.status;
+      if (changed) {
+        found.status = update.status;
+        found.version += 1;
+        found.updated_at = new Date().toISOString();
+      }
+      return json(200, {
+        leadId: found.id,
+        status: found.status,
+        version: found.version,
+        updatedAt: found.updated_at,
+        changed,
+      });
+    }
   }
 
   const productMatch = url.pathname.match(

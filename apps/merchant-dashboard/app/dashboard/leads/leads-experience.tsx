@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { MerchantLead } from '@/lib/api';
+import type { CursorPage, MerchantLead } from '@/lib/api';
 import styles from '../knowledge/knowledge.module.css';
 type Props = {
   businessId: string;
-  initialLeads: MerchantLead[];
+  initialPage: CursorPage<MerchantLead>;
   initialError: string | null;
 };
 const statuses: MerchantLead['status'][] = [
@@ -26,16 +26,17 @@ function date(value: string) {
 }
 export function LeadsExperience({
   businessId,
-  initialLeads,
+  initialPage,
   initialError,
 }: Props) {
-  const [leads, setLeads] = useState(initialLeads);
+  const [leads, setLeads] = useState(initialPage.items);
+  const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
   const [selectedId, setSelectedId] = useState<string | null>(
-    initialLeads[0]?.id ?? null,
+    initialPage.items[0]?.id ?? null,
   );
   const [filter, setFilter] = useState('ALL');
   const [status, setStatus] = useState<MerchantLead['status']>(
-    initialLeads[0]?.status ?? 'NEW',
+    initialPage.items[0]?.status ?? 'NEW',
   );
   const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
@@ -50,6 +51,42 @@ export function LeadsExperience({
     () => leads.filter((l) => filter === 'ALL' || l.status === filter),
     [leads, filter],
   );
+  async function fetchPage(
+    nextFilter: string,
+    cursor?: string,
+    append = false,
+  ) {
+    setBusy(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ limit: '50' });
+      if (nextFilter !== 'ALL') query.set('status', nextFilter);
+      if (cursor) query.set('cursor', cursor);
+      const response = await fetch(
+        `/api/leads/${businessId}/leads?${query.toString()}`,
+        { cache: 'no-store' },
+      );
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('kleva-session-expired'));
+        throw new Error('Your session expired. Sign in again.');
+      }
+      if (!response.ok)
+        throw new Error('Leads could not be loaded. Try again.');
+      const page = (await response.json()) as CursorPage<MerchantLead>;
+      setLeads((current) =>
+        append ? [...current, ...page.items] : page.items,
+      );
+      setNextCursor(page.nextCursor);
+      if (!append) {
+        setSelectedId(page.items[0]?.id ?? null);
+        setStatus(page.items[0]?.status ?? 'NEW');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Leads could not be loaded.');
+    } finally {
+      setBusy(false);
+    }
+  }
   function select(l: MerchantLead) {
     setSelectedId(l.id);
     setStatus(l.status);
@@ -124,7 +161,11 @@ export function LeadsExperience({
           <select
             aria-label="Filter leads"
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setFilter(value);
+              void fetchPage(value);
+            }}
           >
             <option value="ALL">All statuses</option>
             {statuses.map((s) => (
@@ -166,6 +207,15 @@ export function LeadsExperience({
             ))}
           </div>
         )}
+        {nextCursor && (
+          <button
+            type="button"
+            onClick={() => void fetchPage(filter, nextCursor, true)}
+            disabled={busy}
+          >
+            {busy ? 'Loading…' : 'Load more leads'}
+          </button>
+        )}
       </section>
       <section
         className={`${styles.editorPanel} ${selected ? styles.mobileEditorOpen : styles.mobileHidden}`}
@@ -198,6 +248,7 @@ export function LeadsExperience({
               <label htmlFor="lead-status">Status</label>
               <select
                 id="lead-status"
+                aria-label="Lead status"
                 value={status}
                 onChange={(e) =>
                   setStatus(e.target.value as MerchantLead['status'])

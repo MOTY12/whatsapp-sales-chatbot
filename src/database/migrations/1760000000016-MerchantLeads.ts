@@ -102,6 +102,12 @@ export class MerchantLeads1760000000016 implements MigrationInterface {
   }
   async down(runner: QueryRunner): Promise<void> {
     await runner.query(`
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM public.merchant_leads)
+          OR EXISTS (SELECT 1 FROM public.merchant_lead_events) THEN
+          RAISE EXCEPTION 'Merchant lead history exists; preserve the schema for rollback.';
+        END IF;
+      END $$;
       DROP FUNCTION public.kleva_lead_change_status(uuid,text,bigint);
       DROP FUNCTION public.kleva_lead_detail(uuid);
       DROP FUNCTION public.kleva_leads_list(integer,timestamptz,uuid,text);

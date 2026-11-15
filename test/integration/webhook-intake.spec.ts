@@ -334,6 +334,14 @@ describe('durable signed WhatsApp intake', () => {
           [tenant, '2348011112222'],
         ),
       ).toHaveLength(1);
+      expect(
+        await admin.query(
+          `SELECT l.id FROM public.merchant_leads l
+             JOIN public.messages m ON m."conversationId" = l.conversation_id AND m."businessId" = l.business_id
+            WHERE m."whatsappMessageId" = 'handoff' AND l.business_id = $1`,
+          [tenant],
+        ),
+      ).toHaveLength(1);
     } finally {
       await worker.close();
       await queue.obliterate({ force: true });
@@ -379,6 +387,14 @@ describe('durable signed WhatsApp intake', () => {
     expect(message.metadata.classification).toBe('owner_command');
     expect(
       await admin.query(
+        `SELECT l.id FROM public.merchant_leads l JOIN public.messages m
+          ON m."conversationId"=l.conversation_id AND m."businessId"=l.business_id
+         WHERE m."whatsappMessageId"=$1 AND l.business_id=$2`,
+        ['verified-owner-command', tenant],
+      ),
+    ).toHaveLength(0);
+    expect(
+      await admin.query(
         `SELECT response_kind, status FROM public.whatsapp_response_intents WHERE receipt_id = $1`,
         [messageReceipt.id],
       ),
@@ -409,6 +425,13 @@ describe('durable signed WhatsApp intake', () => {
     expect(stored.id).toBe(before[0].id);
     expect(
       await admin.query(
+        `SELECT id FROM public.merchant_leads WHERE business_id=$1 AND conversation_id=
+         (SELECT "conversationId" FROM public.messages WHERE "whatsappMessageId"=$2)`,
+        [tenant, 'existing-customer-message'],
+      ),
+    ).toHaveLength(1);
+    expect(
+      await admin.query(
         `SELECT id FROM public.customers WHERE "businessId" = $1 AND phone = $2`,
         [tenant, sender],
       ),
@@ -433,6 +456,14 @@ describe('durable signed WhatsApp intake', () => {
       ['legacy-onboarding-message'],
     );
     expect(stored.metadata.classification).toBe('legacy_onboarding');
+    expect(
+      await admin.query(
+        `SELECT l.id FROM public.merchant_leads l JOIN public.messages m
+          ON m."conversationId"=l.conversation_id AND m."businessId"=l.business_id
+         WHERE m."whatsappMessageId"=$1 AND l.business_id=$2`,
+        ['legacy-onboarding-message', tenant],
+      ),
+    ).toHaveLength(0);
     expect(
       await admin.query(
         `SELECT response_kind, status FROM public.whatsapp_response_intents WHERE receipt_id = $1`,
