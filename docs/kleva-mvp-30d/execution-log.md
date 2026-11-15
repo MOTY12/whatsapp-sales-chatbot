@@ -173,3 +173,24 @@ Implemented an authenticated responsive shell, membership-scoped business select
 | `npm audit` / `npm audit --omit=dev` | 0 vulnerabilities after updating Vitest and the vulnerable transitive minimatch dependency |
 
 Browser journeys use a local API fixture and do not establish real identity-provider behavior. Configure the production OIDC callback to the dashboard origin and verify login, session expiry and cookie policy in staging; hosted CI remains outstanding. DASHBOARD-001 is VERIFIED locally. Remaining MVP estimate: 61 hours plus 11 hours of contingency. Next task: INBOX-002.
+
+## November 14, 2026 · INBOX-002
+
+Replaced the Conversations placeholder with a responsive merchant inbox. The server-rendered page derives business choices from the authenticated owner/agent memberships and loads the first opaque-cursor page through the server-only API client. A same-origin `/api/inbox` Route Handler proxies history and mutations without exposing backend credentials; it checks the dashboard Origin and CSRF cookie/header pair for POSTs, while Nest continues to enforce membership, tenant scope, takeover state, messaging window and usage metering. The client supports cursor pagination for conversations and older messages, chronological message display with scroll restoration, AUTO/HUMAN takeover and release, a 4096-character manual composer, one UUID v4 idempotency key per logical draft, queued acknowledgement, and 8-second selected-thread plus 20-second list polling. QUEUED is displayed separately from later provider delivery states; safe labels replace internal provider classifications. Switching business remounts the inbox to clear prior tenant data.
+
+Added local Playwright fixtures and browser journeys for conversation list/history, older-message pagination, takeover, one queued reply despite a repeated click, delivery polling, quota/disconnected/closed-window failures with draft retention, empty inbox, foreign tenant denial, business switching, mobile navigation, session expiry, and the existing onboarding journeys. The fixture simulates delivery status changes and does not establish real Meta delivery. Component presentation tests cover status labels, safe failure copy and message merging.
+
+| Command | Result |
+| --- | --- |
+| `npm run dashboard:lint` | Passed |
+| `npm run dashboard:typecheck` | Passed |
+| `npm run dashboard:test` | 4 passed |
+| `npm run dashboard:build` | Passed |
+| `npm run dashboard:test:browser` | 8 passed (6 inbox journeys and 2 existing dashboard journeys) |
+| `npm run lint:check` | Passed |
+| `npm run build` | Passed |
+| `npm test` | 41 passed in 9 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | Could not run: `KLEVA_TEST_PG_DATABASE` is not set to the required `kleva_integration_control`; PostgreSQL integration cases did not execute successfully in this environment |
+
+INBOX-002 is VERIFIED locally against the local HTTP fixture. Staging identity-provider and live Meta send/reconciliation evidence, hosted CI and the PostgreSQL integration run remain release work. Remaining MVP estimate: 55 hours plus 11 hours of contingency. Next task: KNOWLEDGE-001 / KNOWLEDGE-004, publishing and editing merchant FAQs.

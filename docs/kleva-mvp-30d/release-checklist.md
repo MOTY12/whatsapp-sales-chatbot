@@ -5,7 +5,7 @@
 - [x] Local merchant authentication, session and PostgreSQL isolation suite passes with signed OIDC fixtures.
 - [ ] Hosted CI passes lint, build, unit, HTTP, database, queue and browser journey checks.
 - [x] Backend tests prove atomic creation, idempotent retry, role checks, and cross-tenant denial.
-- [ ] Browser onboarding proves same-origin sessions, atomic ownership, profile edits and cross-business denial.
+- [x] Fixture-backed browser journeys cover same-origin sessions, onboarding, profile edits and business selection; INBOX-002 tests also cover tenant switching/denial, takeover, manual reply and delivery-state polling. These do not replace staging OIDC or live Meta verification.
 - [x] Fixture-backed Playwright browser journey proves same-origin cookie callback, onboarding, CSRF-protected profile edits, safe GET retry, pending WhatsApp view, membership-scoped selection denial, logout and mobile navigation. Staging OIDC remains a separate release check.
 - [x] Signed webhook commits to PostgreSQL before acknowledgement. Duplicate events, Redis outage, worker restart and replay preserve intended inbound message effects in local integration.
 - [x] Local Meta fixtures and PostgreSQL verify tenant-bound encrypted provisioning, rotation, revocation and disconnect.
@@ -34,4 +34,4 @@
 - [x] Pending owner-command and legacy-onboarding responses are generated once and queued as separate metered outbounds. Customer AI replies remain disabled.
 - [ ] Verify approved template availability and live Meta messaging-window behavior. Free-form messages outside the 24-hour service window currently fail closed.
 - [ ] Exercise operator reconciliation of `UNCERTAIN` sends against Meta provider history in staging; Meta does not guarantee idempotent send requests.
-- [ ] Exercise merchant inbox browser flow after INBOX-002 and run the hosted CI browser journey.
+- [ ] Run the hosted CI browser journey after INBOX-002; local browser fixtures do not prove live Meta delivery.

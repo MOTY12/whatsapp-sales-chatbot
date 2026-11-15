@@ -22,7 +22,7 @@ test('merchant signs in, creates a business, sees setup, and edits profile', asy
   await page.getByLabel(/business name/i).fill('The Better Store');
   await page.getByRole('button', { name: /save changes/i }).click();
   await expect(page.getByRole('status')).toContainText('Business profile saved.');
-  await page.goto('/dashboard/whatsapp?businessId=biz-fixture-1234');
+  await page.goto('/dashboard/whatsapp?businessId=11111111-1111-4111-8111-111111111111');
   await expect(page.getByRole('heading', { name: 'WhatsApp connection' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Connect with help from our team' })).toBeVisible();
   await page.goto('/dashboard/settings?businessId=another-business');
@@ -48,7 +48,7 @@ test('mobile navigation opens, closes, and navigates accessibly', async ({ page 
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: /conversations/i }).click();
   await expect(page).toHaveURL(/\/dashboard\/conversations$/);
   await expect(page.getByRole('heading', { name: 'Conversations', exact: true })).toBeVisible();
-  await expect(page.getByText('COMING SOON')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await expect(page.locator('.mobile-menu')).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Settings' }).click();

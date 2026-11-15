@@ -4,7 +4,6 @@ const BUSINESS_ID = '11111111-1111-4111-8111-111111111111';
 const SECOND_BUSINESS_ID = '22222222-2222-4222-8222-222222222222';
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SECOND_CONVERSATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const OTHER_TENANT_CONVERSATION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const DEFAULT_BUSINESS = { id: BUSINESS_ID, name: 'The Good Store', industry: 'Retail', phone: '+2348012345678', timezone: 'Africa/Lagos', description: null, openingHours: null, status: 'active', role: 'owner' };
 const SECOND_BUSINESS = { id: SECOND_BUSINESS_ID, name: 'Second Workspace', industry: 'Services', phone: '+2348011111111', timezone: 'Africa/Lagos', description: null, openingHours: null, status: 'active', role: 'owner' };
 
@@ -82,6 +81,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/health') return json(200, { ok: true });
   if (url.pathname === '/test/reset') { reset(url.searchParams); return json(200, { ok: true }); }
   if (url.pathname === '/test/expire') { expireSession = true; return json(200, { ok: true }); }
+  if (url.pathname === '/test/scenario') { scenario = url.searchParams.get('value') ?? ''; return json(200, { ok: true }); }
   if (url.pathname === '/test/replies') return json(200, { count: repliesRequests });
   if (url.pathname === '/auth/login') { res.writeHead(302, { Location: 'http://localhost:3101/auth/callback?code=fixture&state=fixture', 'Set-Cookie': 'kleva_oidc_binding=fixture; Path=/; HttpOnly; SameSite=Lax' }); return res.end(); }
   if (url.pathname === '/auth/callback') { res.writeHead(302, { Location: '/auth/me', 'Set-Cookie': ['kleva_session=fixture; Path=/; HttpOnly; SameSite=Lax', 'kleva_csrf=fixture-csrf; Path=/; SameSite=Lax'] }); return res.end(); }

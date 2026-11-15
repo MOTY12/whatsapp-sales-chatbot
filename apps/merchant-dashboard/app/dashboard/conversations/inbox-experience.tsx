@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Conversation, ConversationDetail, CursorPage, InboxMessage, InboxMode } from '@/lib/api';
 import { formatInboxTime, mergeMessages, messageFailureText, messageStatusLabel, senderLabel } from './presentation';
 import styles from './inbox.module.css';
@@ -28,7 +29,7 @@ async function getInboxJson<T>(path: string, init?: RequestInit): Promise<T> {
   try { response = await fetch(path, { ...init, cache: 'no-store', headers }); }
   catch { throw new InboxRequestError(0, 'unavailable', 'Kleva is temporarily unavailable. Please try again.'); }
   if (response.status === 401) {
-    window.location.assign('/login?error=session');
+    window.dispatchEvent(new CustomEvent('kleva-session-expired'));
     throw new InboxRequestError(401, 'unauthorized', 'Your session has expired.');
   }
   if (!response.ok) {
@@ -55,6 +56,7 @@ function displayName(conversation: Pick<Conversation, 'customer_name' | 'custome
 function modeLabel(mode: InboxMode) { return mode === 'HUMAN' ? 'Human takeover' : 'Automation active'; }
 
 export function InboxExperience({ businessId, initialPage, initialError }: Props) {
+  const router = useRouter();
   const initialItems = initialPage?.items ?? [];
   const [conversations, setConversations] = useState(initialItems);
   const [listCursor, setListCursor] = useState(initialPage?.nextCursor ?? null);
@@ -64,17 +66,19 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [messageCursor, setMessageCursor] = useState<string | null>(null);
-  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(Boolean(initialItems[0]));
   const [threadError, setThreadError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [olderLoading, setOlderLoading] = useState(false);
   const [controlPending, setControlPending] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
+  const [releaseConfirmation, setReleaseConfirmation] = useState(false);
   const [mobileThreadOpen, setMobileThreadOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [queuedNotice, setQueuedNotice] = useState<string | null>(null);
+  const [threadRequestVersion, setThreadRequestVersion] = useState(0);
 
   const selectedRef = useRef(selectedId);
   const messagesPaneRef = useRef<HTMLDivElement>(null);
@@ -83,6 +87,13 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
   const pendingRestoreRef = useRef<{ top: number; height: number } | null>(null);
   const pollingRef = useRef(false);
   const replyKeyRef = useRef<{ text: string; key: string } | null>(null);
+  const queuedMessageRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const onExpired = () => router.push('/login?error=session');
+    window.addEventListener('kleva-session-expired', onExpired);
+    return () => window.removeEventListener('kleva-session-expired', onExpired);
+  }, [router]);
 
   const selectedConversation = useMemo(() => conversations.find((item) => item.id === selectedId) ?? null, [conversations, selectedId]);
   const mode = detail?.control_mode ?? selectedConversation?.control_mode ?? 'AUTO';
@@ -99,18 +110,8 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
 
   useEffect(() => {
     selectedRef.current = selectedId;
-    setDetail(null);
-    setMessages([]);
-    setMessageCursor(null);
-    setThreadError(null);
-    setHistoryError(null);
-    setControlError(null);
-    setReplyError(null);
-    setQueuedNotice(null);
-    replyKeyRef.current = null;
-    if (!selectedId) { setThreadLoading(false); return; }
+    if (!selectedId) return;
     const controller = new AbortController();
-    setThreadLoading(true);
     void loadThread(selectedId, controller.signal).then((data) => {
       if (selectedRef.current !== selectedId) return;
       pendingBottomRef.current = true;
@@ -124,7 +125,7 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
       if (!controller.signal.aborted && selectedRef.current === selectedId) setThreadLoading(false);
     });
     return () => controller.abort();
-  }, [loadThread, selectedId]);
+  }, [loadThread, selectedId, threadRequestVersion]);
 
   useLayoutEffect(() => {
     const pane = messagesPaneRef.current;
@@ -182,6 +183,10 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
         nearBottomRef.current = messagesPaneRef.current ? messagesPaneRef.current.scrollHeight - messagesPaneRef.current.scrollTop - messagesPaneRef.current.clientHeight < 100 : false;
         pendingBottomRef.current = nearBottomRef.current;
         setMessages((current) => mergeMessages(current, recent.items));
+        const queuedMessage = queuedMessageRef.current && recent.items.find((message) => message.id === queuedMessageRef.current);
+        if (queuedMessage && !['QUEUED', 'PENDING', 'RESERVED', 'SENDING'].includes(queuedMessage.status.toUpperCase())) {
+          setQueuedNotice(messageFailureText(queuedMessage) ?? `Reply ${messageStatusLabel(queuedMessage.status).toLowerCase()}.`);
+        }
         setConversations((current) => current.map((item) => item.id === conversationId ? { ...item, status: nextDetail.status, control_mode: nextDetail.control_mode, control_version: nextDetail.control_version, in_flight: nextDetail.in_flight } : item));
       } catch (error) {
         if (!stopped && selectedRef.current === conversationId && error instanceof InboxRequestError && error.status === 404) {
@@ -198,6 +203,18 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
 
   async function selectConversation(conversationId: string) {
     selectedRef.current = conversationId;
+    setDetail(null);
+    setMessages([]);
+    setMessageCursor(null);
+    setThreadLoading(true);
+    setThreadError(null);
+    setHistoryError(null);
+    setControlError(null);
+    setReleaseConfirmation(false);
+    setReplyError(null);
+    setQueuedNotice(null);
+    replyKeyRef.current = null;
+    queuedMessageRef.current = null;
     setSelectedId(conversationId);
     setMobileThreadOpen(true);
   }
@@ -222,9 +239,9 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
 
   async function changeControl(target: InboxMode) {
     if (!selectedId || controlPending) return;
-    if (target === 'AUTO' && !window.confirm('Resume automation for this conversation?')) return;
     setControlPending(true);
     setControlError(null);
+    setReleaseConfirmation(false);
     try {
       const response = await getInboxJson<{ mode: InboxMode; controlVersion: number; changedAt: string; changed: boolean }>(inboxPath(businessId, `/${encodeURIComponent(selectedId)}/${target === 'HUMAN' ? 'takeover' : 'release'}`), { method: 'POST' });
       if (selectedRef.current !== selectedId) return;
@@ -246,12 +263,24 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
     setReplyError(null);
     setQueuedNotice(null);
     try {
-      const result = await getInboxJson<{ status: 'QUEUED' }>(inboxPath(businessId, `/${encodeURIComponent(selectedId)}/replies`), {
+      const result = await getInboxJson<{ outboundMessageId: string; status: 'QUEUED' }>(inboxPath(businessId, `/${encodeURIComponent(selectedId)}/replies`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
         body: JSON.stringify({ text }),
       });
       if (result.status !== 'QUEUED') throw new InboxRequestError(500, 'unavailable', 'The reply could not be queued.');
+      if (selectedRef.current !== selectedId) return;
+      setMessages((current) => mergeMessages(current, [{
+        id: result.outboundMessageId,
+        direction: 'outbound',
+        content: text,
+        status: result.status,
+        provider_message_id: null,
+        created_at: new Date().toISOString(),
+        authorization_kind: 'HUMAN',
+        error_classification: null,
+      }]));
+      queuedMessageRef.current = result.outboundMessageId;
       setDraft('');
       replyKeyRef.current = null;
       setQueuedNotice('Reply queued. Delivery status will update here; it has not been confirmed as delivered yet.');
@@ -271,10 +300,10 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
       {loadingError ? <div className={styles.listState} role="alert"><strong>Inbox unavailable</strong><p>{listError.message}</p><button className="button button-secondary" onClick={() => void refreshList(false)}>Try again</button></div>
         : conversations.length === 0 ? <div className={styles.listState}><span className={styles.emptyGlyph} aria-hidden="true">◌</span><strong>No conversations yet</strong><p>New customer messages will appear here after WhatsApp is connected.</p></div>
         : <>
-          <div className={styles.conversationList} role="list" aria-label="Conversations">
+          <div className={styles.conversationList} aria-label="Conversations">
             {conversations.map((conversation) => {
               const active = conversation.id === selectedId;
-              return <button type="button" role="listitem" key={conversation.id} className={`${styles.conversationRow} ${active ? styles.selectedRow : ''}`} aria-pressed={active} onClick={() => void selectConversation(conversation.id)}>
+              return <button type="button" key={conversation.id} className={`${styles.conversationRow} ${active ? styles.selectedRow : ''}`} aria-pressed={active} onClick={() => void selectConversation(conversation.id)}>
                 <span className={styles.customerAvatar} aria-hidden="true">{displayName(conversation).slice(0, 1).toLocaleUpperCase()}</span>
                 <span className={styles.rowBody}><span className={styles.rowTop}><strong>{displayName(conversation)}</strong><time dateTime={conversation.last_activity}>{formatInboxTime(conversation.last_activity)}</time></span><span className={styles.rowPreview}>{conversation.preview || 'No message preview'}</span><span className={styles.rowMeta}><span>{conversation.control_mode === 'HUMAN' ? 'HUMAN' : 'AUTO'}</span>{Number(conversation.in_flight) > 0 && <span className={styles.inFlight}>Sending · {conversation.in_flight}</span>}</span></span>
               </button>;
@@ -295,16 +324,17 @@ export function InboxExperience({ businessId, initialPage, initialError }: Props
               <span className={`${styles.modePill} ${mode === 'HUMAN' ? styles.humanMode : styles.autoMode}`}><i/> {modeLabel(mode)}</span>
               {mode === 'AUTO'
                 ? <button type="button" className="button button-primary" disabled={controlPending || !detail} onClick={() => void changeControl('HUMAN')}>{controlPending ? 'Taking over…' : 'Take over conversation'}</button>
-                : <button type="button" className="button button-secondary" disabled={controlPending || !detail} onClick={() => void changeControl('AUTO')}>{controlPending ? 'Resuming…' : 'Resume automation'}</button>}
+                : <button type="button" className="button button-secondary" disabled={controlPending || !detail} onClick={() => setReleaseConfirmation(true)}>{controlPending ? 'Resuming…' : 'Resume automation'}</button>}
             </div>
           </header>
+          {releaseConfirmation && mode === 'HUMAN' && <div className={styles.humanNotice} role="group" aria-label="Confirm resuming automation"><p>Resume automated replies for this conversation?</p><button type="button" className="button button-secondary" onClick={() => setReleaseConfirmation(false)}>Keep human control</button><button type="button" className="button button-primary" disabled={controlPending} onClick={() => void changeControl('AUTO')}>Confirm resume automation</button></div>}
           {mode === 'HUMAN' && <div className={styles.humanNotice} role="status"><strong>Automation is paused.</strong> You’re replying as a person. {inFlight > 0 && <span>{inFlight} message{inFlight === 1 ? ' is' : 's are'} already in flight and may still complete.</span>}</div>}
           {controlError && <p className={styles.inlineError} role="alert">{controlError}</p>}
           <div className={styles.messageArea} ref={messagesPaneRef} onScroll={(event) => { const pane = event.currentTarget; nearBottomRef.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 100; }} aria-label="Message history">
             {messageCursor && <div className={styles.olderControl}><button className={styles.moreButton} type="button" disabled={olderLoading} onClick={() => void loadOlderMessages()}>{olderLoading ? 'Loading older messages…' : 'Load older messages'}</button></div>}
             {historyError && <p className={styles.inlineError} role="alert">{historyError}</p>}
             {threadLoading ? <div className={styles.threadState} role="status">Loading messages…</div>
-              : threadError ? <div className={styles.threadState} role="alert"><strong>Conversation unavailable</strong><p>{threadError}</p><button type="button" className="button button-secondary" onClick={() => selectedId && void selectConversation(selectedId)}>Try again</button></div>
+              : threadError ? <div className={styles.threadState} role="alert"><strong>Conversation unavailable</strong><p>{threadError}</p><button type="button" className="button button-secondary" onClick={() => setThreadRequestVersion((value) => value + 1)}>Try again</button></div>
               : messages.length === 0 ? <div className={styles.threadState}><strong>No messages yet</strong><p>The conversation history is empty.</p></div>
               : <div className={styles.messageStack} aria-live="polite" aria-relevant="additions text">
                 {messages.map((message) => {
