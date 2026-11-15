@@ -28,10 +28,10 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | RAG-001 | Paid pilot | VERIFIED locally | KNOWLEDGE-001, CATALOG-001 | PostgreSQL full-text search ranks active-business published FAQ and product revisions with exact identifier matches and explicit insufficient-evidence outcomes. Embeddings/vector retrieval remain out of scope. |
 | INBOX-002 | Paid pilot | NOT_STARTED | DASHBOARD-001, INBOX-001 | Ship the shared inbox. |
 | SALES-001 | Paid pilot | VERIFIED locally | TENANT-003, INBOX-001, CATALOG-001 | One lead per business/conversation from eligible verified inbound WhatsApp messages; tenant-safe APIs, audited manual statuses and conversation links. No backfill of old conversations. |
-| RAG-002 | Paid pilot | NOT_STARTED | RAG-001, KNOWLEDGE-004, DASHBOARD-001, METER-001 | Add grounded generation, configuration and playground. |
+| RAG-002 | Paid pilot | VERIFIED locally (WhatsApp grounding slice) | RAG-001, KNOWLEDGE-004, DASHBOARD-001, METER-001 | Grounded one-provider generation, safe validation, configured handoff, token metering and local product/abstention integration are verified. The merchant-side synthetic playground/configuration UI from the broader roadmap remains open. |
 | SALES-002 | Paid pilot | NOT_STARTED | SALES-001, INBOX-002 | Configure qualification fields and manual conversion. |
 | TOOLS-001 | Paid pilot | NOT_STARTED | RAG-002, SALES-002, CATALOG-001, INBOX-001 | Enforce typed pilot sales tools. |
-| AGENT-001 | Paid pilot | NOT_STARTED | RAG-002, INBOX-002, TOOLS-001 | Enable grounded WhatsApp answers with bounded memory. |
+| AGENT-001 | Paid pilot | IN_PROGRESS (initial response slice verified locally) | RAG-002, INBOX-002, TOOLS-001 | Eligible verified customer texts can receive grounded, metered WhatsApp replies with handoff and takeover fencing. Bounded conversation memory, typed tool registry, per-tenant activation and staging opt-in remain open for the broader agent milestone. |
 | LEARNING-001 | Paid pilot | NOT_STARTED | AGENT-001 | Capture feedback and group redacted gaps. |
 | ANALYTICS-001 | Paid pilot | NOT_STARTED | AGENT-001 | Ship tenant-scoped support analytics. |
 | OPS-001 | Paid pilot | NOT_STARTED | AGENT-001 | Monitor, throttle and recover API and workers. |

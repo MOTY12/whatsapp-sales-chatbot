@@ -5,7 +5,9 @@ import { FakeGroundedModel } from '../../src/assistant/grounded-model.provider';
 import { UnifiedKnowledgeRetrievalService } from '../../src/knowledge/unified-knowledge-retrieval.service';
 import { UsageService } from '../../src/metering/usage.service';
 import { ChannelConnection } from '../../src/database/entities/channel-connection.entity';
-import type { OutboxOperation } from '../../src/database/entities/outbox-operation.entity';
+import { OutboxOperation } from '../../src/database/entities/outbox-operation.entity';
+import { OutboxStore } from '../../src/jobs/outbox.store';
+import { OutboundMessageService } from '../../src/whatsapp/outbound-message.service';
 import { seedTenant } from './fixtures';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
@@ -39,7 +41,7 @@ describe('grounded WhatsApp AI response processing', () => {
 
   it('uses only a published tenant product, reconciles usage and persists one response intent', async () => {
     const tenant = await seedTenant(admin, 1);
-    await admin.getRepository(ChannelConnection).save({
+    const connection = await admin.getRepository(ChannelConnection).save({
       businessId: tenant.business.id,
       provider: 'whatsapp',
       externalAccountId: 'fixture-account',
@@ -48,8 +50,29 @@ describe('grounded WhatsApp AI response processing', () => {
       verifiedAt: new Date(),
     });
     await admin.query(
+      `INSERT INTO public.whatsapp_credentials(business_id,connection_id,envelope)
+       VALUES ($1,$2,'{}'::jsonb)`,
+      [tenant.business.id, connection.id],
+    );
+    await admin.query(
       `UPDATE public.businesses SET status = 'active' WHERE id = $1`,
       [tenant.business.id],
+    );
+    const usage = new UsageService(runtime);
+    await usage.setBusinessLimits(tenant.business.id, {
+      monthlyWhatsAppMessages: 5,
+      monthlyAiInputTokens: 5000,
+      monthlyAiOutputTokens: 5000,
+      aiTokensPerRequest: 4000,
+    });
+    const cloud = {
+      sendTextMessage: jest.fn().mockResolvedValue(`wamid.${randomUUID()}`),
+    };
+    const outbound = new OutboundMessageService(
+      runtime,
+      new OutboxStore(runtime),
+      usage,
+      cloud,
     );
 
     const productId = randomUUID();
@@ -63,7 +86,7 @@ describe('grounded WhatsApp AI response processing', () => {
       await manager.query(
         `INSERT INTO public.merchant_product_revisions
            (id,business_id,product_id,revision,name,description,sku,price,currency,availability)
-         VALUES ($1,$2,$3,1,'Quiet standing fan','Quiet standing fan with remote control.','FAN-01',25000,'NGN','IN_STOCK')`,
+         VALUES ($1,$2,$3,1,'Quiet standing fan','Quiet standing fan with remote control. The price is 25,000 NGN.','FAN-01',25000,'NGN','IN_STOCK')`,
         [revisionId, tenant.business.id, productId],
       );
       await manager.query(
@@ -79,7 +102,7 @@ describe('grounded WhatsApp AI response processing', () => {
       const [message] = await manager.query<{ id: string }[]>(
         `INSERT INTO public.messages
           ("businessId","conversationId",direction,content,status,"whatsappMessageId",metadata)
-         VALUES ($1,$2,'inbound','What is the price of the quiet standing fan?','delivered',$3,'{}') RETURNING id`,
+         VALUES ($1,$2,'inbound','Price quiet standing fan','delivered',$3,'{}') RETURNING id`,
         [tenant.business.id, tenant.conversation.id, inboundId],
       );
       await manager.query(
@@ -110,7 +133,6 @@ describe('grounded WhatsApp AI response processing', () => {
       );
     });
 
-    const outbound = { enqueueTextMessage: jest.fn().mockResolvedValue(null) };
     const model = new FakeGroundedModel({
       reply:
         'The quiet standing fan costs NGN 25,000 and includes remote control.',
@@ -123,8 +145,8 @@ describe('grounded WhatsApp AI response processing', () => {
     const service = new AiResponseService(
       runtime,
       new UnifiedKnowledgeRetrievalService(runtime),
-      new UsageService(runtime),
-      outbound as never,
+      usage,
+      outbound,
       model,
     );
     const operation = {
@@ -132,9 +154,8 @@ describe('grounded WhatsApp AI response processing', () => {
       businessId: tenant.business.id,
       operation: 'whatsapp.ai_response',
       metadata: { aiResponseRunId: runId },
-    } as OutboxOperation;
-    await service.execute(operation);
-    await service.execute(operation);
+    } as unknown as OutboxOperation;
+    await Promise.all([service.execute(operation), service.execute(operation)]);
 
     const [run] = await admin.query<
       {
@@ -150,22 +171,38 @@ describe('grounded WhatsApp AI response processing', () => {
     expect(run.evidence).toEqual([
       { sourceId: productId, revisionId, sourceType: 'PRODUCT' },
     ]);
-    expect(outbound.enqueueTextMessage).toHaveBeenCalledTimes(1);
-    expect(outbound.enqueueTextMessage).toHaveBeenCalledWith(
-      tenant.business.id,
+    expect(run.outbound_message_id).toBeTruthy();
+    const [outboxOperation] = await runtime
+      .getRepository(OutboxOperation)
+      .findBy({
+        id: run.outbound_message_id!,
+      });
+    await outbound.execute(outboxOperation);
+    expect(cloud.sendTextMessage).toHaveBeenCalledWith(
       {
         to: tenant.customer.whatsappId,
         message:
           'The quiet standing fan costs NGN 25,000 and includes remote control.',
       },
-      runId,
-      undefined,
-      {
-        conversationId: tenant.conversation.id,
-        kind: 'AI',
-        controlVersion: '1',
-      },
+      tenant.business.id,
     );
+    const [outboundRow] = await admin.query<
+      { status: string; provider_message_id: string }[]
+    >(
+      `SELECT status,provider_message_id FROM public.whatsapp_outbound_messages WHERE id=$1 AND business_id=$2`,
+      [run.outbound_message_id, tenant.business.id],
+    );
+    expect(outboundRow.status).toBe('ACCEPTED');
+    await outbound.reconcileProviderStatus(
+      tenant.business.id,
+      outboundRow.provider_message_id,
+      'delivered',
+    );
+    const [delivered] = await admin.query<{ status: string }[]>(
+      `SELECT status FROM public.whatsapp_outbound_messages WHERE id=$1 AND business_id=$2`,
+      [run.outbound_message_id, tenant.business.id],
+    );
+    expect(delivered.status).toBe('DELIVERED');
     await expect(
       new UsageService(runtime).getUsageSummary(tenant.business.id),
     ).resolves.toMatchObject({
@@ -174,6 +211,67 @@ describe('grounded WhatsApp AI response processing', () => {
         ai_output_tokens: { consumed: 16 },
       },
     });
+
+    const fallbackRunId = randomUUID();
+    const [fallbackMessage] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.messages
+        ("businessId","conversationId",direction,content,status,"whatsappMessageId",metadata)
+       VALUES ($1,$2,'inbound','Can you deliver this tomorrow?','delivered',$3,'{}') RETURNING id`,
+      [tenant.business.id, tenant.conversation.id, randomUUID()],
+    );
+    const [lead] = await admin.query<{ id: string }[]>(
+      `SELECT id FROM public.merchant_leads WHERE business_id=$1 AND conversation_id=$2`,
+      [tenant.business.id, tenant.conversation.id],
+    );
+    await admin.query(
+      `INSERT INTO public.ai_response_runs(id,business_id,inbound_message_id,conversation_id,lead_id,authorized_control_version)
+       VALUES ($1,$2,$3,$4,$5,1)`,
+      [
+        fallbackRunId,
+        tenant.business.id,
+        fallbackMessage.id,
+        tenant.conversation.id,
+        lead.id,
+      ],
+    );
+    await admin.query(
+      `INSERT INTO public.outbox_operations(id,"businessId",operation,metadata)
+       VALUES ($1,$2,'whatsapp.ai_response',$3)`,
+      [
+        fallbackRunId,
+        tenant.business.id,
+        JSON.stringify({ aiResponseRunId: fallbackRunId }),
+      ],
+    );
+    const unusedModel = { generate: jest.fn() };
+    const fallbackService = new AiResponseService(
+      runtime,
+      new UnifiedKnowledgeRetrievalService(runtime),
+      usage,
+      outbound,
+      unusedModel as never,
+    );
+    await fallbackService.execute({
+      ...operation,
+      id: fallbackRunId,
+      metadata: { aiResponseRunId: fallbackRunId },
+    });
+    const [handoff] = await admin.query<
+      {
+        status: string;
+        error_category: string;
+        outbound_message_id: string | null;
+      }[]
+    >(
+      `SELECT status,error_category,outbound_message_id FROM public.ai_response_runs WHERE id=$1 AND business_id=$2`,
+      [fallbackRunId, tenant.business.id],
+    );
+    expect(handoff).toMatchObject({
+      status: 'HANDOFF_REQUIRED',
+      error_category: 'NO_MATCH',
+    });
+    expect(unusedModel.generate).not.toHaveBeenCalled();
+    expect(handoff.outbound_message_id).toBeTruthy();
     expect(inboundId).toBeTruthy();
   });
 });

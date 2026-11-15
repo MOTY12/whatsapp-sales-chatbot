@@ -46,16 +46,26 @@ describe('AiResponseService', () => {
   });
 
   function fixture(
-    options: { takeoverDuringGeneration?: boolean; sufficient?: boolean } = {},
+    options: {
+      takeoverBeforeModel?: boolean;
+      takeoverDuringGeneration?: boolean;
+      takeoverAfterGeneration?: boolean;
+      sufficient?: boolean;
+      modelFailure?: boolean;
+    } = {},
   ) {
     const state = initial();
+    if (options.takeoverBeforeModel) {
+      state.control_mode = 'HUMAN';
+      state.control_version = '2';
+    }
     let loads = 0;
     const database = {
       async query(sql: string, parameters?: unknown[]) {
         if (sql.includes('SELECT a.id')) {
           loads += 1;
           const row = { ...state };
-          if (options.takeoverDuringGeneration && loads >= 4) {
+          if (options.takeoverAfterGeneration && loads >= 4) {
             row.control_mode = 'HUMAN';
             row.control_version = '2';
           }
@@ -110,12 +120,35 @@ describe('AiResponseService', () => {
       inputTokens: 140,
       outputTokens: 18,
     });
+    const modelAdapter = options.modelFailure
+      ? {
+          generate: jest
+            .fn()
+            .mockRejectedValue(new Error('provider unavailable')),
+        }
+      : options.takeoverDuringGeneration
+        ? {
+            generate: jest.fn().mockImplementation(async () => {
+              state.control_mode = 'HUMAN';
+              state.control_version = '2';
+              return {
+                reply:
+                  'The standing fan costs NGN 25,000 and includes remote control.',
+                evidenceIds: [evidence.sourceId],
+                canAnswer: true,
+                needsHuman: false,
+                inputTokens: 140,
+                outputTokens: 18,
+              };
+            }),
+          }
+        : model;
     const service = new AiResponseService(
       database,
       retrieval as never,
       usage as never,
       outbound as never,
-      model,
+      modelAdapter,
     );
     return { service, usage, outbound, state };
   }
@@ -162,10 +195,43 @@ describe('AiResponseService', () => {
     expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
   });
 
+  it('rechecks control if a merchant takes over after generation but before enqueue', async () => {
+    const { service, outbound } = fixture({ takeoverAfterGeneration: true });
+    await service.execute(operation());
+    expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not retrieve or call the model after takeover before processing', async () => {
+    const { service, outbound, usage } = fixture({ takeoverBeforeModel: true });
+    await service.execute(operation());
+    expect(usage.reserveAiTokens).not.toHaveBeenCalled();
+    expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
+  });
+
   it('uses the fallback for missing evidence and does not call the model', async () => {
     const { service, outbound, usage } = fixture({ sufficient: false });
     await service.execute(operation());
     expect(usage.reserveAiTokens).not.toHaveBeenCalled();
+    expect(outbound.enqueueTextMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      {
+        to: expect.any(String),
+        message: expect.stringContaining('enough information'),
+      },
+      expect.any(String),
+      undefined,
+      expect.objectContaining({ kind: 'AI' }),
+    );
+  });
+
+  it('conservatively consumes a timed out model reservation and queues one handoff', async () => {
+    const { service, usage, outbound } = fixture({ modelFailure: true });
+    await service.execute(operation());
+    expect(usage.commitAiTokens).toHaveBeenCalledWith(
+      initial().business_id,
+      initial().id,
+    );
+    expect(outbound.enqueueTextMessage).toHaveBeenCalledTimes(1);
     expect(outbound.enqueueTextMessage).toHaveBeenCalledWith(
       expect.any(String),
       {

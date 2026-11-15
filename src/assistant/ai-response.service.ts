@@ -23,8 +23,6 @@ import {
 import { validateGroundedResponse } from './grounded-response.validator';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
-const fallbackMessage =
-  "I don't have enough information to confirm that. Let me connect you with someone from the business.";
 const inputBudget = 3600;
 const outputBudget = 300;
 
@@ -36,6 +34,7 @@ type RunRow = {
   lead_id: string | null;
   authorized_control_version: number | string;
   status: string;
+  error_category: string | null;
   evidence: Array<{ sourceId: string; revisionId: string; sourceType: string }>;
   reply: string | null;
   recipient: string;
@@ -126,8 +125,11 @@ export class AiResponseService {
     let evidence: EvidenceItem[] = [];
     const fallbackMessage = aiConfig().handoffMessage;
     let reply = row.reply;
-    let status: 'GENERATED' | 'HANDOFF_REQUIRED' = 'GENERATED';
-    let errorCategory: string | null = null;
+    let status: 'GENERATED' | 'HANDOFF_REQUIRED' =
+      row.status === 'GENERATED' && row.error_category
+        ? 'HANDOFF_REQUIRED'
+        : 'GENERATED';
+    let errorCategory: string | null = row.error_category;
     if (row.status !== 'GENERATED') {
       const retrieval = await this.retrieval.retrieve({
         businessId: row.business_id,
@@ -239,8 +241,6 @@ export class AiResponseService {
           errorCategory,
         ],
       );
-    } else {
-      evidence = await this.evidenceFromRun(row);
     }
 
     const current = await this.load(runId, row.business_id);
@@ -299,7 +299,7 @@ export class AiResponseService {
   private async load(id: string, businessId: string): Promise<RunRow | null> {
     const [row] = await this.database.query<RunRow[]>(
       `SELECT a.id,a.business_id,a.inbound_message_id,a.conversation_id,a.lead_id,
-        a.authorized_control_version,a.status,a.evidence,a.reply,m.content AS customer_message,
+        a.authorized_control_version,a.status,a.error_category,a.evidence,a.reply,m.content AS customer_message,
         c."whatsappId" AS recipient,v.control_mode,v.control_version,b.status AS business_status,
         ch.status AS connection_status,ch."verifiedAt" AS verified_at
        FROM public.ai_response_runs a JOIN public.messages m ON m.id=a.inbound_message_id AND m."businessId"=a.business_id
@@ -323,20 +323,6 @@ export class AiResponseService {
       row.control_mode === 'AUTO' &&
       String(row.control_version) === String(row.authorized_control_version),
     );
-  }
-
-  private async evidenceFromRun(row: RunRow): Promise<EvidenceItem[]> {
-    const retrieved = await this.retrieval.retrieve({
-      businessId: row.business_id,
-      query: row.customer_message.slice(0, 256),
-      limit: 5,
-    });
-    const allowed = new Map(
-      retrieved.evidence.map((item) => [item.sourceId, item]),
-    );
-    return (row.evidence ?? [])
-      .map((saved) => allowed.get(saved.sourceId))
-      .filter((item): item is EvidenceItem => Boolean(item));
   }
 
   private async finish(row: RunRow, status: string, category: string) {
