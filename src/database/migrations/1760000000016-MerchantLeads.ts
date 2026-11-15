@@ -36,10 +36,10 @@ export class MerchantLeads1760000000016 implements MigrationInterface {
         actor_account_id uuid REFERENCES public.accounts(id) ON DELETE SET NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         FOREIGN KEY (business_id, lead_id) REFERENCES public.merchant_leads(business_id,id) ON DELETE CASCADE,
-        CHECK ((actor_kind = 'SYSTEM' AND actor_account_id IS NULL) OR actor_kind = 'MERCHANT'),
-        UNIQUE (lead_id, event_type, created_at)
+        CHECK ((actor_kind = 'SYSTEM' AND actor_account_id IS NULL) OR actor_kind = 'MERCHANT')
       );
       CREATE INDEX idx_merchant_lead_events_tenant ON public.merchant_lead_events(business_id, lead_id, created_at DESC);
+      CREATE UNIQUE INDEX uq_merchant_lead_created_event ON public.merchant_lead_events(lead_id) WHERE event_type = 'CREATED';
       ALTER TABLE public.merchant_leads ENABLE ROW LEVEL SECURITY;
       ALTER TABLE public.merchant_leads FORCE ROW LEVEL SECURITY;
       ALTER TABLE public.merchant_lead_events ENABLE ROW LEVEL SECURITY;
