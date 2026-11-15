@@ -25,14 +25,16 @@ test('captures a lead, updates its status and opens its source conversation', as
 }) => {
   await signInAndCreateBusiness(page);
   await page.goto(`/dashboard/leads?businessId=${businessId}`);
-  await expect(page.getByRole('heading', { name: 'Leads' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Leads', level: 1 }),
+  ).toBeVisible();
   await expect(page.getByText(/No leads yet/)).toBeVisible();
   await request.post('http://localhost:3100/test/leads');
   await page.reload();
   await expect(page.getByText('Amina').first()).toBeVisible();
   await page.getByLabel('Lead status').selectOption('CONTACTED');
   await page.getByRole('button', { name: 'Save status' }).click();
-  await expect(page.getByText('CONTACTED').first()).toBeVisible();
+  await expect(page.getByText('Lead status updated.')).toBeVisible();
   await page.getByRole('link', { name: 'Open conversation history' }).click();
   await expect(page).toHaveURL(/dashboard\/conversations\?.*conversationId=/);
   await expect(

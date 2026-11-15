@@ -39,6 +39,7 @@ export function LeadsExperience({
     initialPage.items[0]?.status ?? 'NEW',
   );
   const [error, setError] = useState(initialError);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
   const selected = leads.find((l) => l.id === selectedId) ?? null;
@@ -58,6 +59,7 @@ export function LeadsExperience({
   ) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const query = new URLSearchParams({ limit: '50' });
       if (nextFilter !== 'ALL') query.set('status', nextFilter);
@@ -96,6 +98,7 @@ export function LeadsExperience({
     if (!selected) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const csrf = document.cookie
         .split(';')
@@ -130,6 +133,7 @@ export function LeadsExperience({
         );
       }
       const result = await response.json();
+      if (result.changed) setNotice('Lead status updated.');
       setLeads((old) =>
         old.map((l) =>
           l.id === selected.id
@@ -265,6 +269,7 @@ export function LeadsExperience({
               >
                 {busy ? 'Saving…' : 'Save status'}
               </button>
+              {notice && <p className={styles.success}>{notice}</p>}
               {error && (
                 <p role="alert" className={styles.error}>
                   {error}
