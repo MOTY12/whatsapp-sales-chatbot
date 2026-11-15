@@ -35,6 +35,7 @@ export type Conversation = {
   control_mode: InboxMode;
   control_version: number | string;
   in_flight: number | string;
+  handoff_needed?: boolean;
 };
 export type ConversationDetail = Omit<
   Conversation,

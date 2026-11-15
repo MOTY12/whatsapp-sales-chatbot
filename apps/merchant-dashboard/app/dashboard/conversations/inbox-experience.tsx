@@ -618,6 +618,11 @@ export function InboxExperience({
                             ? 'HUMAN'
                             : 'AUTO'}
                         </span>
+                        {conversation.handoff_needed && (
+                          <span className={styles.handoffNeeded}>
+                            Needs follow-up
+                          </span>
+                        )}
                         {Number(conversation.in_flight) > 0 && (
                           <span className={styles.inFlight}>
                             Sending · {conversation.in_flight}

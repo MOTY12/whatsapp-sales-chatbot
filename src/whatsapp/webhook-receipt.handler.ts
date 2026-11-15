@@ -3,6 +3,7 @@ import type { JobHandler } from '../jobs/outbox.store';
 import { whatsappResponseOperation } from './response-intent.dispatcher';
 
 export const whatsappReceiptOperation = 'whatsapp.receipt';
+export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 
 type Receipt = {
   id: string;
@@ -297,6 +298,35 @@ async function processInbound(manager: EntityManager, receipt: Receipt) {
        ON CONFLICT DO NOTHING`,
       [receipt.business_id, lead.id],
     );
+
+    // Keep the AI intent in the same transaction as the verified inbound message.
+    // The worker only receives database references; customer text stays in PostgreSQL.
+    const [run] = await manager.query<{ id: string }[]>(
+      `INSERT INTO public.ai_response_runs
+         (business_id, inbound_message_id, conversation_id, lead_id, authorized_control_version)
+       SELECT $1, $2, $3, $4, v.control_version
+         FROM public.conversations v
+         JOIN public.businesses b ON b.id = v."businessId"
+         JOIN public.channel_connections c ON c."businessId" = b.id
+        WHERE v.id = $3 AND v."businessId" = $1 AND v.control_mode = 'AUTO'
+          AND b.status = 'active' AND c.status = 'active' AND c."verifiedAt" IS NOT NULL
+       ORDER BY c."updatedAt" DESC LIMIT 1
+       ON CONFLICT (business_id, inbound_message_id) DO NOTHING
+       RETURNING id`,
+      [receipt.business_id, message.id, conversation.id, lead.id],
+    );
+    if (run) {
+      await manager.query(
+        `INSERT INTO public.outbox_operations (id, "businessId", operation, metadata)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
+        [
+          run.id,
+          receipt.business_id,
+          whatsappAiResponseOperation,
+          JSON.stringify({ aiResponseRunId: run.id }),
+        ],
+      );
+    }
   }
 
   if (membership || onboarding) {

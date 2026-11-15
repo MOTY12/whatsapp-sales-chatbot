@@ -1,4 +1,10 @@
-import { appConfig, databaseConfig, metaConfig, usageConfig } from './env';
+import {
+  aiConfig,
+  appConfig,
+  databaseConfig,
+  metaConfig,
+  usageConfig,
+} from './env';
 
 const database = {
   DATABASE_HOST: 'localhost',
@@ -15,6 +21,25 @@ const meta = {
 };
 
 describe('environment configuration', () => {
+  it('keeps AI responses disabled by default and validates enabled credentials and timeouts', () => {
+    expect(aiConfig({}).enabled).toBe(false);
+    expect(
+      aiConfig({
+        AI_RESPONSES_ENABLED: 'true',
+        OPENAI_API_KEY: 'fixture-secret',
+      }),
+    ).toMatchObject({
+      enabled: true,
+      model: 'gpt-4o-mini',
+      timeoutMs: 12000,
+    });
+    expect(() => aiConfig({ AI_RESPONSES_ENABLED: 'true' })).toThrow(
+      'OPENAI_API_KEY',
+    );
+    expect(() => aiConfig({ AI_REQUEST_TIMEOUT_MS: '999' })).toThrow(
+      'AI_REQUEST_TIMEOUT_MS',
+    );
+  });
   it('provides configurable per-tenant usage defaults and rejects invalid limits', () => {
     expect(usageConfig({})).toEqual({
       monthlyWhatsAppMessages: 1000,

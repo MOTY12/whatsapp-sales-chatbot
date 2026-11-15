@@ -6,9 +6,14 @@ import { AssistantStateService } from './assistant-state.service';
 import { CustomerService } from './customer.service';
 import { SalesService } from './sales.service';
 import { ReminderService } from './reminder.service';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { UsageModule } from '../metering/usage.module';
+import { OutboundModule } from '../whatsapp/outbound.module';
+import { AiResponseService } from './ai-response.service';
+import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, KnowledgeModule, UsageModule, OutboundModule],
   providers: [
     AssistantService,
     AssistantCommandParserService,
@@ -16,7 +21,10 @@ import { ReminderService } from './reminder.service';
     CustomerService,
     SalesService,
     ReminderService,
+    AiResponseService,
+    OpenAiGroundedModel,
+    { provide: GROUNDED_MODEL, useExisting: OpenAiGroundedModel },
   ],
-  exports: [AssistantService, AssistantCommandParserService],
+  exports: [AssistantService, AssistantCommandParserService, AiResponseService],
 })
 export class AssistantModule {}

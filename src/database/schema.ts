@@ -46,6 +46,7 @@ import { MerchantProductRevision } from './entities/merchant-product-revision.en
 import { MerchantProductCatalog1760000000014 } from './migrations/1760000000014-MerchantProductCatalog';
 import { PublishedKnowledgeSearch1760000000015 } from './migrations/1760000000015-PublishedKnowledgeSearch';
 import { MerchantLeads1760000000016 } from './migrations/1760000000016-MerchantLeads';
+import { AiResponseRuns1760000000017 } from './migrations/1760000000017-AiResponseRuns';
 import { MerchantLead } from './entities/merchant-lead.entity';
 
 export const databaseEntities = [
@@ -92,4 +93,5 @@ export const databaseMigrations = [
   MerchantProductCatalog1760000000014,
   PublishedKnowledgeSearch1760000000015,
   MerchantLeads1760000000016,
+  AiResponseRuns1760000000017,
 ];

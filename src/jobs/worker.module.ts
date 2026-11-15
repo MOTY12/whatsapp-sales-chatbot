@@ -16,6 +16,11 @@ import { OutboxRelay } from './outbox.relay';
 import { OutboxHandler, OutboxStore } from './outbox.store';
 import { createQueue, createWorker } from './queue';
 import { UsageModule } from '../metering/usage.module';
+import { AssistantModule } from '../assistant/assistant.module';
+import {
+  AiResponseService,
+  whatsappAiResponseOperation,
+} from '../assistant/ai-response.service';
 import { OutboxModule } from './outbox.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import {
@@ -77,7 +82,7 @@ export class WorkerRuntime
 }
 
 @Module({
-  imports: [OutboxModule, UsageModule, WhatsAppModule],
+  imports: [OutboxModule, UsageModule, WhatsAppModule, AssistantModule],
   providers: [
     WorkerRuntime,
     WhatsAppResponseIntentDispatcher,
@@ -86,6 +91,7 @@ export class WorkerRuntime
       useFactory: (
         responses: WhatsAppResponseIntentDispatcher,
         outbound: OutboundMessageService,
+        ai: AiResponseService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
@@ -97,8 +103,16 @@ export class WorkerRuntime
             whatsappOutboundOperation,
             { execute: (operation) => outbound.execute(operation) },
           ],
+          [
+            whatsappAiResponseOperation,
+            { execute: (operation) => ai.execute(operation) },
+          ],
         ]),
-      inject: [WhatsAppResponseIntentDispatcher, OutboundMessageService],
+      inject: [
+        WhatsAppResponseIntentDispatcher,
+        OutboundMessageService,
+        AiResponseService,
+      ],
     },
   ],
 })

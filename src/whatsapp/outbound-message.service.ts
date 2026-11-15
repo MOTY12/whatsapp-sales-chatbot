@@ -108,79 +108,125 @@ export class OutboundMessageService {
     await this.usage.reserveWhatsAppMessage(businessId, idempotencyKey);
     const id = randomUUID();
 
-    const persistedId = await this.database.transaction(async (manager) => {
-      await manager.query(
-        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-        [`outbound:${businessId}:${idempotencyKey}`],
-      );
-      const [existing] = await manager.query<
-        { id: string; content: string; recipient_whatsapp_id: string }[]
-      >(
-        `SELECT id, content, recipient_whatsapp_id FROM public.whatsapp_outbound_messages
+    let persistedId: string;
+    try {
+      persistedId = await this.database.transaction(async (manager) => {
+        await manager.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`outbound:${businessId}:${idempotencyKey}`],
+        );
+        const [existing] = await manager.query<
+          { id: string; content: string; recipient_whatsapp_id: string }[]
+        >(
+          `SELECT id, content, recipient_whatsapp_id FROM public.whatsapp_outbound_messages
           WHERE business_id = $1 AND idempotency_key = $2`,
-        [businessId, idempotencyKey],
-      );
-      if (existing) {
-        if (
-          existing.content !== message.message ||
-          existing.recipient_whatsapp_id !== recipient
-        ) {
-          throw new OutboundPolicyError(
-            'Outbound idempotency key is already bound to another message.',
-          );
+          [businessId, idempotencyKey],
+        );
+        if (existing) {
+          if (
+            existing.content !== message.message ||
+            existing.recipient_whatsapp_id !== recipient
+          ) {
+            throw new OutboundPolicyError(
+              'Outbound idempotency key is already bound to another message.',
+            );
+          }
+          return existing.id;
         }
-        return existing.id;
-      }
-      await this.outbox.write(manager, {
-        id,
-        businessId,
-        operation: whatsappOutboundOperation,
-        metadata: { outboundMessageId: id },
-      });
-      const [messageRow] = await manager.query<{ id: string }[]>(
-        `INSERT INTO public.messages ("businessId", "conversationId", direction, content, status, metadata)
-         VALUES ($1,$2,'outbound',$3,'pending',$4) RETURNING id`,
-        [
+        if (authorization.kind === 'AI') {
+          if (
+            !authorization.conversationId ||
+            authorization.controlVersion === undefined
+          ) {
+            throw new OutboundPolicyError(
+              'AI outbound requires a conversation control fence.',
+            );
+          }
+          await manager.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+            [`conversation:${businessId}:${authorization.conversationId}`],
+          );
+          const [control] = await manager.query<
+            { control_mode: string; control_version: string | number }[]
+          >(
+            `SELECT control_mode, control_version FROM public.conversations
+            WHERE id = $1 AND "businessId" = $2 FOR UPDATE`,
+            [authorization.conversationId, businessId],
+          );
+          if (
+            !control ||
+            control.control_mode !== 'AUTO' ||
+            String(control.control_version) !==
+              String(authorization.controlVersion)
+          ) {
+            throw new OutboundPolicyError(
+              'AI response was suppressed by conversation takeover.',
+            );
+          }
+        }
+        await this.outbox.write(manager, {
+          id,
           businessId,
-          conversationId,
-          message.message,
-          JSON.stringify({ source: 'whatsapp', outboundId: id }),
-        ],
-      );
-      await manager.query(
-        `INSERT INTO public.whatsapp_outbound_messages
+          operation: whatsappOutboundOperation,
+          metadata: { outboundMessageId: id },
+        });
+        const [messageRow] = await manager.query<{ id: string }[]>(
+          `INSERT INTO public.messages ("businessId", "conversationId", direction, content, status, metadata)
+         VALUES ($1,$2,'outbound',$3,'pending',$4) RETURNING id`,
+          [
+            businessId,
+            conversationId,
+            message.message,
+            JSON.stringify({ source: 'whatsapp', outboundId: id }),
+          ],
+        );
+        await manager.query(
+          `INSERT INTO public.whatsapp_outbound_messages
           (id, business_id, connection_id, conversation_id, message_id, recipient_whatsapp_id,
            content, idempotency_key, usage_idempotency_key, status, response_intent_id,
            authorization_kind, control_version)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'RESERVED',$10,$11,$12)
          ON CONFLICT (business_id, idempotency_key) DO NOTHING`,
-        [
-          id,
-          businessId,
-          route.connection_id,
-          conversationId,
-          messageRow?.id ?? null,
-          recipient,
-          message.message,
-          idempotencyKey,
-          idempotencyKey,
-          responseIntentId ?? null,
-          authorization.kind ?? (responseIntentId ? 'AI' : 'SYSTEM'),
-          authorization.controlVersion ?? null,
-        ],
-      );
-      if (!messageRow) {
-        throw new OutboundPolicyError(
-          'Outbound idempotency key is already bound to another message.',
+          [
+            id,
+            businessId,
+            route.connection_id,
+            conversationId,
+            messageRow?.id ?? null,
+            recipient,
+            message.message,
+            idempotencyKey,
+            idempotencyKey,
+            responseIntentId ?? null,
+            authorization.kind ?? (responseIntentId ? 'AI' : 'SYSTEM'),
+            authorization.controlVersion ?? null,
+          ],
         );
-      }
-      await manager.query(
-        `UPDATE public.conversations SET "updatedAt" = now()
+        if (!messageRow) {
+          throw new OutboundPolicyError(
+            'Outbound idempotency key is already bound to another message.',
+          );
+        }
+        await manager.query(
+          `UPDATE public.conversations SET "updatedAt" = now()
           WHERE id = $1 AND "businessId" = $2`,
-        [conversationId, businessId],
-      );
-      return id;
-    });
+          [conversationId, businessId],
+        );
+        return id;
+      });
+    } catch (error) {
+      // The transaction can reject a takeover that won the fence after reserving quota.
+      try {
+        await this.usage.reconcileWhatsAppStatus(
+          businessId,
+          idempotencyKey,
+          'failed',
+        );
+      } catch {
+        // No reservation exists when validation failed before the transaction.
+      }
+      throw error;
+    }
     return persistedId;
   }
 

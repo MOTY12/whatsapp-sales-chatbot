@@ -21,6 +21,7 @@ type InboxListRow = {
   control_mode: 'AUTO' | 'HUMAN';
   control_version: string;
   in_flight: string;
+  handoff_needed: boolean;
 };
 type InboxConversationRow = Omit<InboxListRow, 'last_activity' | 'preview'> & {
   control_changed_at: Date | string;

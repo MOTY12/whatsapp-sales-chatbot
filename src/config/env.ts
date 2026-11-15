@@ -264,7 +264,26 @@ export function workerConfig(env = process.env) {
   if (environment === 'production' && !redis.url && !env.REDIS_HOST?.trim()) {
     throw new Error('Set REDIS_URL or REDIS_HOST for the production worker.');
   }
-  return { redis, prefix, concurrency };
+  return { redis, prefix, concurrency, ai: aiConfig(env) };
+}
+
+export function aiConfig(env = process.env) {
+  const enabled = flag(env, 'AI_RESPONSES_ENABLED', false);
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (enabled && (!apiKey || isPlaceholder(apiKey))) {
+    throw new Error(
+      'OPENAI_API_KEY is required when AI_RESPONSES_ENABLED is true.',
+    );
+  }
+  const model = env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+  if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(model)) {
+    throw new Error('OPENAI_MODEL has an invalid format.');
+  }
+  const timeoutMs = usageLimit(env, 'AI_REQUEST_TIMEOUT_MS', 12000);
+  if (timeoutMs < 1000 || timeoutMs > 30000) {
+    throw new Error('AI_REQUEST_TIMEOUT_MS must be between 1000 and 30000.');
+  }
+  return { enabled, apiKey: enabled ? apiKey : undefined, model, timeoutMs };
 }
 
 function usageLimit(env: NodeJS.ProcessEnv, name: string, fallback: number) {
