@@ -244,3 +244,21 @@ The internal `UnifiedKnowledgeRetrievalService` combines FAQ and product evidenc
 | `npm run dashboard:test:browser` | 17 passed; includes the existing inbox, knowledge, onboarding and product journeys |
 
 The fixture exercises `EXPLAIN (ANALYZE, BUFFERS)` and confirms the search indexes exist. PostgreSQL chooses a sequential scan on these small test tables, so production plan selection and latency still need measurement with pilot-sized data. RAG-001 is VERIFIED locally. Hosted CI and staging remain release gates. Remaining MVP estimate: 37 hours plus 11 hours of contingency. Next task: RAG-002 / AGENT-001 claim-level grounding and abstention.
+
+## November 15, 2026 · SALES-001
+
+Reviewed the SALES-001 prompt against the clean `854f8eb` checkout and preserved the existing durable WhatsApp receipt processor, customer/conversation/message model, owner/onboarding classification, inbox, catalog and retrieval paths. Added an additive tenant-scoped lead table and status-event audit table. A lead is uniquely identified by `(business_id, conversation_id)`: distinct conversations from one customer are distinct opportunities. No historical rows are backfilled; an eligible verified customer text message creates or activity-updates its conversation's lead in the same worker transaction as message persistence. Owner commands, onboarding messages, inactive businesses/connections, unverified input, delivery receipts and outbound messages do not create leads.
+
+Added owner/agent-only tenant-safe list/detail/status APIs with opaque cursor ordering, status filtering, version checks, idempotent repeated status updates and audited transitions. The dashboard now provides status filtering and cursor paging, customer/source/activity details, status editing and a link that opens the source inbox thread. Customer message history remains the system of record. A read-only `findLeadForConversation` contract is available to the later assistant phase.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` / `npm run build` | Passed |
+| `npm test` | 43 passed across 10 suites |
+| `npm run test:e2e` | 3 passed with loopback permission enabled |
+| `npm run test:integration` | 98 passed across 13 suites with disposable PostgreSQL 16 and Redis 7; a first run had one transient usage-metering timeout, which passed both in isolation and on the complete rerun |
+| Focused PostgreSQL/Redis integration | 33 passed across migration, webhook and tenant-auth suites; tenant-auth includes lead list/detail, cross-tenant denial, audited status update, idempotent repeat, concurrent version conflict and audit count |
+| Dashboard lint / typecheck / component tests / build | Passed; 9 component tests passed |
+| `npm run dashboard:test:browser` | 18 passed, including lead capture display, status update, conversation navigation and existing dashboard journeys |
+
+The migration intentionally has no conversation backfill. Existing pre-migration conversations receive a lead only after a later eligible inbound customer message. SQL and API contracts are documented in [merchant-leads-api.md](merchant-leads-api.md). SALES-001 is VERIFIED locally. Hosted CI and staging remain release checks. Remaining MVP estimate: 32 hours plus 11 hours of contingency. Next task: RAG-002 / AGENT-001 grounded replies and safe abstention.

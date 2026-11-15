@@ -534,6 +534,97 @@ describe('merchant OIDC and tenant isolation', () => {
     );
   });
 
+  it('lists tenant leads and audits version-checked status transitions', async () => {
+    const owner = await login('lead-api-owner');
+    await admin.getRepository(BusinessMember).insert({
+      businessId: first.business.id,
+      accountId: owner.accountId,
+      role: 'owner',
+    });
+    const [lead] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.merchant_leads
+       (business_id, customer_id, conversation_id, source, status, first_contact_at, last_activity_at)
+       VALUES ($1,$2,$3,'WHATSAPP','NEW',now(),now()) RETURNING id`,
+      [first.business.id, first.customer.id, first.conversation.id],
+    );
+    const path = `/merchant/businesses/${first.business.id}/leads`;
+    const headers = {
+      Cookie: owner.session,
+      Origin: origin,
+      'X-CSRF-Token': owner.csrf,
+    };
+    const list = await request(server)
+      .get(path)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(list.body.items).toHaveLength(1);
+    expect(list.body.items[0]).toMatchObject({
+      id: lead.id,
+      customer_id: first.customer.id,
+      conversation_id: first.conversation.id,
+      status: 'NEW',
+      version: 1,
+    });
+    await request(server)
+      .get(`/merchant/businesses/${first.business.id}/leads/${lead.id}`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    await request(server)
+      .get(`/merchant/businesses/${second.business.id}/leads/${lead.id}`)
+      .set('Cookie', owner.session)
+      .expect(404);
+    const changed = await request(server)
+      .patch(`${path}/${lead.id}`)
+      .set(headers)
+      .send({ status: 'CONTACTED', expectedVersion: 1 })
+      .expect(200);
+    expect(changed.body).toMatchObject({
+      leadId: lead.id,
+      status: 'CONTACTED',
+      version: 2,
+      changed: true,
+      updatedAt: expect.any(String),
+    });
+    const repeated = await request(server)
+      .patch(`${path}/${lead.id}`)
+      .set(headers)
+      .send({ status: 'CONTACTED', expectedVersion: 1 })
+      .expect(200);
+    expect(repeated.body).toMatchObject({
+      leadId: lead.id,
+      status: 'CONTACTED',
+      version: 2,
+      changed: false,
+      updatedAt: expect.any(String),
+    });
+    const races = await Promise.all([
+      request(server)
+        .patch(`${path}/${lead.id}`)
+        .set(headers)
+        .send({ status: 'QUALIFIED', expectedVersion: 2 }),
+      request(server)
+        .patch(`${path}/${lead.id}`)
+        .set(headers)
+        .send({ status: 'LOST', expectedVersion: 2 }),
+    ]);
+    expect(races.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(
+      await admin.query<{ count: string }[]>(
+        `SELECT count(*)::text AS count FROM public.merchant_lead_events
+         WHERE business_id=$1 AND lead_id=$2 AND event_type='STATUS_CHANGED'`,
+        [first.business.id, lead.id],
+      ),
+    ).toEqual([{ count: '2' }]);
+    await admin.query(
+      'DELETE FROM public.merchant_lead_events WHERE business_id=$1 AND lead_id=$2',
+      [first.business.id, lead.id],
+    );
+    await admin.query(
+      'DELETE FROM public.merchant_leads WHERE business_id=$1 AND id=$2',
+      [first.business.id, lead.id],
+    );
+  });
+
   it('manages tenant FAQ revisions, publishes only approved revisions, and protects retrieval', async () => {
     const owner = await login('faq-owner');
     const editor = await login('faq-editor');
