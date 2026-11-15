@@ -342,6 +342,30 @@ describe('durable signed WhatsApp intake', () => {
           [tenant],
         ),
       ).toHaveLength(1);
+      const [aiRun] = await admin.query<
+        { id: string; status: string; lead_id: string | null; operation: string }[]
+      >(
+        `SELECT a.id, a.status, a.lead_id, o.operation
+           FROM public.ai_response_runs a
+           JOIN public.outbox_operations o ON o.id = a.id AND o."businessId" = a.business_id
+           JOIN public.messages m ON m.id = a.inbound_message_id AND m."businessId" = a.business_id
+          WHERE a.business_id = $1 AND m."whatsappMessageId" = 'handoff'`,
+        [tenant],
+      );
+      expect(aiRun).toMatchObject({
+        status: 'PENDING',
+        lead_id: expect.any(String),
+        operation: 'whatsapp.ai_response',
+      });
+      expect(
+        await admin.query(
+          `SELECT id FROM public.ai_response_runs WHERE business_id = $1 AND inbound_message_id = $2`,
+          [tenant, (await admin.query<{ id: string }[]>(
+            `SELECT id FROM public.messages WHERE "whatsappMessageId" = 'handoff' AND "businessId" = $1`,
+            [tenant],
+          ))[0].id],
+        ),
+      ).toHaveLength(1);
     } finally {
       await worker.close();
       await queue.obliterate({ force: true });

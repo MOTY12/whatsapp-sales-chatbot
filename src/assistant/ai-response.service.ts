@@ -60,9 +60,10 @@ export class AiResponseService {
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
     const runId = operation.metadata.aiResponseRunId;
-    if (!operation.businessId || runId !== operation.id)
+    const businessId = operation.businessId;
+    if (!businessId || runId !== operation.id)
       throw new Error('Invalid AI response operation.');
-    const seed = await this.load(runId, operation.businessId);
+    const seed = await this.load(runId, businessId);
     if (!seed) return;
     const runner = this.database.createQueryRunner();
     await runner.connect();
@@ -88,7 +89,9 @@ export class AiResponseService {
     operation: Readonly<OutboxOperation>,
     runId: string,
   ): Promise<void> {
-    let row = await this.load(runId, operation.businessId);
+    const businessId = operation.businessId;
+    if (!businessId) return;
+    let row = await this.load(runId, businessId);
     if (
       !row ||
       [
