@@ -13,3 +13,5 @@ export { AssistantSession } from './assistant-session.entity';
 export { Sale } from './sale.entity';
 export { KnowledgeFaq } from './knowledge-faq.entity';
 export { KnowledgeFaqRevision } from './knowledge-faq-revision.entity';
+export { MerchantProduct } from './merchant-product.entity';
+export { MerchantProductRevision } from './merchant-product-revision.entity';

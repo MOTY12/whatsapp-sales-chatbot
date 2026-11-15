@@ -18,6 +18,8 @@ import { MerchantInboxController } from './merchant-inbox.controller';
 import { MerchantInboxService } from './merchant-inbox.service';
 import { KnowledgeController } from '../knowledge/knowledge.controller';
 import { KnowledgeFaqService } from '../knowledge/knowledge-faq.service';
+import { ProductController } from '../catalog/product.controller';
+import { ProductService } from '../catalog/product.service';
 
 @Module({
   imports: [CredentialCipherModule, OutboundModule],
@@ -27,6 +29,7 @@ import { KnowledgeFaqService } from '../knowledge/knowledge-faq.service';
     MerchantWhatsAppController,
     MerchantInboxController,
     KnowledgeController,
+    ProductController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -38,6 +41,7 @@ import { KnowledgeFaqService } from '../knowledge/knowledge-faq.service';
     MerchantWhatsAppService,
     MerchantInboxService,
     KnowledgeFaqService,
+    ProductService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

@@ -183,6 +183,19 @@
 .editorHeading .eyebrow {
   font-size: 9px;
 }
+.metadata {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: #76837c;
+  font-size: 10px;
+}
+.priceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  gap: 8px;
+}
 .backButton {
   display: none;
 }
@@ -204,7 +217,8 @@
   font-size: 9px;
 }
 .editorForm input,
-.editorForm textarea {
+.editorForm textarea,
+.editorForm select {
   width: 100%;
   border: 1px solid #dce5df;
   border-radius: 7px;
@@ -215,6 +229,9 @@
 }
 .editorForm input {
   height: 41px;
+}
+.editorForm select {
+  min-height: 41px;
 }
 .editorForm textarea {
   resize: vertical;
@@ -382,6 +399,9 @@
   .actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .priceRow {
+    grid-template-columns: minmax(0, 1fr) 85px;
   }
   .actionButtons {
     justify-content: stretch;

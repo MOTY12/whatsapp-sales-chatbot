@@ -41,6 +41,9 @@ import { MerchantInbox1760000000012 } from './migrations/1760000000012-MerchantI
 import { MerchantFaqKnowledge1760000000013 } from './migrations/1760000000013-MerchantFaqKnowledge';
 import { KnowledgeFaq } from './entities/knowledge-faq.entity';
 import { KnowledgeFaqRevision } from './entities/knowledge-faq-revision.entity';
+import { MerchantProduct } from './entities/merchant-product.entity';
+import { MerchantProductRevision } from './entities/merchant-product-revision.entity';
+import { MerchantProductCatalog1760000000014 } from './migrations/1760000000014-MerchantProductCatalog';
 
 export const databaseEntities = [
   Business,
@@ -62,6 +65,8 @@ export const databaseEntities = [
   ChannelConnection,
   KnowledgeFaq,
   KnowledgeFaqRevision,
+  MerchantProduct,
+  MerchantProductRevision,
 ];
 
 export const databaseMigrations = [
@@ -80,4 +85,5 @@ export const databaseMigrations = [
   DurableWhatsAppOutbound1760000000011,
   MerchantInbox1760000000012,
   MerchantFaqKnowledge1760000000013,
+  MerchantProductCatalog1760000000014,
 ];

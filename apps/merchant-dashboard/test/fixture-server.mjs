@@ -5,6 +5,7 @@ const SECOND_BUSINESS_ID = '22222222-2222-4222-8222-222222222222';
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SECOND_CONVERSATION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const FIRST_FAQ_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const FIRST_PRODUCT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const DEFAULT_BUSINESS = {
   id: BUSINESS_ID,
   name: 'The Good Store',
@@ -45,6 +46,9 @@ let controlInFlight = 0;
 let faqs = [];
 let faqKeys = new Map();
 let faqCreateRequests = 0;
+let products = [];
+let productKeys = new Map();
+let productCreateRequests = 0;
 
 function reset(search = new URLSearchParams()) {
   created = false;
@@ -63,6 +67,9 @@ function reset(search = new URLSearchParams()) {
   faqs = [];
   faqKeys = new Map();
   faqCreateRequests = 0;
+  products = [];
+  productKeys = new Map();
+  productCreateRequests = 0;
   const now = Date.now();
   messages = Array.from({ length: 31 }, (_, index) => {
     const inbound = index % 2 === 0;
@@ -169,6 +176,8 @@ const server = createServer(async (req, res) => {
     return json(200, { count: repliesRequests });
   if (url.pathname === '/test/faqs')
     return json(200, { count: faqCreateRequests });
+  if (url.pathname === '/test/products')
+    return json(200, { count: productCreateRequests });
   if (url.pathname === '/auth/login') {
     res.writeHead(302, {
       Location:
@@ -352,6 +361,119 @@ const server = createServer(async (req, res) => {
       return json(201, found);
     }
     if (faqId && action && !found) return json(404, { message: 'Not found.' });
+  }
+
+  const productMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/products(?:\/([0-9a-f-]+)(?:\/(publish|unpublish))?)?$/i,
+  );
+  if (productMatch) {
+    const [, businessId, productId, action] = productMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    if (scenario === 'product-failure' && req.method === 'GET' && !productId)
+      return json(503, { message: 'Temporary outage' });
+    if (req.method === 'GET' && !productId) {
+      const items = businessId === BUSINESS_ID ? products : [];
+      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const offset = Number(url.searchParams.get('offset') ?? 0);
+      return json(200, {
+        items: items.slice(offset, offset + limit),
+        limit,
+        offset,
+        hasMore: offset + limit < items.length,
+      });
+    }
+    const found =
+      businessId === BUSINESS_ID
+        ? products.find((item) => item.id === productId)
+        : null;
+    if (req.method === 'GET' && productId)
+      return found ? json(200, found) : json(404, { message: 'Not found.' });
+    if (
+      req.method !== 'GET' &&
+      (!validCsrf || !['owner', 'editor'].includes(fixtureRole))
+    )
+      return json(403, { message: 'Forbidden' });
+    if (req.method === 'POST' && !productId) {
+      productCreateRequests += 1;
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      const key = req.headers['idempotency-key'];
+      if (!key || !input.name?.trim())
+        return json(400, { message: 'Product name required.' });
+      const fingerprint = JSON.stringify(input);
+      if (productKeys.has(key)) {
+        const prior = productKeys.get(key);
+        if (prior.fingerprint !== fingerprint)
+          return json(409, { message: 'Idempotency conflict.' });
+        return json(
+          201,
+          products.find((item) => item.id === prior.id),
+        );
+      }
+      const product = {
+        id:
+          productCreateRequests === 1
+            ? FIRST_PRODUCT_ID
+            : `eeeeeeee-eeee-4eee-8eee-${String(productCreateRequests).padStart(12, '0')}`,
+        status: 'DRAFT',
+        revision: 1,
+        published_revision: null,
+        has_unpublished_changes: false,
+        ...input,
+        published_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      products.unshift(product);
+      productKeys.set(key, { fingerprint, id: product.id });
+      return json(201, product);
+    }
+    if (req.method === 'PATCH' && productId) {
+      if (!found) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      if (input.expectedRevision !== found.revision)
+        return json(409, { message: 'Product revision conflict.' });
+      found.revision += 1;
+      Object.assign(found, {
+        name: input.name,
+        description: input.description,
+        sku: input.sku,
+        price: input.price,
+        currency: input.currency,
+        availability: input.availability,
+        updated_at: new Date().toISOString(),
+        has_unpublished_changes:
+          found.published_revision !== null &&
+          found.published_revision !== found.revision,
+      });
+      return json(200, found);
+    }
+    if (req.method === 'POST' && productId && action && found) {
+      if (action === 'publish') {
+        found.published_revision = found.revision;
+        found.published_at = new Date().toISOString();
+        found.status = 'PUBLISHED';
+        found.has_unpublished_changes = false;
+      } else {
+        found.status = 'DRAFT';
+        found.published_revision = null;
+        found.has_unpublished_changes = false;
+      }
+      found.updated_at = new Date().toISOString();
+      return json(201, found);
+    }
+    if (productId && action && !found)
+      return json(404, { message: 'Not found.' });
   }
 
   const inboxMatch = url.pathname.match(

@@ -255,6 +255,9 @@ export async function createIntegrationDatabase() {
         await migrator.query(
           `GRANT EXECUTE ON FUNCTION public.kleva_published_faqs(uuid) TO "${runtimeRole}"`,
         );
+        await migrator.query(
+          `GRANT EXECUTE ON FUNCTION public.kleva_published_products(uuid) TO "${runtimeRole}"`,
+        );
       },
     };
   } catch (error) {

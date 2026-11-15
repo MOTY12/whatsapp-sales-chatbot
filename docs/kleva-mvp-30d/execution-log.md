@@ -211,3 +211,19 @@ This completes the plain-text FAQ portion of KNOWLEDGE-001 and the FAQ managemen
 | `npm run dashboard:test:browser` | 12 passed, including FAQ lifecycle, literal-text safety, tenant switching, access denial, service failure and expired session |
 
 KNOWLEDGE-001 and the FAQ slice of KNOWLEDGE-004 are VERIFIED locally. Hosted CI and staging checks remain release work. Remaining MVP estimate: 47 hours plus 11 hours of contingency. Next task: CATALOG-001.
+
+## November 15, 2026 · CATALOG-001
+
+Reviewed the clean `main` checkout at `41aac6d` and preserved the completed FAQ implementation. Added an additive PostgreSQL catalog migration with tenant-scoped product records, immutable numbered revisions, idempotent creation, optimistic edits, append-only lifecycle events and explicit publish/unpublish pointers. Owner/editor functions enforce business scope; merchant roles cannot directly query catalog tables. A restricted runtime function returns only published revisions for active businesses. Price is stored as `numeric(14,2)` and accepted only as a decimal string or `null`; availability remains explicit, including `UNKNOWN`.
+
+Added authenticated merchant catalog APIs, the same-origin dashboard proxy, a responsive product editor, and published-only retrieval integration. The dashboard supports pagination, exact price entry, currency selection, explicit stock state and review of unpublished changes. Route shapes, limits, supported currencies, decimal rules and retrieval access are documented in [merchant-catalog-api.md](merchant-catalog-api.md). Existing FAQ and product lifecycle tests cover parallel publication workflows.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` / `npm run build` | Passed |
+| `npm test` / `npm run test:e2e` | 41 unit tests in 9 suites; 3 HTTP end-to-end tests passed |
+| `npm run test:integration` | 90 passed across 12 suites using disposable PostgreSQL 16 and Redis; includes catalog access control, tenant isolation, idempotency, revision conflicts, exact decimal storage, publication, unpublication and restricted retrieval |
+| Dashboard lint / typecheck / component tests / build | Passed; 6 component tests passed |
+| `npm run dashboard:test:browser` | 17 passed, including five product journeys for lifecycle, decimal price, tenant/role access, failure/session expiry and mobile layout |
+
+CATALOG-001 is VERIFIED locally. Hosted CI and staging checks remain release work. Remaining MVP estimate: 42 hours plus 11 hours of contingency. Next task: RAG-001.

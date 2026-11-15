@@ -73,6 +73,36 @@ export type KnowledgeFaq = {
   created_at: string;
   updated_at: string;
 };
+export type MerchantProduct = {
+  id: string;
+  status: 'DRAFT' | 'PUBLISHED';
+  revision: number;
+  published_revision: number | null;
+  has_unpublished_changes: boolean;
+  name: string;
+  description: string;
+  sku: string | null;
+  price: string | null;
+  currency: string;
+  availability: 'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN';
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+export type ProductPage = {
+  items: MerchantProduct[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+export type ProductDraft = {
+  name: string;
+  description: string;
+  sku: string | null;
+  price: string | null;
+  currency: string;
+  availability: MerchantProduct['availability'];
+};
 
 export type ApiErrorCode =
   | 'unauthorized'
@@ -386,6 +416,50 @@ export const api = {
   unpublishFaq: (businessId: string, faqId: string) =>
     request<KnowledgeFaq>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/unpublish`,
+      { method: 'POST' },
+    ),
+  products: (businessId: string, limit = 50, offset = 0) =>
+    request<ProductPage>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products?limit=${limit}&offset=${offset}`,
+    ),
+  product: (businessId: string, productId: string) =>
+    request<MerchantProduct>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}`,
+    ),
+  createProduct: (
+    businessId: string,
+    product: ProductDraft,
+    idempotencyKey: string,
+  ) =>
+    request<MerchantProduct>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(product),
+      },
+    ),
+  updateProduct: (
+    businessId: string,
+    productId: string,
+    product: ProductDraft,
+    expectedRevision: number,
+  ) =>
+    request<MerchantProduct>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ ...product, expectedRevision }),
+      },
+    ),
+  publishProduct: (businessId: string, productId: string) =>
+    request<MerchantProduct>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}/publish`,
+      { method: 'POST' },
+    ),
+  unpublishProduct: (businessId: string, productId: string) =>
+    request<MerchantProduct>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}/unpublish`,
       { method: 'POST' },
     ),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),

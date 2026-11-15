@@ -11,6 +11,7 @@ import { MetaEmbeddedSignupModule } from './meta-embedded-signup/meta-embedded-s
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     OnboardingModule,
     MetaEmbeddedSignupModule,
     KnowledgeModule,
+    CatalogModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, DatabaseReadiness],

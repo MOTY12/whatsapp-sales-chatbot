@@ -15,6 +15,7 @@
 - [ ] Staging with approved Meta assets verifies send-window enforcement, delivery reconciliation and the documented in-flight takeover boundary.
 - [x] Per-tenant WhatsApp and AI token budgets reserve atomically and reconcile idempotently in local PostgreSQL integration.
 - [x] Merchant FAQ drafts use immutable revisions; only the explicitly published revision is returned by the tenant-scoped retrieval function. Dashboard fixture journeys cover creation, publish, edit, republish and unpublish.
+- [x] Merchant products use immutable revisions, exact nullable decimal prices and explicit availability; real PostgreSQL checks owner/editor authorization, tenant isolation, optimistic conflicts, publish/unpublish and published-only runtime retrieval. Dashboard journeys cover product editing, exact prices, unknown availability, tenant switching, denial and mobile layout.
 - [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
 
 ## Staging and live release

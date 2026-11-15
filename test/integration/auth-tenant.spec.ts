@@ -760,6 +760,290 @@ describe('merchant OIDC and tenant isolation', () => {
         [first.business.id],
       );
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
+      await applyMigrations(admin);
+      await grantMerchantAccess(
+        admin,
+        env.MERCHANT_DATABASE_USER!,
+        env.IDENTITY_DATABASE_USER!,
+      );
+      await database.grantRuntimeAccess(admin);
+    } finally {
+      await runtime.destroy();
+    }
+  });
+
+  it('manages tenant products with immutable published revisions and precise nullable prices', async () => {
+    const owner = await login('product-owner');
+    const editor = await login('product-editor');
+    const agent = await login('product-agent');
+    const foreignOwner = await login('product-foreign-owner');
+    await admin.getRepository(BusinessMember).insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: editor.accountId,
+        role: 'editor',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+      {
+        businessId: second.business.id,
+        accountId: foreignOwner.accountId,
+        role: 'owner',
+      },
+    ]);
+    await database.grantRuntimeAccess(admin);
+    const runtime = await database.runtime();
+    const base = `/merchant/businesses/${first.business.id}/products`;
+    const key = randomUUID();
+    const product: Record<string, unknown> = {
+      name: 'Handmade market bag',
+      description: 'Woven in Lagos.',
+      sku: 'BAG-001',
+      price: null,
+      currency: 'NGN',
+      availability: 'UNKNOWN',
+    };
+    const createProduct = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      data: Record<string, unknown> = product,
+      requestKey: string = key,
+    ) =>
+      request(server)
+        .post(base)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .set('Idempotency-Key', requestKey)
+        .send(data);
+    const editProduct = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      productId: string,
+      data: Record<string, unknown>,
+    ) =>
+      request(server)
+        .patch(`${base}/${productId}`)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .send(data);
+    const publication = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      productId: string,
+      action: 'publish' | 'unpublish' = 'publish',
+    ) =>
+      request(server)
+        .post(`${base}/${productId}/${action}`)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf);
+    const retrieve = () =>
+      runtime.query<
+        {
+          business_id: string;
+          product_id: string;
+          published_revision_id: string;
+          name: string;
+          description: string;
+          price: string | null;
+          currency: string;
+          availability: string;
+        }[]
+      >('SELECT * FROM public.kleva_published_products($1)', [
+        first.business.id,
+      ]);
+
+    try {
+      await request(server).get(base).expect(401);
+      await createProduct(owner).set('X-CSRF-Token', 'wrong').expect(403);
+      await createProduct(agent).expect(403);
+      await createProduct(editor, product, 'not-a-v4-key').expect(400);
+      await createProduct(
+        editor,
+        { ...product, price: '-0.01' },
+        randomUUID(),
+      ).expect(400);
+      await createProduct(
+        editor,
+        { ...product, currency: 'QQQ' },
+        randomUUID(),
+      ).expect(400);
+
+      const created = await createProduct(editor).expect(201);
+      const productId = (created.body as { id: string }).id;
+      expect(created.body).toMatchObject({
+        status: 'DRAFT',
+        revision: 1,
+        published_revision: null,
+        price: null,
+        availability: 'UNKNOWN',
+      });
+      expect(await retrieve()).toEqual([]);
+      const duplicate = await createProduct(owner).expect(201);
+      expect((duplicate.body as { id: string }).id).toBe(productId);
+      await createProduct(owner, {
+        ...product,
+        name: 'Different product',
+      }).expect(409);
+      await request(server)
+        .get(`${base}?limit=1&offset=0`)
+        .set('Cookie', owner.session)
+        .expect(200)
+        .expect(({ body }) => {
+          const page = body as { items: unknown[]; hasMore: boolean };
+          expect(page.items).toHaveLength(1);
+          expect(page.hasMore).toBe(false);
+        });
+
+      const editBody = {
+        ...product,
+        description: 'Handwoven with recycled cotton.',
+        expectedRevision: 1,
+      };
+      await editProduct(editor, productId, editBody)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body).toMatchObject({ revision: 2, status: 'DRAFT' });
+        });
+      await editProduct(editor, productId, editBody).expect(409);
+      await editProduct(foreignOwner, productId, editBody).expect(404);
+      await request(server)
+        .get(`/merchant/businesses/${second.business.id}/products/${productId}`)
+        .set('Cookie', foreignOwner.session)
+        .expect(404);
+      await editProduct(agent, productId, editBody).expect(403);
+      await publication(agent, productId).expect(403);
+      await publication(owner, productId).expect(201);
+      await publication(editor, productId).expect(201);
+      expect(await retrieve()).toMatchObject([
+        {
+          product_id: productId,
+          business_id: first.business.id,
+          name: product.name,
+          description: 'Handwoven with recycled cotton.',
+          price: null,
+          availability: 'UNKNOWN',
+        },
+      ]);
+
+      const concurrent = await Promise.all([
+        editProduct(editor, productId, {
+          ...product,
+          description: 'First racing update.',
+          expectedRevision: 2,
+        }),
+        editProduct(owner, productId, {
+          ...product,
+          description: 'Second racing update.',
+          expectedRevision: 2,
+        }),
+      ]);
+      expect(concurrent.map(({ status }) => status).sort()).toEqual([200, 409]);
+      const concurrentWinner = concurrent.find(({ status }) => status === 200)!;
+      expect(concurrentWinner.body).toMatchObject({
+        revision: 3,
+        published_revision: 2,
+        has_unpublished_changes: true,
+      });
+      expect((await retrieve())[0].description).toBe(
+        'Handwoven with recycled cotton.',
+      );
+      await publication(owner, productId).expect(201);
+      const winnerBody = concurrentWinner.body as { description: string };
+      expect((await retrieve())[0].description).toBe(winnerBody.description);
+
+      const updated = await editProduct(editor, productId, {
+        ...product,
+        description: 'Updated, pending merchant approval.',
+        expectedRevision: 3,
+      }).expect(200);
+      expect(updated.body).toMatchObject({
+        status: 'PUBLISHED',
+        revision: 4,
+        published_revision: 3,
+        has_unpublished_changes: true,
+      });
+      expect((await retrieve())[0].description).toBe(winnerBody.description);
+      await publication(owner, productId).expect(201);
+      expect((await retrieve())[0].description).toBe(
+        'Updated, pending merchant approval.',
+      );
+
+      const precise = await createProduct(
+        owner,
+        {
+          name: 'Precision priced item',
+          description: 'Exact decimal price.',
+          sku: 'PRECISE-001',
+          price: '900719925474.09',
+          currency: 'USD',
+          availability: 'IN_STOCK',
+        },
+        randomUUID(),
+      ).expect(201);
+      const preciseId = (precise.body as { id: string }).id;
+      expect((precise.body as { price: string }).price).toBe('900719925474.09');
+      await publication(owner, preciseId).expect(201);
+      expect(
+        (await retrieve()).find(({ product_id }) => product_id === preciseId),
+      ).toMatchObject({
+        price: '900719925474.09',
+        currency: 'USD',
+        availability: 'IN_STOCK',
+      });
+
+      const unpublish = () => publication(owner, productId, 'unpublish');
+      await unpublish().expect(201);
+      await unpublish().expect(201);
+      expect(await retrieve()).toHaveLength(1);
+      const counts = await admin.query<{ event_type: string; count: string }[]>(
+        `SELECT event_type, count(*)::text AS count FROM public.merchant_product_events
+         WHERE product_id = $1 GROUP BY event_type`,
+        [productId],
+      );
+      expect(counts).toEqual(
+        expect.arrayContaining([
+          { event_type: 'CREATED', count: '1' },
+          { event_type: 'EDITED', count: '3' },
+          { event_type: 'PUBLISHED', count: '3' },
+          { event_type: 'UNPUBLISHED', count: '1' },
+        ]),
+      );
+      await expect(
+        merchantDatabase
+          .connection()
+          .query('SELECT * FROM public.merchant_products'),
+      ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      await expect(admin.undoLastMigration()).rejects.toThrow(
+        'Merchant product history exists',
+      );
+
+      await admin.query(
+        'DELETE FROM public.merchant_product_events WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.query(
+        `UPDATE public.merchant_products SET draft_revision_id = NULL, published_revision_id = NULL
+         WHERE business_id = $1`,
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.merchant_product_revisions WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.merchant_products WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.undoLastMigration();
       await applyMigrations(admin);
       await grantMerchantAccess(
         admin,
@@ -1112,6 +1396,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
