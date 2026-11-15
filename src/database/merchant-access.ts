@@ -37,6 +37,14 @@ export const inboxFunctions = [
   'kleva_inbox_change_control(uuid,text)',
   'kleva_inbox_recipient(uuid)',
 ];
+export const knowledgeFunctions = [
+  'kleva_faq_list()',
+  'kleva_faq_detail(uuid)',
+  'kleva_faq_create(uuid,text,text)',
+  'kleva_faq_edit(uuid,integer,text,text)',
+  'kleva_faq_publish(uuid)',
+  'kleva_faq_unpublish(uuid)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -73,6 +81,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${inboxFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${knowledgeFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

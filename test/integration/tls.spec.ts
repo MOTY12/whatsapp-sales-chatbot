@@ -92,7 +92,7 @@ describe('PostgreSQL TLS policy', () => {
       const address = server.address();
       if (!address || typeof address === 'string')
         throw new Error('Expected a TCP port for the TLS fixture.');
-      const env = {
+      const env: NodeJS.ProcessEnv = {
         NODE_ENV: 'production',
         DATABASE_HOST: '127.0.0.1',
         DATABASE_PORT: String(address.port),

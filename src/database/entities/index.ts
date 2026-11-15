@@ -11,3 +11,5 @@ export { Notification } from './notification.entity';
 export { OnboardingSession } from './onboarding-session.entity';
 export { AssistantSession } from './assistant-session.entity';
 export { Sale } from './sale.entity';
+export { KnowledgeFaq } from './knowledge-faq.entity';
+export { KnowledgeFaqRevision } from './knowledge-faq-revision.entity';

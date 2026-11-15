@@ -1,15 +1,27 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 
-export type Membership = { businessId: string; role: 'owner' | 'editor' | 'agent' };
+export type Membership = {
+  businessId: string;
+  role: 'owner' | 'editor' | 'agent';
+};
 export type Identity = { accountId: string; memberships: Membership[] };
 export type Business = {
-  id: string; name: string; status: string; role: Membership['role']; industry: string;
-  phone: string; timezone: string; description: string | null; openingHours: string | null;
+  id: string;
+  name: string;
+  status: string;
+  role: Membership['role'];
+  industry: string;
+  phone: string;
+  timezone: string;
+  description: string | null;
+  openingHours: string | null;
 };
 export type WhatsAppStatus = {
-  status: 'active' | 'inactive' | 'pending'; displayName?: string | null;
-  phoneNumberId?: string; wabaId?: string;
+  status: 'active' | 'inactive' | 'pending';
+  displayName?: string | null;
+  phoneNumberId?: string;
+  wabaId?: string;
 };
 
 export type InboxMode = 'AUTO' | 'HUMAN';
@@ -24,7 +36,10 @@ export type Conversation = {
   control_version: number | string;
   in_flight: number | string;
 };
-export type ConversationDetail = Omit<Conversation, 'last_activity' | 'preview'> & {
+export type ConversationDetail = Omit<
+  Conversation,
+  'last_activity' | 'preview'
+> & {
   control_changed_at: string;
 };
 export type InboxMessage = {
@@ -46,25 +61,50 @@ export type InboxControlResult = {
   changed: boolean;
 };
 export type QueuedReply = { outboundMessageId: string; status: 'QUEUED' };
+export type KnowledgeFaq = {
+  id: string;
+  status: 'DRAFT' | 'PUBLISHED';
+  revision: number;
+  published_revision: number | null;
+  has_unpublished_changes: boolean;
+  question: string;
+  answer: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type ApiErrorCode =
-  | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'quota_exceeded'
-  | 'whatsapp_disconnected' | 'service_window_closed' | 'control_required'
-  | 'validation' | 'unavailable';
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not_found'
+  | 'conflict'
+  | 'quota_exceeded'
+  | 'whatsapp_disconnected'
+  | 'service_window_closed'
+  | 'control_required'
+  | 'validation'
+  | 'unavailable';
 
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
     public readonly code: ApiErrorCode = 'unavailable',
-  ) { super(message); }
+  ) {
+    super(message);
+  }
 }
 
 function backendErrorMessage(payload: unknown): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
   const message = (payload as { message?: unknown }).message;
   if (typeof message === 'string') return message;
-  if (Array.isArray(message) && message.every((item) => typeof item === 'string')) return message.join(' ');
+  if (
+    Array.isArray(message) &&
+    message.every((item) => typeof item === 'string')
+  )
+    return message.join(' ');
   return undefined;
 }
 
@@ -72,58 +112,149 @@ const backend = () => {
   const raw = process.env.KLEVA_BACKEND_ORIGIN;
   if (!raw) throw new Error('KLEVA_BACKEND_ORIGIN is required.');
   const url = new URL(raw);
-  if (url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
-    throw new Error('KLEVA_BACKEND_ORIGIN must be an origin without credentials or path.');
+  if (
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error(
+      'KLEVA_BACKEND_ORIGIN must be an origin without credentials or path.',
+    );
   }
   return url.origin;
 };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const jar = await cookies();
-  const cookieHeader = jar.getAll().map(({ name, value }) => `${name}=${value}`).join('; ');
+  const cookieHeader = jar
+    .getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join('; ');
   const csrf = jar.getAll().find(({ name }) => /csrf/i.test(name))?.value;
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body) headers.set('Content-Type', 'application/json');
   if (cookieHeader) headers.set('Cookie', cookieHeader);
   if (['POST', 'PATCH', 'DELETE'].includes(init.method ?? 'GET')) {
-    if (!csrf) throw new ApiError(403, 'Your session has expired. Sign in again.');
+    if (!csrf)
+      throw new ApiError(403, 'Your session has expired. Sign in again.');
     headers.set('X-CSRF-Token', csrf);
-    headers.set('Origin', process.env.DASHBOARD_PUBLIC_ORIGIN ?? 'http://localhost:3001');
+    headers.set(
+      'Origin',
+      process.env.DASHBOARD_PUBLIC_ORIGIN ?? 'http://localhost:3001',
+    );
   }
 
   let response: Response | undefined;
   const safeRead = (init.method ?? 'GET') === 'GET';
   for (let attempt = 0; attempt < (safeRead ? 2 : 1); attempt += 1) {
     try {
-      response = await fetch(`${backend()}${path}`, { ...init, headers, cache: 'no-store', signal: AbortSignal.timeout(8000) });
-      if (!safeRead || ![502, 503, 504].includes(response.status) || attempt === 1) break;
+      response = await fetch(`${backend()}${path}`, {
+        ...init,
+        headers,
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+      });
+      if (
+        !safeRead ||
+        ![502, 503, 504].includes(response.status) ||
+        attempt === 1
+      )
+        break;
     } catch {
-      if (attempt === 1 || !safeRead) throw new ApiError(0, 'Kleva is temporarily unavailable. Please try again.');
+      if (attempt === 1 || !safeRead)
+        throw new ApiError(
+          0,
+          'Kleva is temporarily unavailable. Please try again.',
+        );
     }
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
-  if (!response) throw new ApiError(0, 'Kleva is temporarily unavailable. Please try again.');
+  if (!response)
+    throw new ApiError(
+      0,
+      'Kleva is temporarily unavailable. Please try again.',
+    );
   if (!response.ok) {
     let payload: unknown;
-    try { payload = await response.json(); } catch { payload = undefined; }
+    try {
+      payload = await response.json();
+    } catch {
+      payload = undefined;
+    }
     const backendMessage = backendErrorMessage(payload);
-    if (response.status === 401) throw new ApiError(401, 'Your session has expired. Sign in again.', 'unauthorized');
-    if (response.status === 403) throw new ApiError(403, 'You do not have permission to access this inbox.', 'forbidden');
-    if (response.status === 404) throw new ApiError(404, 'This conversation is no longer available.', 'not_found');
-    if (response.status === 409) throw new ApiError(409, 'This request conflicts with a recent change. Refresh and try again.', 'conflict');
-    if (response.status === 429) throw new ApiError(429, 'Your WhatsApp message allowance has been reached. Try again after your allowance resets.', 'quota_exceeded');
-    if (response.status === 400 && backendMessage === 'Verified WhatsApp connection is unavailable.') {
-      throw new ApiError(400, 'WhatsApp is disconnected. Contact your Kleva support representative to restore the connection.', 'whatsapp_disconnected');
+    if (response.status === 401)
+      throw new ApiError(
+        401,
+        'Your session has expired. Sign in again.',
+        'unauthorized',
+      );
+    if (response.status === 403)
+      throw new ApiError(
+        403,
+        'You do not have permission to access this inbox.',
+        'forbidden',
+      );
+    if (response.status === 404)
+      throw new ApiError(
+        404,
+        'This conversation is no longer available.',
+        'not_found',
+      );
+    if (response.status === 409)
+      throw new ApiError(
+        409,
+        'This request conflicts with a recent change. Refresh and try again.',
+        'conflict',
+      );
+    if (response.status === 429)
+      throw new ApiError(
+        429,
+        'Your WhatsApp message allowance has been reached. Try again after your allowance resets.',
+        'quota_exceeded',
+      );
+    if (
+      response.status === 400 &&
+      backendMessage === 'Verified WhatsApp connection is unavailable.'
+    ) {
+      throw new ApiError(
+        400,
+        'WhatsApp is disconnected. Contact your Kleva support representative to restore the connection.',
+        'whatsapp_disconnected',
+      );
     }
-    if (response.status === 400 && (backendMessage?.includes('window is closed') || backendMessage?.includes('open customer-service window'))) {
-      throw new ApiError(400, 'The 24-hour WhatsApp service window has closed. Wait for the customer to message again before replying.', 'service_window_closed');
+    if (
+      response.status === 400 &&
+      (backendMessage?.includes('window is closed') ||
+        backendMessage?.includes('open customer-service window'))
+    ) {
+      throw new ApiError(
+        400,
+        'The 24-hour WhatsApp service window has closed. Wait for the customer to message again before replying.',
+        'service_window_closed',
+      );
     }
-    if (response.status === 400 && backendMessage === 'Take over this conversation before replying.') {
-      throw new ApiError(400, 'Take over the conversation before sending a reply.', 'control_required');
+    if (
+      response.status === 400 &&
+      backendMessage === 'Take over this conversation before replying.'
+    ) {
+      throw new ApiError(
+        400,
+        'Take over the conversation before sending a reply.',
+        'control_required',
+      );
     }
-    const message = response.status >= 500 ? 'Kleva could not complete that request. Please try again.' : 'Please check the information and try again.';
-    throw new ApiError(response.status, message, response.status >= 500 ? 'unavailable' : 'validation');
+    const message =
+      response.status >= 500
+        ? 'Kleva could not complete that request. Please try again.'
+        : 'Please check the information and try again.';
+    throw new ApiError(
+      response.status,
+      message,
+      response.status >= 500 ? 'unavailable' : 'validation',
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -131,31 +262,131 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   identity: () => request<Identity>('/auth/me'),
-  business: (id: string) => request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`),
-  createBusiness: (body: Omit<Business, 'id' | 'status' | 'role'>, key: string) =>
-    request<Business>('/merchant/businesses', { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(body) }),
-  updateBusiness: (id: string, body: Partial<Pick<Business, 'name' | 'industry' | 'phone' | 'timezone' | 'description' | 'openingHours'>>) =>
-    request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  whatsapp: (id: string) => request<WhatsAppStatus>(`/merchant/businesses/${encodeURIComponent(id)}/whatsapp`),
+  business: (id: string) =>
+    request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`),
+  createBusiness: (
+    body: Omit<Business, 'id' | 'status' | 'role'>,
+    key: string,
+  ) =>
+    request<Business>('/merchant/businesses', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify(body),
+    }),
+  updateBusiness: (
+    id: string,
+    body: Partial<
+      Pick<
+        Business,
+        | 'name'
+        | 'industry'
+        | 'phone'
+        | 'timezone'
+        | 'description'
+        | 'openingHours'
+      >
+    >,
+  ) =>
+    request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  whatsapp: (id: string) =>
+    request<WhatsAppStatus>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
+    ),
   conversations: (businessId: string, limit = 30, cursor?: string) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
-    return request<CursorPage<Conversation>>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations?${query}`);
+    return request<CursorPage<Conversation>>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations?${query}`,
+    );
   },
   conversation: (businessId: string, conversationId: string) =>
-    request<ConversationDetail>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}`),
-  messages: (businessId: string, conversationId: string, limit = 30, cursor?: string) => {
+    request<ConversationDetail>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}`,
+    ),
+  messages: (
+    businessId: string,
+    conversationId: string,
+    limit = 30,
+    cursor?: string,
+  ) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
-    return request<CursorPage<InboxMessage>>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/messages?${query}`);
+    return request<CursorPage<InboxMessage>>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
+    );
   },
   takeover: (businessId: string, conversationId: string) =>
-    request<InboxControlResult>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/takeover`, { method: 'POST' }),
+    request<InboxControlResult>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/takeover`,
+      { method: 'POST' },
+    ),
   release: (businessId: string, conversationId: string) =>
-    request<InboxControlResult>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/release`, { method: 'POST' }),
-  reply: (businessId: string, conversationId: string, text: string, idempotencyKey: string) =>
-    request<QueuedReply>(`/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/replies`, {
-      method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ text }),
-    }),
+    request<InboxControlResult>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/release`,
+      { method: 'POST' },
+    ),
+  reply: (
+    businessId: string,
+    conversationId: string,
+    text: string,
+    idempotencyKey: string,
+  ) =>
+    request<QueuedReply>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/replies`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ text }),
+      },
+    ),
+  faqs: (businessId: string) =>
+    request<KnowledgeFaq[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs`,
+    ),
+  faq: (businessId: string, faqId: string) =>
+    request<KnowledgeFaq>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}`,
+    ),
+  createFaq: (
+    businessId: string,
+    question: string,
+    answer: string,
+    idempotencyKey: string,
+  ) =>
+    request<KnowledgeFaq>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ question, answer }),
+      },
+    ),
+  updateFaq: (
+    businessId: string,
+    faqId: string,
+    question: string,
+    answer: string,
+    expectedRevision: number,
+  ) =>
+    request<KnowledgeFaq>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ question, answer, expectedRevision }),
+      },
+    ),
+  publishFaq: (businessId: string, faqId: string) =>
+    request<KnowledgeFaq>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/publish`,
+      { method: 'POST' },
+    ),
+  unpublishFaq: (businessId: string, faqId: string) =>
+    request<KnowledgeFaq>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/unpublish`,
+      { method: 'POST' },
+    ),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };

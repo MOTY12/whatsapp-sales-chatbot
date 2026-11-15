@@ -207,6 +207,8 @@ export async function createIntegrationDatabase() {
           host: config.host,
           port: config.port,
           database,
+          runtimeUsername: runtimeRole,
+          runtimePassword,
           username,
           password,
           identityUsername,
@@ -249,6 +251,9 @@ export async function createIntegrationDatabase() {
         }
         await migrator.query(
           `GRANT SELECT, INSERT, UPDATE, DELETE ON ${names.join(', ')} TO "${runtimeRole}"`,
+        );
+        await migrator.query(
+          `GRANT EXECUTE ON FUNCTION public.kleva_published_faqs(uuid) TO "${runtimeRole}"`,
         );
       },
     };

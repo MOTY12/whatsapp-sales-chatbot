@@ -75,8 +75,8 @@ describe('merchant OIDC and tenant isolation', () => {
       DATABASE_HOST: credentials.host,
       DATABASE_PORT: String(credentials.port),
       DATABASE_NAME: credentials.database,
-      DATABASE_USER: 'legacy-runtime',
-      DATABASE_PASSWORD: 'fixture-only',
+      DATABASE_USER: credentials.runtimeUsername,
+      DATABASE_PASSWORD: credentials.runtimePassword,
       DATABASE_SSL: 'false',
       DATABASE_SSL_CA: '',
       DATABASE_SSL_REJECT_UNAUTHORIZED: 'true',
@@ -534,6 +534,244 @@ describe('merchant OIDC and tenant isolation', () => {
     );
   });
 
+  it('manages tenant FAQ revisions, publishes only approved revisions, and protects retrieval', async () => {
+    const owner = await login('faq-owner');
+    const editor = await login('faq-editor');
+    const agent = await login('faq-agent');
+    const foreignOwner = await login('faq-foreign-owner');
+    await admin.getRepository(BusinessMember).insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: editor.accountId,
+        role: 'editor',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+      {
+        businessId: second.business.id,
+        accountId: foreignOwner.accountId,
+        role: 'owner',
+      },
+    ]);
+    await database.grantRuntimeAccess(admin);
+    const runtime = await database.runtime();
+    const base = `/merchant/businesses/${first.business.id}/faqs`;
+    const otherBase = `/merchant/businesses/${second.business.id}/faqs`;
+    const key = randomUUID();
+    const draftPayload = {
+      question: 'What time do you open?',
+      answer: 'We open at 9 AM.',
+    };
+    const createFaq = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      payload: { question: string; answer: string } = draftPayload,
+      requestKey: string = key,
+    ) =>
+      request(server)
+        .post(base)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .set('Idempotency-Key', requestKey)
+        .send(payload);
+    const updateFaq = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      faqId: string,
+      payload: { question: string; answer: string; expectedRevision: number },
+    ) =>
+      request(server)
+        .patch(`${base}/${faqId}`)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .send(payload);
+    const publishFaq = (
+      merchant: Awaited<ReturnType<typeof login>>,
+      faqId: string,
+    ) =>
+      request(server)
+        .post(`${base}/${faqId}/publish`)
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf);
+    const retrieve = () =>
+      runtime.query<
+        {
+          faq_id: string;
+          published_revision_id: string;
+          question: string;
+          answer: string;
+        }[]
+      >('SELECT * FROM public.kleva_published_faqs($1)', [first.business.id]);
+
+    try {
+      await request(server).get(base).expect(401);
+      await createFaq(owner).set('X-CSRF-Token', 'wrong').expect(403);
+      await createFaq(agent).expect(403);
+      await createFaq(editor, draftPayload, 'not-a-v4-key').expect(400);
+      await createFaq(
+        editor,
+        { question: ' ', answer: 'No answer' },
+        randomUUID(),
+      ).expect(400);
+      await createFaq(
+        editor,
+        {
+          question: '<script>alert(1)</script>',
+          answer: 'Plain text is escaped by the client.',
+        },
+        randomUUID(),
+      ).expect(201);
+      const create = await createFaq(owner).expect(201);
+      const faqId = (create.body as { id: string }).id;
+      expect(create.body).toMatchObject({
+        status: 'DRAFT',
+        revision: 1,
+        published_revision: null,
+        has_unpublished_changes: false,
+      });
+      expect(await retrieve()).toEqual([]);
+      const repeated = await createFaq(owner).expect(201);
+      expect((repeated.body as { id: string }).id).toBe(faqId);
+      await createFaq(owner, {
+        question: 'Different question',
+        answer: 'Different answer',
+      }).expect(409);
+
+      const draftEdit = await updateFaq(editor, faqId, {
+        question: draftPayload.question,
+        answer: 'We open daily at 9 AM.',
+        expectedRevision: 1,
+      }).expect(200);
+      expect(draftEdit.body).toMatchObject({
+        status: 'DRAFT',
+        revision: 2,
+        answer: 'We open daily at 9 AM.',
+      });
+      await updateFaq(editor, faqId, {
+        question: 'Stale edit',
+        answer: 'Stale',
+        expectedRevision: 1,
+      }).expect(409);
+      await updateFaq(foreignOwner, faqId, {
+        ...draftPayload,
+        expectedRevision: 2,
+      }).expect(404);
+      await request(server)
+        .get(`${otherBase}/${faqId}`)
+        .set('Cookie', foreignOwner.session)
+        .expect(404);
+      await publishFaq(agent, faqId).expect(403);
+      await request(server).get(base).set('Cookie', agent.session).expect(403);
+
+      const firstPublish = await publishFaq(owner, faqId).expect(201);
+      expect(firstPublish.body).toMatchObject({
+        status: 'PUBLISHED',
+        revision: 2,
+        published_revision: 2,
+      });
+      expect(await retrieve()).toMatchObject([
+        {
+          faq_id: faqId,
+          question: draftPayload.question,
+          answer: 'We open daily at 9 AM.',
+        },
+      ]);
+      await publishFaq(editor, faqId).expect(201);
+      let [eventCounts] = await admin.query<
+        { event_type: string; count: string }[]
+      >(
+        `SELECT event_type, count(*)::text AS count FROM public.knowledge_faq_events
+         WHERE faq_id = $1 AND event_type = 'PUBLISHED' GROUP BY event_type`,
+        [faqId],
+      );
+      expect(eventCounts.count).toBe('1');
+
+      const nextDraft = await updateFaq(editor, faqId, {
+        question: draftPayload.question,
+        answer: 'We open every weekday at 8:30 AM.',
+        expectedRevision: 2,
+      }).expect(200);
+      expect(nextDraft.body).toMatchObject({
+        status: 'PUBLISHED',
+        revision: 3,
+        published_revision: 2,
+        has_unpublished_changes: true,
+      });
+      expect(await retrieve()).toMatchObject([
+        { faq_id: faqId, answer: 'We open daily at 9 AM.' },
+      ]);
+      await publishFaq(owner, faqId).expect(201);
+      expect(await retrieve()).toMatchObject([
+        { faq_id: faqId, answer: 'We open every weekday at 8:30 AM.' },
+      ]);
+
+      const unpublish = () =>
+        request(server)
+          .post(`${base}/${faqId}/unpublish`)
+          .set('Cookie', owner.session)
+          .set('Origin', origin)
+          .set('X-CSRF-Token', owner.csrf);
+      const unpublished = await unpublish().expect(201);
+      expect(unpublished.body).toMatchObject({
+        status: 'DRAFT',
+        revision: 3,
+        published_revision: null,
+      });
+      await unpublish().expect(201);
+      expect(await retrieve()).toEqual([]);
+      [eventCounts] = await admin.query<
+        { event_type: string; count: string }[]
+      >(
+        `SELECT event_type, count(*)::text AS count FROM public.knowledge_faq_events
+         WHERE faq_id = $1 AND event_type = 'UNPUBLISHED' GROUP BY event_type`,
+        [faqId],
+      );
+      expect(eventCounts.count).toBe('1');
+
+      const merchantConnection = merchantDatabase.connection();
+      await expect(
+        merchantConnection.query('SELECT * FROM public.knowledge_faqs'),
+      ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      await admin.query(
+        'DELETE FROM public.knowledge_faq_events WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.query(
+        `UPDATE public.knowledge_faqs
+         SET draft_revision_id = NULL, published_revision_id = NULL
+         WHERE business_id = $1`,
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.knowledge_faq_revisions WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.knowledge_faqs WHERE business_id = $1',
+        [first.business.id],
+      );
+      await admin.undoLastMigration();
+      await applyMigrations(admin);
+      await grantMerchantAccess(
+        admin,
+        env.MERCHANT_DATABASE_USER!,
+        env.IDENTITY_DATABASE_USER!,
+      );
+      await database.grantRuntimeAccess(admin);
+    } finally {
+      await runtime.destroy();
+    }
+  });
+
   it('uses restricted SQL, fails closed without context and clears tenant state on pooled connections', async () => {
     const one = await login('pool-one');
     const two = await login('pool-two');
@@ -881,6 +1119,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant onboarding data exists',
       );
@@ -982,6 +1221,7 @@ describe('merchant OIDC and tenant isolation', () => {
       )
       .set(headers(owner))
       .expect(201);
+    await database.grantRuntimeAccess(admin);
     const replyKey = randomUUID();
     const replyPath = `/merchant/businesses/${first.business.id}/conversations/${first.conversation.id}/replies`;
     const reply = () =>

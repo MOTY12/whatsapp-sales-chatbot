@@ -1,6 +1,6 @@
 import { integrationConfig } from './postgres';
 
-const valid = {
+const valid: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
   KLEVA_TEST_PG_HOST: '127.0.0.1',
   KLEVA_TEST_PG_PORT: '5432',
@@ -56,8 +56,8 @@ describe('PostgreSQL integration configuration', () => {
       /KLEVA_TEST_PG_PASSWORD/,
     ],
   ])('rejects %s before connecting', (_description, overrides, message) => {
-    expect(() => integrationConfig({ ...valid, ...overrides })).toThrow(
-      message,
-    );
+    expect(() =>
+      integrationConfig({ ...valid, ...overrides } as NodeJS.ProcessEnv),
+    ).toThrow(message);
   });
 });

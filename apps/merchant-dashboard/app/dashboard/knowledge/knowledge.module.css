@@ -1,0 +1,401 @@
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 350px) minmax(0, 1fr);
+  min-height: 650px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.listPanel {
+  padding: 20px;
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.listHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.listHeading h2,
+.editorHeading h2 {
+  font-size: 17px;
+  line-height: 1.3;
+  margin: 0;
+  font-weight: 650;
+}
+.listHeading p,
+.editorHeading p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 3px 0 0;
+}
+.total {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 25px;
+  padding: 0 7px;
+  border-radius: 20px;
+  background: #f1f5f2;
+  color: #5c6b62;
+  font-size: 11px;
+  font-weight: 650;
+}
+.searchLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 650;
+  margin: 18px 0 5px;
+  color: #526159;
+}
+.search {
+  width: 100%;
+  height: 37px;
+  border: 1px solid #dfe6e2;
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-size: 11px;
+}
+.filters {
+  display: flex;
+  gap: 5px;
+  margin: 12px 0;
+}
+.filters button {
+  height: 27px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: #f6f8f7;
+  color: #68756f;
+  font-size: 10px;
+  cursor: pointer;
+}
+.filters button[aria-pressed='true'] {
+  background: #e8f4ed;
+  border-color: #d7eadf;
+  color: #236a50;
+  font-weight: 650;
+}
+.faqList {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+.faqItem {
+  display: grid;
+  gap: 7px;
+  text-align: left;
+  padding: 11px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e8eeeb;
+  color: var(--ink);
+  cursor: pointer;
+}
+.faqItem:hover {
+  border-color: #c8ddd1;
+}
+.faqItem:focus-visible {
+  outline: 3px solid #73b9a4;
+  outline-offset: 2px;
+}
+.selected {
+  background: #f2f8f4;
+  border-color: #b8d8c5;
+}
+.itemHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 7px;
+}
+.itemHeading strong {
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 20px;
+  background: #fff3df;
+  color: #906726;
+  font-size: 9px;
+  font-weight: 650;
+}
+.published {
+  background: #e5f4e9;
+  color: #32744e;
+}
+.unpublishedHint {
+  font-size: 9px;
+  color: #946c25;
+  font-weight: 600;
+}
+.itemAnswer {
+  font-size: 10px;
+  color: #68756f;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.faqItem time {
+  font-size: 9px;
+  color: #8d9892;
+}
+.listState {
+  margin: 28px 2px;
+  text-align: center;
+  color: #66736c;
+}
+.listState strong {
+  font-size: 12px;
+  color: var(--ink);
+}
+.listState p {
+  font-size: 10px;
+  margin: 5px 0 10px;
+}
+.editorPanel {
+  min-width: 0;
+  padding: 27px 31px;
+}
+.editorHeading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 18px;
+}
+.editorHeading > div {
+  flex: 1;
+  min-width: 0;
+}
+.editorHeading .eyebrow {
+  font-size: 9px;
+}
+.backButton {
+  display: none;
+}
+.editorForm {
+  display: flex;
+  flex-direction: column;
+  max-width: 760px;
+  padding-top: 20px;
+}
+.editorForm > label {
+  font-size: 11px;
+  font-weight: 650;
+  margin: 10px 0 6px;
+}
+.editorForm > label span {
+  color: #87928d;
+  font-weight: 400;
+  margin-left: 6px;
+  font-size: 9px;
+}
+.editorForm input,
+.editorForm textarea {
+  width: 100%;
+  border: 1px solid #dce5df;
+  border-radius: 7px;
+  padding: 10px 11px;
+  color: var(--ink);
+  font-size: 12px;
+  background: #fff;
+}
+.editorForm input {
+  height: 41px;
+}
+.editorForm textarea {
+  resize: vertical;
+  min-height: 160px;
+  line-height: 1.6;
+}
+.editorForm input::placeholder,
+.editorForm textarea::placeholder {
+  color: #a0aaa5;
+}
+.editorForm > small {
+  font-size: 9px;
+  color: #89948e;
+  margin-top: 4px;
+}
+.safetyNote,
+.reviewNotice,
+.liveNotice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 18px;
+  padding: 11px 12px;
+  border-radius: 7px;
+  background: #f5f8f6;
+  border: 1px solid #e7eeea;
+  color: #5f7067;
+}
+.safetyNote > span {
+  color: #51836a;
+  font-size: 13px;
+}
+.safetyNote p,
+.reviewNotice,
+.liveNotice {
+  font-size: 10px;
+  line-height: 1.55;
+}
+.safetyNote p {
+  margin: 0;
+}
+.reviewNotice {
+  display: block;
+  background: #fff7e7;
+  border-color: #f4e6c8;
+  color: #755d2b;
+}
+.reviewNotice strong,
+.liveNotice strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.liveNotice {
+  display: block;
+  background: #eff8f1;
+  border-color: #dfefe2;
+  color: #396c4b;
+}
+.actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid #edf1ee;
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.actions > div:first-child {
+  max-width: 390px;
+}
+.actions p {
+  font-size: 10px;
+  color: #77847d;
+  margin: 0;
+}
+.actionButtons {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.actionButtons .button {
+  height: 36px;
+  font-size: 10px;
+}
+.confirmation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  background: #fff7e7;
+  border: 1px solid #f0dfbd;
+  border-radius: 7px;
+  flex-wrap: wrap;
+}
+.confirmation p {
+  flex: 1 1 100%;
+  font-size: 10px;
+  color: #705b32;
+  margin: 0 0 3px;
+}
+.confirmation .button {
+  height: 34px;
+  font-size: 10px;
+}
+.error,
+.success,
+.inlineError {
+  padding: 9px 11px;
+  border-radius: 6px;
+  font-size: 10px;
+  margin: 12px 0 0;
+}
+.error,
+.inlineError {
+  color: #963e39;
+  background: #fbefed;
+}
+.success {
+  color: #28724c;
+  background: #eaf6ed;
+}
+.mobileHidden {
+  display: block;
+}
+@media (max-width: 760px) {
+  .workspace {
+    display: block;
+    min-height: 590px;
+  }
+  .listPanel {
+    border-right: 0;
+    padding: 16px;
+  }
+  .editorPanel {
+    display: none;
+    padding: 18px 16px;
+  }
+  .mobileHidden {
+    display: none;
+  }
+  .mobileEditorOpen {
+    display: block;
+  }
+  .backButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    background: transparent;
+    color: #52725f;
+    padding: 4px 6px 4px 0;
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .editorHeading {
+    gap: 8px;
+  }
+  .editorHeading h2 {
+    font-size: 16px;
+  }
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .actionButtons {
+    justify-content: stretch;
+  }
+  .actionButtons .button {
+    flex: 1;
+  }
+  .confirmation {
+    justify-content: stretch;
+  }
+  .confirmation .button {
+    flex: 1;
+  }
+  .listPanel > .button {
+    width: 100%;
+  }
+}

@@ -16,6 +16,8 @@ import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier'
 import { OutboundModule } from '../whatsapp/outbound.module';
 import { MerchantInboxController } from './merchant-inbox.controller';
 import { MerchantInboxService } from './merchant-inbox.service';
+import { KnowledgeController } from '../knowledge/knowledge.controller';
+import { KnowledgeFaqService } from '../knowledge/knowledge-faq.service';
 
 @Module({
   imports: [CredentialCipherModule, OutboundModule],
@@ -24,6 +26,7 @@ import { MerchantInboxService } from './merchant-inbox.service';
     MerchantBusinessController,
     MerchantWhatsAppController,
     MerchantInboxController,
+    KnowledgeController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -34,6 +37,7 @@ import { MerchantInboxService } from './merchant-inbox.service';
     MerchantBusinessService,
     MerchantWhatsAppService,
     MerchantInboxService,
+    KnowledgeFaqService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

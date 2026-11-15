@@ -10,6 +10,7 @@ import { DatabaseModule } from './database/database.module';
 import { MetaEmbeddedSignupModule } from './meta-embedded-signup/meta-embedded-signup.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     WhatsAppModule,
     OnboardingModule,
     MetaEmbeddedSignupModule,
+    KnowledgeModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, DatabaseReadiness],

@@ -38,6 +38,9 @@ import { ProcessWhatsAppReceipts1760000000009 } from './migrations/1760000000009
 import { AddTenantUsageLedger1760000000010 } from './migrations/1760000000010-AddTenantUsageLedger';
 import { DurableWhatsAppOutbound1760000000011 } from './migrations/1760000000011-DurableWhatsAppOutbound';
 import { MerchantInbox1760000000012 } from './migrations/1760000000012-MerchantInbox';
+import { MerchantFaqKnowledge1760000000013 } from './migrations/1760000000013-MerchantFaqKnowledge';
+import { KnowledgeFaq } from './entities/knowledge-faq.entity';
+import { KnowledgeFaqRevision } from './entities/knowledge-faq-revision.entity';
 
 export const databaseEntities = [
   Business,
@@ -57,6 +60,8 @@ export const databaseEntities = [
   Account,
   BusinessMember,
   ChannelConnection,
+  KnowledgeFaq,
+  KnowledgeFaqRevision,
 ];
 
 export const databaseMigrations = [
@@ -74,4 +79,5 @@ export const databaseMigrations = [
   AddTenantUsageLedger1760000000010,
   DurableWhatsAppOutbound1760000000011,
   MerchantInbox1760000000012,
+  MerchantFaqKnowledge1760000000013,
 ];

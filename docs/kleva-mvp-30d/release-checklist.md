@@ -14,6 +14,7 @@
 - [x] Local PostgreSQL integration verifies tenant-scoped conversation/history APIs, audited takeover/release, manual reply idempotency and suppression of stale AI sends.
 - [ ] Staging with approved Meta assets verifies send-window enforcement, delivery reconciliation and the documented in-flight takeover boundary.
 - [x] Per-tenant WhatsApp and AI token budgets reserve atomically and reconcile idempotently in local PostgreSQL integration.
+- [x] Merchant FAQ drafts use immutable revisions; only the explicitly published revision is returned by the tenant-scoped retrieval function. Dashboard fixture journeys cover creation, publish, edit, republish and unpublish.
 - [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
 
 ## Staging and live release

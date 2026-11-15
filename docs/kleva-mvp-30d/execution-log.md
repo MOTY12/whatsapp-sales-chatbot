@@ -194,3 +194,20 @@ Added local Playwright fixtures and browser journeys for conversation list/histo
 | `npm run test:integration` | Could not run: `KLEVA_TEST_PG_DATABASE` is not set to the required `kleva_integration_control`; PostgreSQL integration cases did not execute successfully in this environment |
 
 INBOX-002 is VERIFIED locally against the local HTTP fixture. Staging identity-provider and live Meta send/reconciliation evidence, hosted CI and the PostgreSQL integration run remain release work. Remaining MVP estimate: 55 hours plus 11 hours of contingency. Next task: KNOWLEDGE-001 / KNOWLEDGE-004, publishing and editing merchant FAQs.
+
+## November 15, 2026 · KNOWLEDGE-001 / KNOWLEDGE-004 (FAQ slice)
+
+Reviewed the current `main` checkout at `0bc7af8` and preserved the existing inbox work. Added a new tenant-scoped PostgreSQL FAQ schema with immutable numbered revisions, a draft pointer and a separately controlled published pointer, append-only lifecycle events, idempotent creation, and owner/editor-only management functions. Added merchant FAQ list/detail/create/edit/publish/unpublish routes with CSRF protection, optimistic revision checks, and safe error mapping. Added a restricted service retrieval function that returns only currently published revisions. The merchant dashboard now has a responsive FAQ editor, explicit publication controls, a same-origin API proxy, and fixture-backed journeys. API behavior is documented in [merchant-knowledge-api.md](merchant-knowledge-api.md).
+
+This completes the plain-text FAQ portion of KNOWLEDGE-001 and the FAQ management portion of KNOWLEDGE-004. PDF upload/extraction and chunking/embeddings remain KNOWLEDGE-002 and KNOWLEDGE-003; retrieval grounding remains RAG-001/002.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` / `npm run build` | Passed |
+| `npm test` / `npm run test:e2e` | 41 unit tests in 9 suites; 3 end-to-end tests passed |
+| `npm run test:integration` | 89 passed across 12 suites using disposable PostgreSQL and Redis; includes FAQ migration, role/tenant isolation, revision conflicts, publish/edit/unpublish and published-only retrieval |
+| `npm run dashboard:lint` / `npm run dashboard:typecheck` / `npm run dashboard:build` | Passed |
+| `npm run dashboard:test` | 5 passed |
+| `npm run dashboard:test:browser` | 12 passed, including FAQ lifecycle, literal-text safety, tenant switching, access denial, service failure and expired session |
+
+KNOWLEDGE-001 and the FAQ slice of KNOWLEDGE-004 are VERIFIED locally. Hosted CI and staging checks remain release work. Remaining MVP estimate: 47 hours plus 11 hours of contingency. Next task: CATALOG-001.
