@@ -25,7 +25,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | KNOWLEDGE-003 | Paid pilot | NOT_STARTED | KNOWLEDGE-001, KNOWLEDGE-002, FOUNDATION-004 | Add chunking, embeddings and reindex jobs. |
 | INBOX-001 | Paid pilot | VERIFIED locally | WHATSAPP-002, WHATSAPP-003 | Merchant conversation/history APIs, idempotent takeover/release audit, manual replies via the metered outbox, and versioned AI send fencing are covered by PostgreSQL integration tests. Staging/live provider validation remains open. |
 | KNOWLEDGE-004 | Paid pilot | VERIFIED locally (FAQ slice) | DASHBOARD-001 | Dashboard FAQ editor manages drafts, revisions and publication. Upload/indexing screens remain dependent on KNOWLEDGE-002/003. |
-| RAG-001 | Paid pilot | NOT_STARTED | KNOWLEDGE-003 | Evaluate tenant-scoped hybrid retrieval. |
+| RAG-001 | Paid pilot | VERIFIED locally | KNOWLEDGE-001, CATALOG-001 | PostgreSQL full-text search ranks active-business published FAQ and product revisions with exact identifier matches and explicit insufficient-evidence outcomes. Embeddings/vector retrieval remain out of scope. |
 | INBOX-002 | Paid pilot | NOT_STARTED | DASHBOARD-001, INBOX-001 | Ship the shared inbox. |
 | SALES-001 | Paid pilot | NOT_STARTED | TENANT-003, INBOX-001, CATALOG-001 | Persist leads and opportunities with an activity trail. |
 | RAG-002 | Paid pilot | NOT_STARTED | RAG-001, KNOWLEDGE-004, DASHBOARD-001, METER-001 | Add grounded generation, configuration and playground. |

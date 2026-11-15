@@ -18,3 +18,5 @@ Mutation bodies contain `name` (required, at most 160 characters), `description`
 Published retrieval is available only to the restricted runtime database role through `kleva_published_products(business_id)`. It returns active-business products at their published revision only; drafts, unpublished products, and other tenants are excluded. Each row includes the tenant and product IDs, published revision ID, customer-facing fields, and publication time. Merchant database roles cannot call this function or access catalog tables directly.
 
 The catalog stores immutable revision history and lifecycle events. A published product may be edited without changing what retrieval returns; the new facts become customer-facing only after explicit publication.
+
+Unified FAQ and product full-text retrieval, including exact SKU matching, relevance thresholds and the restricted runtime database contract, is documented in [published-knowledge-retrieval.md](published-knowledge-retrieval.md).

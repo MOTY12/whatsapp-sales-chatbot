@@ -1022,6 +1022,7 @@ describe('merchant OIDC and tenant isolation', () => {
           .connection()
           .query('SELECT * FROM public.merchant_products'),
       ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -1396,6 +1397,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();

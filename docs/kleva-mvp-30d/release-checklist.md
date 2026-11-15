@@ -16,6 +16,7 @@
 - [x] Per-tenant WhatsApp and AI token budgets reserve atomically and reconcile idempotently in local PostgreSQL integration.
 - [x] Merchant FAQ drafts use immutable revisions; only the explicitly published revision is returned by the tenant-scoped retrieval function. Dashboard fixture journeys cover creation, publish, edit, republish and unpublish.
 - [x] Merchant products use immutable revisions, exact nullable decimal prices and explicit availability; real PostgreSQL checks owner/editor authorization, tenant isolation, optimistic conflicts, publish/unpublish and published-only runtime retrieval. Dashboard journeys cover product editing, exact prices, unknown availability, tenant switching, denial and mobile layout.
+- [x] Internal RAG-001 search combines currently published FAQs and products using PostgreSQL full-text search, exact SKU matching, bounded ranking and explicit no-content/no-match/low-relevance outcomes. Real PostgreSQL integration verifies draft and unpublished exclusion, publication consistency, tenant isolation, exact product facts, parameterized injection-shaped input, migration rollback/reapply and search indexes. This does not verify model grounding or generated replies.
 - [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
 
 ## Staging and live release

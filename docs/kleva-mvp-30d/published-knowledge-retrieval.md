@@ -1,0 +1,21 @@
+# Published knowledge retrieval (RAG-001)
+
+`UnifiedKnowledgeRetrievalService` is an internal Nest provider exported by `KnowledgeModule`. It accepts `{ businessId, query, limit? }` and returns `{ evidence, sufficientEvidence, reason? }`; it has no public or unauthenticated HTTP route. The default result limit is 5 and the maximum is 10. Queries are trimmed and limited to 256 characters. Invalid business IDs, non-text/NUL-containing queries, overlong queries and invalid limits are rejected before a database call. An empty query is safe and returns an insufficient-evidence result.
+
+Evidence has source type `FAQ` or `PRODUCT`, source and published revision IDs, relevance score, title and content. Product evidence also includes SKU and facts containing the exact decimal price or `null`, currency and explicit availability. FAQ question is the title and answer is the content; product name is the title and description is the content. No price, stock state, feature, discount or answer is inferred.
+
+## PostgreSQL search
+
+Migration `1760000000015-PublishedKnowledgeSearch` adds GIN expression indexes to FAQ and product revision text and a btree expression index for normalized exact SKU matching. Search uses PostgreSQL `websearch_to_tsquery` and `ts_rank_cd` with the `simple` text-search configuration. `simple` tokenizes text without English stemming or stop-word removal; this avoids assuming English morphology for Nigerian names, local terms and product identifiers. Exact case-insensitive FAQ-question, product-name and SKU matches receive score `1.0`. Full-text vectors weight FAQ questions/product names/SKUs as `A` and answers/descriptions as `B`, then use normalized cover-density rank. Results have deterministic ordering by score descending, source type and source UUID; one published pointer per source prevents duplicate evidence. Result count is bounded in both the service and SQL function.
+
+The service applies a minimum score threshold of `0.035`. Any returned evidence above it sets `sufficientEvidence: true`. When no evidence clears the threshold, the service returns no evidence and one reason: `NO_PUBLISHED_CONTENT` when the active business has no published FAQ or product, `NO_MATCH` when published material exists but no tokens or exact identifier match, or `LOW_RELEVANCE` when matches fall below the threshold. This is a retrieval heuristic, not a correctness or claim-level confidence score. Query terms are passed as bind parameters; user text is never composed into SQL.
+
+`EXPLAIN (ANALYZE, BUFFERS)` is exercised against the real PostgreSQL fixture. Its small row count makes a sequential scan a valid planner choice, so this verifies query execution but does not establish production index selection or latency. Recheck plans and timings with representative pilot catalog sizes before setting an operational latency target.
+
+## Publication and tenant boundary
+
+The database function searches the revision referenced by `published_revision_id` and joins it through the matching business and FAQ/product IDs. It searches only active businesses and scopes all branches to the supplied business ID. Draft edits therefore do not alter retrieval until the published pointer changes; publish/unpublish changes are visible on the next query without an asynchronous index or cache. The search function is `SECURITY DEFINER`, uses a fixed safe `search_path`, rejects merchant and identity database sessions, is revoked from `PUBLIC`, and is granted only to `kleva_runtime_*` roles. Merchant roles retain their existing table denial and do not receive search-function privileges. The new indexes live on existing internal revision tables; the migration creates no second knowledge store.
+
+The function uses the same published pointers as [`merchant-knowledge-api.md`](merchant-knowledge-api.md) and [`merchant-catalog-api.md`](merchant-catalog-api.md). Its additive rollback drops the function and indexes only, preserving FAQ and product records.
+
+RAG-001 provides evidence retrieval and conservative empty/low-match results. It does not call an LLM, generate customer replies, validate factual claims, or guarantee that relevant text contains every requested fact. RAG-002/AGENT-001 must ground each generated claim in returned evidence and abstain or hand off when the evidence is insufficient.

@@ -227,3 +227,20 @@ Added authenticated merchant catalog APIs, the same-origin dashboard proxy, a re
 | `npm run dashboard:test:browser` | 17 passed, including five product journeys for lifecycle, decimal price, tenant/role access, failure/session expiry and mobile layout |
 
 CATALOG-001 is VERIFIED locally. Hosted CI and staging checks remain release work. Remaining MVP estimate: 42 hours plus 11 hours of contingency. Next task: RAG-001.
+
+## November 15, 2026 · RAG-001
+
+Reviewed the clean `main` checkout at `54f28cc` and reused the FAQ and product published-revision pointers introduced by KNOWLEDGE-001 and CATALOG-001. Added an additive TypeORM migration with generated `simple`-configuration search vectors on existing FAQ/product revision tables, GIN indexes and a normalized exact-SKU btree index. No second knowledge store, vector database, embedding pipeline, HTTP search endpoint or model call was added.
+
+The internal `UnifiedKnowledgeRetrievalService` combines FAQ and product evidence through a parameterized PostgreSQL security-definer function. Search is scoped to one active business and joins only each source's current published revision. Exact question/name/SKU matches rank first; weighted `websearch_to_tsquery` and `ts_rank_cd` rank other matches with a stable bounded order and a `0.035` threshold. Empty content, no match and low relevance produce explicit insufficient-evidence reasons. Product price stays an exact decimal string or `null`; currency and availability retain their published values. The merchant and identity database roles cannot execute the search function or read revision tables. Ranking, text-search configuration, role boundary, publication semantics and limits are documented in [published-knowledge-retrieval.md](published-knowledge-retrieval.md).
+
+| Command | Result |
+| --- | --- |
+| `npm run lint:check` / `npm run build` | Passed |
+| `npm test` | 43 passed across 10 suites |
+| `npm run test:e2e` | 3 passed |
+| `npm run test:integration` | 97 passed across 13 suites with disposable PostgreSQL 16 and Redis 7; includes seven retrieval cases and all existing tenant, migration, webhook, inbox and outbox regressions |
+| Dashboard lint / typecheck / component tests / build | Passed; 6 component tests passed |
+| `npm run dashboard:test:browser` | 17 passed; includes the existing inbox, knowledge, onboarding and product journeys |
+
+The fixture exercises `EXPLAIN (ANALYZE, BUFFERS)` and confirms the search indexes exist. PostgreSQL chooses a sequential scan on these small test tables, so production plan selection and latency still need measurement with pilot-sized data. RAG-001 is VERIFIED locally. Hosted CI and staging remain release gates. Remaining MVP estimate: 37 hours plus 11 hours of contingency. Next task: RAG-002 / AGENT-001 claim-level grounding and abstention.
