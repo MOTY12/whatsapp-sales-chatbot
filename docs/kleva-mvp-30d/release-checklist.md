@@ -46,3 +46,4 @@
 - [ ] Verify approved template availability and live Meta messaging-window behavior. Free-form messages outside the 24-hour service window currently fail closed.
 - [ ] Exercise operator reconciliation of `UNCERTAIN` sends against Meta provider history in staging; Meta does not guarantee idempotent send requests.
 - [ ] Run the hosted CI browser journey after INBOX-002; local browser fixtures do not prove live Meta delivery.
+- [ ] Latest isolated Node 22 browser rerun is stable; current rerun had 11 passes and 7 failures with Next dev fixture JSON/runtime errors. Earlier isolated suite passed, but hosted CI has not run.

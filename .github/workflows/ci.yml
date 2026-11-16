@@ -45,6 +45,8 @@ jobs:
             package-lock.json
             apps/merchant-dashboard/package-lock.json
       - run: npm ci
+      - name: Production dependency security audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Lint
         run: npm run lint:check
       - name: Build

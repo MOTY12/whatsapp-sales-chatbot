@@ -281,3 +281,23 @@ The `ai_response_runs` migration is additive and RLS-protected. Lifecycle loggin
 | Dashboard production build and Playwright fixture suite | Passed in isolated temporary checkout; 18 browser tests. Isolation avoided the existing local Next dev server's shared output lock. |
 
 RAG-002 / the requested initial AGENT-001 WhatsApp response slice is VERIFIED locally. The broader omnichannel AGENT-001 remains in progress for bounded conversation memory, typed tools and tenant-level activation; the merchant-side synthetic playground in the wider RAG-002 roadmap also remains open. Hosted CI, an approved pilot opt-in, real model-provider behavior, live Meta assets/templates, staging OIDC and delivery/recovery proof remain release gates. Remaining MVP estimate: 21 hours plus 11 hours of contingency. Next recommended engineering task: OPS-001 / OPS-002 pilot deployment and recovery (7 hours); start POLICY-001 provider eligibility review in parallel because it depends on external approval evidence.
+
+## November 16, 2026 · OPS-001 / OPS-002
+
+Prepared a single-host pilot deployment with Caddy, separate API/worker/dashboard containers, private Redis, external TLS PostgreSQL, health checks, bounded container privileges, and documented migration/runtime/backup database roles. Added an advisory-locked migration runner, production configuration checks for OIDC, WhatsApp keyring and Redis credentials, worker readiness heartbeat and safe shutdown behavior. Added operations SQL, alert thresholds and response actions, incident/rollback/data-retention guidance, SSM environment rendering, age-encrypted S3 backup scripts, a disposable-only restore guard, and a timed systemd backup unit. AI remains disabled by default.
+
+| Command / check | Result |
+| --- | --- |
+| `npm run lint:check` | Passed; one existing warning in `test/integration/outbox.spec.ts` |
+| `npm run build` | Passed |
+| `npm test -- --runInBand` | 63 passed across 13 suites |
+| `npm run test:e2e -- --runInBand` | 3 passed |
+| `npm run test:integration -- --runInBand --silent` | 100 passed across 14 suites with PostgreSQL 16 and Redis 7 fixtures |
+| `docker compose -f deploy/compose.yaml config --quiet` | Passed |
+| Caddy config validation | Passed in a disposable container |
+| Backend and dashboard production image builds | Passed against the current package lock; dashboard health endpoint returned `200:ok` in a container |
+| Local disposable PostgreSQL custom dump/restore | Passed for a tiny fixture; reported 0 seconds. No age/S3/KMS/cloud path was exercised. |
+| Latest isolated Node 22 Playwright run | 11 passed, 7 failed; repeated Next dev fixture JSON/runtime errors. Hosted CI has not run. |
+| Production dependency audit | Last successful online audit: 3 moderate, 0 high, 0 critical production advisories. A final audit attempt was blocked by unavailable registry DNS. CI now runs `npm audit --omit=dev --audit-level=high`. |
+
+Live staging/deployment is BLOCKED: no staging identity, approved Meta assets, domain, AWS credentials/resources, SSM/S3/KMS configuration or assigned on-call were available. The local AWS CLI also fails during startup due to a Python `pyexpat`/libexpat symbol mismatch, and `age` is not installed locally. Therefore the encrypted off-host backup, real alert delivery, certificate issuance, and restore timing remain unverified. OPS artifacts are locally prepared; hosted CI/browser repair and staging evidence remain release gates. No cloud deployment was attempted.
