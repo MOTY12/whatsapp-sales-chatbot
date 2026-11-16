@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:browser": "playwright test --config playwright.config.ts"
+    "test:browser": "node test/run-playwright.mjs"
   },
   "dependencies": {
     "next": "^16.0.0",

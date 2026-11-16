@@ -301,3 +301,32 @@ Prepared a single-host pilot deployment with Caddy, separate API/worker/dashboar
 | Production dependency audit | Last successful online audit: 3 moderate, 0 high, 0 critical production advisories. A final audit attempt was blocked by unavailable registry DNS. CI now runs `npm audit --omit=dev --audit-level=high`. |
 
 Live staging/deployment is BLOCKED: no staging identity, approved Meta assets, domain, AWS credentials/resources, SSM/S3/KMS configuration or assigned on-call were available. The local AWS CLI also fails during startup due to a Python `pyexpat`/libexpat symbol mismatch, and `age` is not installed locally. Therefore the encrypted off-host backup, real alert delivery, certificate issuance, and restore timing remain unverified. OPS artifacts are locally prepared; hosted CI/browser repair and staging evidence remain release gates. No cloud deployment was attempted.
+
+## November 16, 2026 · QA-001 / Regression stabilization
+
+Reviewed HEAD `9397fefb7ee5e019d198c9aac3107045fad76d17`, the OPS execution evidence and the existing browser, backend, PostgreSQL/Redis, deployment and worker tests. The previous seven Playwright failures were caused by concurrent Next servers in the same dashboard checkout sharing the default `.next` output: the pre-existing developer server on port 3001 and the test server on 3101 could overwrite manifests and incremental runtime state. This produced empty/invalid manifest reads and secondary fixture JSON/runtime errors. The fixture handlers did not reproduce the failure after output isolation.
+
+Playwright now gives each invocation a PID-scoped Next `distDir` via `KLEVA_NEXT_DIST_DIR`. The normal production build continues to use `.next`. Its launcher restores `next-env.d.ts` and `tsconfig.json` after the run only when their differences are exactly the generated type paths for that run; it leaves unexpected concurrent edits untouched. ESLint ignores custom generated Next output, `.gitignore` excludes it, and TypeScript excludes `.next-*` generated paths. No tests were skipped, weakened or given extra retries. The full 18-test suite passed four consecutive local runs after isolation.
+
+The existing real-PostgreSQL/Redis suites cover the end-to-end slices: signed/invalid webhook intake and concurrent deduplication; message persistence and lead capture; published-knowledge retrieval; fake-model grounded AI generation and duplicate execution; usage reconciliation; outbound fixture send and delivery receipt; and inbox takeover/manual reply. Unit, integration and Playwright tests collectively cover quota exhaustion, malformed AI output, unsupported claims, tenant denial, Redis outage/recovery, ambiguous provider outcomes, expired sessions and mobile journeys. Hosted/live Meta and real model behavior remain separate release gates.
+
+| Command / check | Result |
+| --- | --- |
+| `npm run lint:check` | Passed; 0 errors, one existing floating-promise warning in `test/integration/outbox.spec.ts` |
+| `npm run build` | Passed |
+| `npm test -- --runInBand` | 63 passed across 13 suites |
+| `npm run test:e2e -- --runInBand` | 3 passed |
+| `npm run test:integration -- --runInBand --silent` | 100 passed across 14 suites with disposable PostgreSQL 16 and Redis 7 |
+| `npm run dashboard:lint` / `npm run dashboard:typecheck` | Passed after excluding generated Next output |
+| `npm run dashboard:test` | 9 passed across 4 files |
+| `npm run dashboard:build` | Passed with isolated `.next-validation` output; generated Next type references were restored to the default `.next` path afterward |
+| `npm run dashboard:test:browser` | 18 passed in each of 4 consecutive isolated runs |
+| Focused migration/role integration | 13 passed; migration apply/rollback/reapply and restricted-role checks |
+| `npm run migration:run:locked` | Applied all 19 migrations on a fresh disposable PostgreSQL database; the database was dropped after verification |
+| API / worker / dashboard production images | All built; worker entry passed syntax validation |
+| Compose / Caddy | Compose config passed; Caddy reported valid configuration |
+| Hosted CI | Run [#47](https://github.com/MOTY12/whatsapp-sales-chatbot/actions/runs/43840871322) passed every step on base HEAD `9397fef`. It predates this uncommitted QA-001 diff, which still needs its own hosted run. |
+
+Performance measurements for API latency, pagination, knowledge retrieval, queue delay and AI orchestration were not run with representative data. A PostgreSQL process restart/reconnection drill was also not run; transaction rollback and service restart/idempotency cases are not equivalent. These items are `NOT_TESTED` in the [release readiness matrix](release-readiness-matrix.md). Staging and live-provider verification remain `BLOCKED` / `NOT_TESTED` per the OPS record.
+
+QA-001 is VERIFIED locally. After this milestone, 8 engineering hours remain plus 11 hours of contingency. Next recommended task: POLICY-001 (3h); QA-002 (5h) can proceed after staging OIDC, approved Meta assets, domain/secrets, monitoring delivery and pilot approval are available.

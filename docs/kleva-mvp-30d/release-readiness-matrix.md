@@ -1,0 +1,27 @@
+# MVP release readiness matrix
+
+## Status interpretation
+
+`VERIFIED` means the named automated or provider evidence passed. `FAILED` means it failed. `BLOCKED` means the check requires unavailable external access or infrastructure. `NOT_TESTED` means no evidence was collected.
+
+Hosted CI run [#47](https://github.com/MOTY12/whatsapp-sales-chatbot/actions/runs/43840871322) passed on reviewed base HEAD `9397fefb7ee5e019d198c9aac3107045fad76d17`. The QA-001 changes in the current working tree have not been pushed, so they do not yet have a hosted CI result.
+
+| Feature / acceptance | Automated test evidence | Local | Hosted CI | Staging | Live provider | Remaining blocker |
+| --- | --- | --- | --- | --- | --- | --- |
+| Merchant auth, onboarding, profile and business switching; session/CSRF safeguards | 63 backend unit tests, 3 HTTP tests, tenant auth PostgreSQL integration cases, onboarding/mobile browser journeys | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Configure staging OIDC, domain and Meta test assets |
+| Tenant isolation for conversations, leads, knowledge, catalog and database roles | PostgreSQL tenant/RLS/grant tests in the 100-case integration suite; browser business-switch tests clear prior tenant data | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Run approved staging role/grant and tenant-isolation checks |
+| Signed WhatsApp intake, deduplication, inbound persistence and lead capture | PostgreSQL webhook tests cover invalid/tampered signatures, concurrent duplicate batches, Redis recovery and tenant routing | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Approved Meta webhook registration and live exchange |
+| FAQ/product publication and retrieval | PostgreSQL tests cover published-only revisions, ranking, exact SKU/price facts, tenant scope, injection-shaped queries, unknown availability and unpublishing; 9 dashboard component tests | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Pilot content and staging retrieval smoke test |
+| Grounded AI response, metering, handoff, outbound intent and delivery reconciliation | `ai-response.spec.ts` uses the fake grounded model and PostgreSQL to verify published product facts, exact price/currency, usage reconciliation, duplicate execution, outbound fixture send, delivery receipt and insufficient-evidence handoff; unit tests cover malformed output and unsupported claims | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Keep AI disabled until pilot approval; verify real model and Meta behavior in staging |
+| Inbox, human takeover, manual reply, tenant switching, errors and mobile navigation | 18 Playwright browser tests passed in 4 consecutive isolated runs; inbox integration tests exercise pagination, takeover/send fencing and manual reply idempotency | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Run authenticated inbox journey against staging OIDC and approved Meta assets |
+| Durable jobs, duplicate delivery, Redis outage recovery and worker shutdown | PostgreSQL/Redis outbox integration tests cover enqueue loss/recovery, duplicate delivery, expired lease, bounded failure and graceful shutdown | VERIFIED | VERIFIED on base HEAD; QA diff NOT_TESTED | BLOCKED | NOT_TESTED | Exercise deployed worker recovery and alert delivery |
+| Migrations, grants and deployment images | 19 migrations applied by `migration:run:locked` on a disposable PostgreSQL database; migration rollback/reapply and role tests passed; API, worker and dashboard images built; Compose, worker entry and Caddy validated | VERIFIED | VERIFIED on base HEAD; QA workflow changes NOT_TESTED | BLOCKED | NOT_TESTED | Run role preflight, backup and rollout procedure on staging |
+| Performance sanity (API latency, inbox/lead pagination, retrieval, queue delay, AI orchestration) | No representative-volume benchmark or timing harness was run. Browser journey duration is not treated as API or production performance evidence. | NOT_TESTED | NOT_TESTED | NOT_TESTED | NOT_TESTED | Add a bounded benchmark with documented fixture volume and environment before pilot sizing |
+| PostgreSQL process restart/reconnection | Transaction rollback and service-restart/idempotency cases exist; a PostgreSQL restart drill was not run in this QA pass | NOT_TESTED | NOT_TESTED | NOT_TESTED | NOT_TESTED | Exercise restart/reconnect on isolated staging or disposable PostgreSQL service |
+
+## Release blockers
+
+- Hosted CI must run against the QA-001 changes before those changes can be marked CI verified.
+- Staging OIDC, public domain/TLS, approved Meta assets, AWS/SSM/S3/KMS, alert delivery and an on-call owner remain unavailable, as recorded in the [OPS runbooks](../ops/pilot-deployment.md).
+- Live Meta delivery, real model-provider behavior, and tenant opt-in remain unverified. AI stays disabled by default.
+- Performance sizing and PostgreSQL restart recovery remain not tested; do not infer production SLOs from fixture-suite timing.

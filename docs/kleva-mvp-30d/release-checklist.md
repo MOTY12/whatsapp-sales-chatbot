@@ -46,4 +46,6 @@
 - [ ] Verify approved template availability and live Meta messaging-window behavior. Free-form messages outside the 24-hour service window currently fail closed.
 - [ ] Exercise operator reconciliation of `UNCERTAIN` sends against Meta provider history in staging; Meta does not guarantee idempotent send requests.
 - [ ] Run the hosted CI browser journey after INBOX-002; local browser fixtures do not prove live Meta delivery.
-- [ ] Latest isolated Node 22 browser rerun is stable; current rerun had 11 passes and 7 failures with Next dev fixture JSON/runtime errors. Earlier isolated suite passed, but hosted CI has not run.
+- [x] QA-001 browser suite passes 18/18 in four consecutive isolated Node 22 runs. Playwright uses a per-run Next `distDir` and safely restores generated type references, avoiding the developer server's shared `.next` manifests/cache; ESLint and TypeScript exclude generated output directories.
+- [ ] Hosted CI must rerun after QA-001 changes; latest hosted run #47 passed on base HEAD `9397fef`, before this local QA diff.
+- [ ] Run representative performance measurements and a PostgreSQL restart/reconnection drill; these are explicitly NOT_TESTED in the [release readiness matrix](release-readiness-matrix.md).

@@ -55,7 +55,7 @@ jobs:
         run: npm test -- --runInBand
       - name: End-to-end tests
         run: npm run test:e2e
-      - name: PostgreSQL and Redis integration tests
+      - name: PostgreSQL and Redis integration and migration validation
         env:
           KLEVA_TEST_PG_HOST: 127.0.0.1
           KLEVA_TEST_PG_PORT: 5432
@@ -92,5 +92,9 @@ jobs:
         run: docker run --rm -e PUBLIC_DOMAIN -v "$GITHUB_WORKSPACE/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Build backend production image
         run: docker build -f Dockerfile -t kleva/backend:ci .
+      - name: Build worker production image
+        run: docker build -f Dockerfile --target runtime -t kleva/worker:ci .
+      - name: Validate worker entry point
+        run: docker run --rm -e NODE_OPTIONS= --entrypoint node kleva/worker:ci --check dist/worker.js
       - name: Build dashboard production image
         run: docker build -f apps/merchant-dashboard/Dockerfile -t kleva/dashboard:ci apps/merchant-dashboard

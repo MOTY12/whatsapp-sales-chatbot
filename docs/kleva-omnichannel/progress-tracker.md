@@ -38,7 +38,7 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | LEARNING-002 | Paid pilot | NOT_STARTED | LEARNING-001, KNOWLEDGE-003 | Review, approve, publish and replay suggestions. |
 | PILOT-001 | Paid pilot | NOT_STARTED | ANALYTICS-001, METER-001, OPS-001 | Prepare paid pilot and manual collection. |
 | OPS-002 | Paid pilot | VERIFIED locally; staging BLOCKED | FOUNDATION-002, FOUNDATION-003, FOUNDATION-004 | Restricted backup role, age/S3 backup scripts, disposable-only restore guard, retention proposal and restore procedure documented. Local PostgreSQL dump/restore verified; encrypted off-host restore and approved tenant deletion policy remain open. |
-| QA-001 | Paid pilot | NOT_STARTED | ANALYTICS-001, OPS-001, OPS-002, LEARNING-002, TOOLS-001, SALES-002, METER-001 | Exercise the full flow and failure matrix in CI. |
+| QA-001 | Paid pilot | VERIFIED locally; hosted CI rerun pending for QA diff | ANALYTICS-001, OPS-001, OPS-002, LEARNING-002, TOOLS-001, SALES-002, METER-001 | 63 unit, 3 HTTP, 100 PostgreSQL/Redis integration, 9 dashboard component, and 18 Playwright tests passed locally; browser suite passed in four consecutive isolated runs. Hosted CI run #47 passes for base `9397fef`; performance sizing and PostgreSQL restart recovery remain not tested. See [release readiness matrix](../kleva-mvp-30d/release-readiness-matrix.md). |
 | QA-002 | Paid pilot | NOT_STARTED | QA-001, POLICY-001, PILOT-001 | Run staged Meta pilot and release gates. |
 | CHANNEL-002 | Expansion | NOT_STARTED | QA-002, CHANNEL-001 | Add authorized website live chat. |
 | CHANNEL-003 | Expansion | NOT_STARTED | QA-002, CHANNEL-001 | Add Telegram Bot API adapter. |
