@@ -16,6 +16,18 @@ export function errorCode(error: unknown): string | undefined {
   if (typeof code === 'string' && /^[A-Z0-9_]{4,40}$/.test(code)) return code;
 }
 
+export function postgresErrorCategory(error: unknown): string | undefined {
+  const code = errorCode(error);
+  if (!code) return;
+  if (code === '42804') return 'datatype_mismatch';
+  if (code.startsWith('22')) return 'data_exception';
+  if (code.startsWith('23')) return 'integrity_constraint_violation';
+  if (code.startsWith('42')) return 'sql_or_schema_error';
+  if (code.startsWith('08')) return 'connection_exception';
+  if (code.startsWith('40')) return 'transaction_rollback';
+  return 'postgres_error';
+}
+
 export class ApplicationLogger extends ConsoleLogger {
   private readonly secrets: string[];
 

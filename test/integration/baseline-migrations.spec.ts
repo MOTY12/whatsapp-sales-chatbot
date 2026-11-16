@@ -275,6 +275,146 @@ describe('PostgreSQL migration baseline', () => {
     ]);
   });
 
+  it('preserves text UUID defaults, data, and legacy indexes across tenant conversion and rollback', async () => {
+    const prefix = await database.migrator(databaseMigrations.slice(0, 4));
+    await applyMigrations(prefix);
+    const [business] = await prefix.query<{ id: string }[]>(`
+      INSERT INTO businesses (name, phone, "whatsappNumber", "phoneNumberId", "accessToken")
+      VALUES ('Default Shop', '2348000000011', '2348000000011', 'default-phone', 'fixture')
+      RETURNING id
+    `);
+    const [owner] = await prefix.query<{ id: string }[]>(`
+      INSERT INTO users (email, password, "firstName", "businessId", roles)
+      VALUES ('default-owner@example.test', 'fixture', 'Owner', '${business.id}', 'owner')
+      RETURNING id
+    `);
+    for (const table of [
+      'notifications',
+      'onboarding_sessions',
+      'pipeline_stages',
+    ]) {
+      await prefix.query(
+        `ALTER TABLE ${table} ALTER COLUMN "businessId" SET DEFAULT '${business.id}'`,
+      );
+    }
+    await prefix.query(
+      `ALTER TABLE onboarding_sessions ALTER COLUMN "ownerId" SET DEFAULT '${owner.id}'`,
+    );
+    const reproducer = prefix.createQueryRunner();
+    await reproducer.connect();
+    await reproducer.startTransaction();
+    await expect(
+      reproducer.query(
+        'ALTER TABLE notifications ALTER COLUMN "businessId" TYPE uuid USING "businessId"::uuid',
+      ),
+    ).rejects.toMatchObject({ code: '42804' });
+    await reproducer.rollbackTransaction();
+    await reproducer.release();
+    await prefix.query(
+      `INSERT INTO notifications ("businessId", "recipientPhone", type, title, body)
+       VALUES (DEFAULT, '2348000000011', 'test', 'fixture', 'fixture')`,
+    );
+    await prefix.query(
+      `INSERT INTO pipeline_stages ("businessId", name) VALUES (DEFAULT, 'Fixture')`,
+    );
+    await prefix.query(
+      `INSERT INTO onboarding_sessions ("whatsappId", "businessId", "ownerId")
+       VALUES ('2348000000011', DEFAULT, DEFAULT)`,
+    );
+    const originalIndexes = await prefix.query<{ indexname: string }[]>(`
+      SELECT indexname FROM pg_indexes WHERE schemaname='public'
+        AND tablename IN ('notifications','onboarding_sessions','pipeline_stages')
+      ORDER BY indexname
+    `);
+    await prefix.destroy();
+
+    const source = await database.migrator(databaseMigrations.slice(0, 5));
+    expect((await applyMigrations(source)).map(({ name }) => name)).toEqual([
+      databaseMigrations[4].name,
+    ]);
+    const converted = await source.query<
+      {
+        table_name: string;
+        column_name: string;
+        data_type: string;
+        column_default: string | null;
+      }[]
+    >(`
+      SELECT table_name, column_name, data_type, column_default
+      FROM information_schema.columns
+      WHERE table_schema='public' AND
+        ((table_name IN ('notifications','pipeline_stages') AND column_name='businessId') OR
+         (table_name='onboarding_sessions' AND column_name IN ('businessId','ownerId')))
+      ORDER BY table_name,column_name
+    `);
+    expect(converted).toHaveLength(4);
+    expect(converted.every(({ data_type }) => data_type === 'uuid')).toBe(true);
+    expect(
+      converted.every(({ column_default }) => column_default?.includes('uuid')),
+    ).toBe(true);
+    const convertedIndexes = await source.query<{ indexname: string }[]>(`
+      SELECT indexname FROM pg_indexes WHERE schemaname='public'
+        AND tablename IN ('notifications','onboarding_sessions','pipeline_stages')
+      ORDER BY indexname
+    `);
+    expect(convertedIndexes.map(({ indexname }) => indexname)).toEqual(
+      expect.arrayContaining(originalIndexes.map(({ indexname }) => indexname)),
+    );
+    expect(
+      await source.query<{ table_name: string; count: number }[]>(`
+        SELECT 'notifications' AS table_name, count(*)::int AS count FROM notifications
+        UNION ALL SELECT 'pipeline_stages', count(*)::int FROM pipeline_stages
+        UNION ALL SELECT 'onboarding_sessions', count(*)::int FROM onboarding_sessions
+        ORDER BY table_name
+      `),
+    ).toEqual([
+      { table_name: 'notifications', count: 1 },
+      { table_name: 'onboarding_sessions', count: 1 },
+      { table_name: 'pipeline_stages', count: 1 },
+    ]);
+    expect(
+      await source.query<{ business_id: string; owner_id: string }[]>(`
+        SELECT "businessId"::text AS business_id, "ownerId"::text AS owner_id
+        FROM onboarding_sessions
+      `),
+    ).toEqual([{ business_id: business.id, owner_id: owner.id }]);
+
+    await source.undoLastMigration();
+    const restored = await source.query<
+      { data_type: string; column_default: string | null }[]
+    >(`
+      SELECT data_type,column_default FROM information_schema.columns
+      WHERE table_schema='public' AND
+        ((table_name IN ('notifications','pipeline_stages') AND column_name='businessId') OR
+         (table_name='onboarding_sessions' AND column_name IN ('businessId','ownerId')))
+      ORDER BY table_name,column_name
+    `);
+    expect(restored).toHaveLength(4);
+    expect(
+      restored.every(({ data_type }) => data_type === 'character varying'),
+    ).toBe(true);
+    expect(
+      restored.every(({ column_default }) => column_default !== null),
+    ).toBe(true);
+    expect(
+      await source.query<{ business_id: string; owner_id: string }[]>(`
+        SELECT "businessId" AS business_id, "ownerId" AS owner_id FROM onboarding_sessions
+      `),
+    ).toEqual([{ business_id: business.id, owner_id: owner.id }]);
+    expect(
+      await source.query<{ table_name: string; count: number }[]>(`
+        SELECT 'notifications' AS table_name, count(*)::int AS count FROM notifications
+        UNION ALL SELECT 'pipeline_stages', count(*)::int FROM pipeline_stages
+        UNION ALL SELECT 'onboarding_sessions', count(*)::int FROM onboarding_sessions
+        ORDER BY table_name
+      `),
+    ).toEqual([
+      { table_name: 'notifications', count: 1 },
+      { table_name: 'onboarding_sessions', count: 1 },
+      { table_name: 'pipeline_stages', count: 1 },
+    ]);
+  });
+
   it('identifies duplicate legacy provider IDs that prevent an upgrade and rolls back', async () => {
     const {
       source: initial,

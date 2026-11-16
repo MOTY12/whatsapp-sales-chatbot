@@ -1,4 +1,5 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
+import { errorCode, postgresErrorCategory } from '../../config/logging';
 import {
   inspectTenantIntegrity,
   newBusinessLinks,
@@ -18,10 +19,65 @@ function linkName(child: string, column: string) {
   return `${child}_${column}_tenant`;
 }
 
+function operationName(sql: string): string {
+  const statement = sql.replace(/\s+/g, ' ').trim();
+  const typeChange =
+    /^ALTER TABLE (\w+) ALTER COLUMN "?(\w+)"? TYPE (\w+)/i.exec(statement);
+  if (typeChange)
+    return `alter_column_type.${typeChange[1]}.${typeChange[2]}.${typeChange[3]}`;
+  const constraint = /^ALTER TABLE (\w+) ADD CONSTRAINT "?(\w+)"?/i.exec(
+    statement,
+  );
+  if (constraint) return `add_constraint.${constraint[1]}.${constraint[2]}`;
+  const table = /^(CREATE TABLE|DROP TABLE) "?(\w+)"?/i.exec(statement);
+  if (table) return `${table[1].toLowerCase().replace(' ', '_')}.${table[2]}`;
+  const index = /^(CREATE INDEX|DROP INDEX) "?(\w+)"?/i.exec(statement);
+  if (index) return `${index[1].toLowerCase().replace(' ', '_')}.${index[2]}`;
+  if (/^SELECT /i.test(statement)) return 'migration_preflight_or_guard';
+  const verb = /^(\w+)/.exec(statement)?.[1]?.toLowerCase();
+  return verb ?? 'unknown';
+}
+
+async function changeLegacyColumnType(
+  queryRunner: QueryRunner,
+  table: string,
+  column: string,
+  targetType: 'uuid' | 'varchar',
+) {
+  const [result] = (await queryRunner.query(
+    `SELECT pg_get_expr(d.adbin, d.adrelid) AS default_expression
+       FROM pg_attribute a
+       LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+      WHERE a.attrelid = $1::regclass AND a.attname = $2
+        AND a.attnum > 0 AND NOT a.attisdropped`,
+    [table, column],
+  )) as { default_expression: string | null }[];
+  const defaultExpression = result?.default_expression;
+  if (defaultExpression) {
+    await queryRunner.query(
+      `ALTER TABLE ${table} ALTER COLUMN "${column}" DROP DEFAULT`,
+    );
+  }
+  await queryRunner.query(
+    `ALTER TABLE ${table} ALTER COLUMN "${column}" TYPE ${targetType} USING "${column}"::${targetType}`,
+  );
+  if (defaultExpression) {
+    await queryRunner.query(
+      `ALTER TABLE ${table} ALTER COLUMN "${column}" SET DEFAULT (${defaultExpression})::${targetType}`,
+    );
+  }
+}
+
 export class AddTenantIntegrity1760000000003 implements MigrationInterface {
   name = 'AddTenantIntegrity1760000000003';
 
   async up(queryRunner: QueryRunner): Promise<void> {
+    await this.withSafeOperationLogging(queryRunner, () =>
+      this.apply(queryRunner),
+    );
+  }
+
+  private async apply(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query("SET LOCAL lock_timeout = '5s'");
     // Lock writers before checking legacy data so nothing can slip between the
     // preflight and the constraints. Run inside the migration transaction.
@@ -33,12 +89,13 @@ export class AddTenantIntegrity1760000000003 implements MigrationInterface {
       throw new TenantIntegrityError(findings);
 
     for (const table of textBusinessIds) {
-      await queryRunner.query(
-        `ALTER TABLE ${table} ALTER COLUMN "businessId" TYPE uuid USING "businessId"::uuid`,
-      );
+      await changeLegacyColumnType(queryRunner, table, 'businessId', 'uuid');
     }
-    await queryRunner.query(
-      'ALTER TABLE onboarding_sessions ALTER COLUMN "ownerId" TYPE uuid USING "ownerId"::uuid',
+    await changeLegacyColumnType(
+      queryRunner,
+      'onboarding_sessions',
+      'ownerId',
+      'uuid',
     );
 
     for (const table of parentTables) {
@@ -147,6 +204,12 @@ export class AddTenantIntegrity1760000000003 implements MigrationInterface {
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
+    await this.withSafeOperationLogging(queryRunner, () =>
+      this.revert(queryRunner),
+    );
+  }
+
+  private async revert(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       'LOCK TABLE accounts, business_members IN SHARE ROW EXCLUSIVE MODE',
     );
@@ -188,12 +251,65 @@ export class AddTenantIntegrity1760000000003 implements MigrationInterface {
       );
     }
     for (const table of textBusinessIds) {
-      await queryRunner.query(
-        `ALTER TABLE ${table} ALTER COLUMN "businessId" TYPE varchar USING "businessId"::varchar`,
-      );
+      await changeLegacyColumnType(queryRunner, table, 'businessId', 'varchar');
     }
-    await queryRunner.query(
-      'ALTER TABLE onboarding_sessions ALTER COLUMN "ownerId" TYPE varchar USING "ownerId"::varchar',
+    await changeLegacyColumnType(
+      queryRunner,
+      'onboarding_sessions',
+      'ownerId',
+      'varchar',
     );
+  }
+
+  private async withSafeOperationLogging<T>(
+    queryRunner: QueryRunner,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const originalQuery = queryRunner.query.bind(queryRunner) as (
+      sql: string,
+      parameters?: unknown[],
+      useStructuredResult?: true,
+    ) => Promise<unknown>;
+    const previousDescriptor = Object.getOwnPropertyDescriptor(
+      queryRunner,
+      'query',
+    );
+    Object.defineProperty(queryRunner, 'query', {
+      configurable: true,
+      value: async (
+        sql: string,
+        parameters?: unknown[],
+        useStructuredResult?: boolean,
+      ) => {
+        const operation = operationName(sql);
+        try {
+          return useStructuredResult === true
+            ? await originalQuery(sql, parameters, true)
+            : await originalQuery(sql, parameters);
+        } catch (error) {
+          const code = errorCode(error);
+          const category = postgresErrorCategory(error);
+          console.error(
+            JSON.stringify({
+              event: 'migration.operation_failed',
+              migration: this.name,
+              operation,
+              ...(code ? { code } : {}),
+              ...(category ? { category } : {}),
+            }),
+          );
+          throw error;
+        }
+      },
+    });
+    try {
+      return await run();
+    } finally {
+      if (previousDescriptor) {
+        Object.defineProperty(queryRunner, 'query', previousDescriptor);
+      } else {
+        delete (queryRunner as { query?: QueryRunner['query'] }).query;
+      }
+    }
   }
 }
