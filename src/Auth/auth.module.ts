@@ -22,6 +22,8 @@ import { ProductController } from '../catalog/product.controller';
 import { ProductService } from '../catalog/product.service';
 import { MerchantLeadsController } from './merchant-leads.controller';
 import { MerchantLeadsService } from './merchant-leads.service';
+import { MerchantPilotController } from './merchant-pilot.controller';
+import { MerchantPilotService } from './merchant-pilot.service';
 
 @Module({
   imports: [CredentialCipherModule, OutboundModule],
@@ -33,6 +35,7 @@ import { MerchantLeadsService } from './merchant-leads.service';
     KnowledgeController,
     ProductController,
     MerchantLeadsController,
+    MerchantPilotController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -46,6 +49,7 @@ import { MerchantLeadsService } from './merchant-leads.service';
     KnowledgeFaqService,
     ProductService,
     MerchantLeadsService,
+    MerchantPilotService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

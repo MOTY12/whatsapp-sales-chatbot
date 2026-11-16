@@ -231,7 +231,15 @@ export async function createIntegrationDatabase() {
         const [aiRunTable] = await migrator.query<{ exists: boolean }[]>(
           "SELECT to_regclass('public.ai_response_runs') IS NOT NULL AS exists",
         );
+        const [pilotTable] = await migrator.query<{ exists: boolean }[]>(
+          "SELECT to_regclass('public.business_pilot_enrollments') IS NOT NULL AS exists",
+        );
         if (receiptTable.exists) {
+          if (pilotTable.exists) {
+            await migrator.query(
+              `GRANT SELECT ON public.business_pilot_enrollments TO "${runtimeRole}"`,
+            );
+          }
           if (aiRunTable.exists) {
             await migrator.query(
               `GRANT SELECT, INSERT, UPDATE, DELETE ON public.ai_response_runs TO "${runtimeRole}"`,

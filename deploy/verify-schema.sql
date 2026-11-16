@@ -16,7 +16,7 @@ FROM unnest(ARRAY[
   'business_usage_limits','usage_reservations','conversation_control_audit',
   'knowledge_faqs','knowledge_faq_revisions','knowledge_faq_events',
   'merchant_products','merchant_product_revisions','merchant_product_events',
-  'merchant_leads','merchant_lead_events','ai_response_runs'
+  'merchant_leads','merchant_lead_events','ai_response_runs','business_pilot_enrollments'
 ]) AS required(table_name)
 LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || required.table_name)
 ORDER BY required.table_name;

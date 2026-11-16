@@ -30,11 +30,11 @@
 ## Staging and live release
 
 - [ ] Configure real OIDC issuer and callback, TLS, cookie policy, session role grants and same-origin dashboard routing. Run browser login, logout and expiry.
-- [ ] Confirm Meta permissions, approved assets, consent and supported templates. Record an end-to-end inbound and outbound staging exchange.
+- [ ] Confirm Meta permissions, approved assets, merchant pilot enrollment/operator approval, customer notice and opt-out handling, and supported templates. Record an end-to-end inbound and outbound staging exchange. See [POLICY-001](policy-001-pilot-readiness.md).
 - [ ] Apply migrations to a backup or staging copy, validate role grants, exercise restore and record rollback conditions.
 - [ ] Verify redacted logs, ready/live endpoints, worker backlog monitoring, error alerts and incident ownership.
-- [ ] Verify published privacy and support contact, retention and deletion procedures, and pilot opt-in.
-- [ ] Enable the agent only for approved pilot tenants. Keep a tested disable switch and an operator-run inbox during the pilot.
+- [ ] Verify counsel-approved privacy/processor terms and customer notice, merchant support contact, retention/deletion and incident procedures, customer opt-in/opt-out controls, and pilot enrollment evidence.
+- [ ] Keep `AI_RESPONSES_ENABLED=false` until Meta/provider, legal/privacy, staging and merchant gates are evidenced. Then enable only the approved runtime and tenant enrollments; test merchant revocation and the global disable switch. Keep an operator-run inbox during the pilot.
 
 - [x] Local signed intake rolls back on PostgreSQL failure and recovers queued handoff after Redis outage.
 - [x] Worker creates tenant-scoped customer, conversation and inbound message; verified owner commands and legacy onboarding create durable pending response intents without sending in a transaction.

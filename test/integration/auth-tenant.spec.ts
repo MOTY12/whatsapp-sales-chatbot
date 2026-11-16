@@ -197,6 +197,33 @@ describe('merchant OIDC and tenant isolation', () => {
     await request(server).get('/auth/businesses').expect(401);
   });
 
+  it('fails closed when the identity role cannot create a session', async () => {
+    const { authorization, binding } = await start();
+    const subject = 'session-permission-fixture';
+    const code = idp.authorize(authorization, subject);
+    const state = authorization.searchParams.get('state');
+    const identityRole = env.IDENTITY_DATABASE_USER!;
+    const quotedIdentityRole = `"${identityRole.replaceAll('"', '""')}"`;
+
+    await admin.query(
+      `REVOKE EXECUTE ON FUNCTION public.kleva_issue_session(text,text,text,text,text) FROM ${quotedIdentityRole}`,
+    );
+    try {
+      await request(server)
+        .get('/auth/callback')
+        .set('Cookie', binding)
+        .query({ code, state })
+        .expect(503);
+      await expect(
+        admin.getRepository(Account).countBy({ subject }),
+      ).resolves.toBe(0);
+    } finally {
+      await admin.query(
+        `GRANT EXECUTE ON FUNCTION public.kleva_issue_session(text,text,text,text,text) TO ${quotedIdentityRole}`,
+      );
+    }
+  });
+
   it('binds login state to the browser and consumes a callback once', async () => {
     const { authorization, binding } = await start();
     const state = authorization.searchParams.get('state');

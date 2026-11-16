@@ -1,0 +1,132 @@
+# POLICY-001: WhatsApp pilot eligibility and consent
+
+**Review date:** 2026-11-16. Recheck Meta terms, product availability, rate cards and Nigerian legal requirements immediately before each pilot launch. This is an engineering readiness record, not legal advice or approved merchant/customer legal wording.
+
+## Decision
+
+**Pilot activation is blocked pending external evidence.** The repository implements the WhatsApp Cloud API path, signed webhook intake, durable inbound persistence, tenant-bound connections and credentials, a 24-hour free-form send guard, grounded AI, usage limits and human conversation takeover. Those code paths do not prove that the Kleva Meta app, a merchant asset, customer notices, consents, processor contracts or live operational controls have been approved.
+
+Keep `AI_RESPONSES_ENABLED=false` until the release owner has completed the checklist below. Even when the global switch is enabled, a business now also needs an operator-approved enrollment for its currently verified WhatsApp connection. Merchant revocation is checked before generation and again before an AI outbound is sent. A provider request already in flight cannot be recalled; the global kill switch remains the broad emergency stop.
+
+## Current implementation review
+
+| Area | Repository evidence | Status / gap |
+| --- | --- | --- |
+| Connection and onboarding | Supervised Meta Embedded Signup and connection verification paths in `src/meta-embedded-signup`, `src/channels/secure-whatsapp` and merchant WhatsApp APIs. Credentials are encrypted and associated with tenant-bound channel connection IDs. | Code exists. Meta app classification, partner/Tech Provider eligibility, production permissions and each merchant's WABA/number approval are external checks. |
+| Webhooks | Exact-byte signature verification, durable receipts, deduplication and tenant/asset routing. | Live HTTPS callback, app dashboard subscription to WhatsApp Business Account fields, production delivery, and app permission acceptance need evidence. |
+| Outbound and templates | Durable outbound intent, status reconciliation and tenant usage checks exist. Free-form messages are rejected outside the rolling 24-hour customer-service window. | There is no approved-template sending workflow in the product. Do not initiate or re-engage outside the window; add approved template support in its own scope before that use. |
+| Consent and opt-out | Inbound user message and conversation records are persisted. No per-recipient opt-in evidence or opt-out suppression ledger/flow was found. | A merchant must demonstrate a lawful, clear notice/permission method and a working opt-out procedure before any proactive messaging. The application must not be treated as enforcing opt-outs today. |
+| AI and human escalation | `AI_RESPONSES_ENABLED` defaults to false. Existing per-conversation AUTO/HUMAN controls and inbox takeover are available. | New per-business pilot enrollment is owner-authenticated and requires an active verified connection, versioned acknowledgments, and distinct operator approval. The merchant owns prompt human response and handoff staffing. |
+| Customer data | The system stores WhatsApp identifiers, message/conversation history, leads, knowledge retrieval evidence, AI response records and safe operational classifications. AI requests include customer message text and retrieved merchant content. | Data roles, customer notice wording, provider terms/region/retention, deletion SLAs and any cross-border transfer basis require legal/provider confirmation. |
+| Retention/deletion | [Retention runbook](../ops/data-retention.md) documents the present state. No scheduled destructive purge is implemented for core customer records. | Do not promise a deletion/retention period until policy, scoped deletion, derived-data handling, holds and backup expiry are approved and operational. |
+
+## Meta requirements to evidence before launch
+
+Policy sources below were checked on **2026-11-16**. Meta may change product eligibility and terms; record the actual App Dashboard/provider evidence for the selected app and each business asset.
+
+| Requirement | Current official guidance and pilot evidence |
+| --- | --- |
+| Business portfolio, WABA and asset | Each merchant must control or expressly authorize the business portfolio/WABA and phone-number asset. Confirm WABA and phone-number status in WhatsApp Manager, correct legal business identity, asset ownership/partner sharing and messaging eligibility. Meta's current [WhatsApp Business Platform overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview) links the current onboarding and asset requirements. A developer app's business verification and any limit-specific verification are not established by this repository. |
+| Kleva app permissions and access | Determine whether Kleva operates only its own business assets or on behalf of independent merchants. For a Tech Provider/solution provider onboarding clients, verify the current Advanced Access/App Review requirements for `whatsapp_business_messaging` and `whatsapp_business_management`, business verification, data-handling questions/Data Use Checkup, and reviewer access. Capture approved permissions and production app mode from Meta App Dashboard. Meta's [app review guidance](https://developers.facebook.com/docs/resp-plat-initiatives/app-review/introduction) says review is required for permissions/features used by people outside the app/business roles; its [WhatsApp provider sample](https://developers.facebook.com/docs/whatsapp/solution-providers/app-review/sample-submission/) is explicitly marked deprecated, so use the dashboard's current flow. |
+| Phone registration and verification | Complete the merchant's chosen onboarding flow, verify/control the phone number, register the phone-number ID, configure required two-step verification PIN and ensure the asset is active and mapped to exactly one Kleva business. Capture WABA ID, phone-number ID, display number, status and verification evidence without putting access tokens in the evidence pack. |
+| Embedded Signup | The code contains a supervised Embedded Signup path, but implementation does not prove Kleva is eligible to expose it to customers. Confirm the current Tech Provider/solution-provider onboarding steps, app review, business verification, configuration ID, OAuth redirect/domain, permissions, data deletion callback/requirements and final asset-sharing exchange in Meta's current [onboarding docs](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview). If those approvals are pending, keep enrollment supervised and do not represent Kleva as an approved public provider. |
+| Webhook subscription | Configure a public HTTPS endpoint with valid TLS; verify the callback handshake and subscribe the app/WABA to the fields needed for inbound messages and delivery/status events. Confirm event delivery in production mode using a test asset. Meta says WhatsApp webhooks are configured through the App Dashboard; see [Meta Webhooks](https://developers.facebook.com/docs/graph-api/webhooks/) and the WhatsApp-specific guides linked from the [platform overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview). |
+| Templates and service window | The [Business Messaging Policy](https://whatsappbusiness.com/policy/) (last updated 2026-09-23 when checked) permits non-template replies for 24 hours after the latest user message; after that, only an approved template may be sent. Templates are reviewed, category/purpose-bound and can be paused/rejected. No template sender is implemented here; keep outside-window messages blocked and do not claim templates are supported. |
+| Customer permission and opt-out | The same [policy](https://whatsappbusiness.com/policy/) requires the business to have the user's number/username and opt-in permission for subsequent communications, and to respect opt-outs made on or off WhatsApp. Merchant must identify the business and purpose in its notice, preserve evidence, and suppress opted-out recipients. Obtain Nigerian counsel review of the legal basis and the notice/permission method. An inbound inquiry does not grant indefinite marketing permission. |
+| Automation and escalation | The [Business Messaging Policy](https://whatsappbusiness.com/policy/) allows automation within the service window only with prompt, clear, direct escalation paths. The merchant must provide a reachable human path (Kleva inbox plus staffed escalation contact/channel), hours and response owner; monitor handoffs and ensure AI can be paused. |
+| Limits and quality | Check the live WABA/phone-number messaging limit and quality status in WhatsApp Manager before launch and daily during the pilot. Limits apply to unique recipients reached outside service windows and can change with quality/eligibility. Monitor blocks, reports, template quality and delivery errors; stop campaigns or automation when quality deteriorates. Do not encode a static tier as a launch guarantee. See [WABA reference](https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/) and policy enforcement in the [Business Messaging Policy](https://whatsappbusiness.com/policy/). |
+| Pricing | As of the [current pricing docs](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/) checked 2026-11-16, charges depend on delivered message category and recipient market; customer-initiated service replies in the active 24-hour window are currently shown as free, while delivered templates and other categories have applicable market rates. Confirm Nigeria (+234) rate, currency, taxes, account billing/payment method, free-tier eligibility and the merchant's payer in the live rate card before budgeting. Kleva's AI-provider, hosting, storage and support costs are separate. Never quote a fixed NGN rate from this document. |
+| AI-specific policy | Meta maintains separate [AI Providers terms/pricing guidance](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/ai-providers/). The policy treatment depends on what is being offered and current product terms. Kleva is a merchant-configured sales/support assistant, but engineering must not self-classify it as outside Meta's AI-provider restrictions. Obtain written Meta/partner confirmation that the proposed third-party AI-backed business use is permitted for the selected Nigerian accounts, app and flows before activation. |
+| Merchant profile and support | The [Business Messaging Policy](https://whatsappbusiness.com/policy/) requires accurate business identity and customer support contact information (email, website and/or telephone). Verify every merchant's WhatsApp business profile and accessible privacy/support notice, and ensure the merchant is authorized to speak for that business. |
+
+## Controlled merchant enrollment and activation
+
+Activation is two-party and fail-closed:
+
+1. **Kleva preflight:** A named release owner records completed Meta app/provider approval, approved permissions, production mode, webhook subscription, live test, staging security checks, provider contract/region review, customer notice/opt-out procedure, retention/deletion plan, support contacts, incident owner and human coverage. If a gate is missing, do not approve.
+2. **Merchant identity and connection:** Verify the legal/trading business name and authorized owner using the existing authenticated tenant membership. Confirm its active verified WhatsApp connection, WABA/phone-number IDs and support contact. Avoid collecting identity documents unless counsel and a secure need justify them.
+3. **Merchant opt-in:** An owner calls `POST /merchant/businesses/:businessId/pilot/enroll` with the verified `connectionId`, `consentVersion: "pilot-merchant-v1"`, `aiProviderDisclosureAccepted: true`, and `humanEscalationAccepted: true`, under the existing session and CSRF protections. The database records the owner account, exact connection, version and timestamps as `PENDING_REVIEW`. The API rejects inactive/unverified assets and staff/editor/agent accounts. The versioned acknowledgment is evidence of an operational authorization; it is not a substitute for a signed merchant agreement or reviewed privacy terms.
+4. **Operator approval:** A separate authorized release operator reviews the evidence packet and activates only the pending enrollment ID for the matching active business and verified connection. Use an individually attributable privileged DB session; record an internal ticket/evidence reference and operator identity in `activated_by` / `activation_reference`. The operator procedure is deliberately separate from the merchant API. Never activate by changing the global AI variable alone.
+5. **AI activation:** Keep `AI_RESPONSES_ENABLED=false` for all environments except the approved pilot runtime. For an approved pilot, set it true only after all per-business records are ACTIVE and observe the global kill switch change/restart. AI generation and outbound dispatch both require the active enrollment for the currently selected verified connection, in addition to business/connection state and conversation AUTO control.
+6. **Merchant stop/revoke:** The owner can call `POST /merchant/businesses/:businessId/pilot/:enrollmentId/revoke` with CSRF proof. This permanently records revocation and blocks later AI work once the worker observes it; re-enrollment creates new evidence and requires operator review again. A model-provider request or Meta request already in flight may complete; generated replies are checked again before send. An operator can revoke access using the controlled incident procedure. Keep human inbox/manual operations available if permitted and staffed. Use the global switch and provider-side disconnect/revocation for emergency containment.
+7. **Observe and close:** Review inbound/outbound delivery, AI handoffs, opt-outs, quality, complaints, usage/cost and access logs daily. Stop immediately on unresolved consent, privacy, safety, account-quality, provider-terms or incident concerns. Preserve evidence and follow the incident-response process.
+
+The version key `pilot-merchant-v1` refers to the following **operational acknowledgment copy**, which must be shown to the authorized owner before the API call and reviewed by counsel before use. It is not legal notice/terms and must not be published as approved legal wording:
+
+> I authorize Kleva to run the WhatsApp sales/support pilot for **[business name]** using **[masked verified WhatsApp number / connection]**. I understand that customer messages and relevant business information may be processed by Kleva and its third-party AI provider to prepare automated responses. I will provide and maintain appropriate customer notices and permissions, honor opt-outs, and ensure a named human can respond to escalations. I can disable the pilot by revoking this enrollment, and Kleva may suspend it for safety, policy, security or service reasons.
+
+The current endpoint records the authenticated owner, selected connection, acknowledgment flags, version and timestamps. It does not prove a dashboard rendered this copy; no merchant consent UI exists in this scope. Before real enrollment, use an approved auditable presentation channel and attach the displayed version and evidence reference to the operator's QA packet.
+
+### Operator activation SQL
+
+Run from the approved operator database session only after backup/approval evidence is recorded. Substitute a UUID enrollment ID and a non-secret internal ticket reference. The guarded update returns zero rows unless the enrollment is pending and the same business still has an active, verified WhatsApp connection. Never put customer content, access tokens or credentials in the reference.
+
+```sql
+BEGIN;
+UPDATE public.business_pilot_enrollments p
+SET status = 'ACTIVE', activated_at = now(), activated_by = 'operator:<named-id>',
+    activation_reference = 'evidence:<ticket-or-record>', updated_at = now()
+WHERE p.id = '<enrollment-uuid>'::uuid
+  AND p.status = 'PENDING_REVIEW'
+  AND EXISTS (
+    SELECT 1 FROM public.businesses b
+    JOIN public.channel_connections c ON c."businessId" = b.id
+    WHERE b.id = p.business_id AND b.status = 'active'
+      AND c.id = p.connection_id AND c.provider = 'whatsapp'
+      AND c.status = 'active' AND c."verifiedAt" IS NOT NULL
+  )
+RETURNING id, business_id, connection_id, status, activated_at, activated_by, activation_reference;
+-- Commit only if exactly one row was returned and its IDs match the reviewed packet.
+COMMIT;
+```
+
+If zero rows return, roll back and re-check approval, enrollment state and connection. Do not use a broad `UPDATE` or manually change TypeORM migration history.
+
+For operator revocation, use an attributable privileged session and a change/incident reference, then verify the row is `REVOKED` and no subsequent AI sends are accepted:
+
+```sql
+BEGIN;
+UPDATE public.business_pilot_enrollments
+SET status = 'REVOKED', revoked_at = now(), revoked_by_operator = 'operator:<named-id>',
+    revocation_reference = 'incident-or-change:<ticket>', updated_at = now()
+WHERE id = '<enrollment-uuid>'::uuid AND status IN ('PENDING_REVIEW','ACTIVE')
+RETURNING id, business_id, connection_id, status, revoked_at;
+-- Commit only after the returned enrollment is the intended merchant record.
+COMMIT;
+```
+
+This operator action preserves the merchant consent and approval history. For a global emergency, disable `AI_RESPONSES_ENABLED` and follow [incident response](../ops/incident-response.md); tenant revocation cannot recall an already in-flight Meta request.
+
+## Nigerian privacy and security readiness checklist
+
+The Nigeria Data Protection Act 2023, its GAID and related rules need counsel review for Kleva's exact service structure. The statute defines distinct controller and processor obligations; Kleva may act as a processor for merchant-directed conversation handling, while merchants decide customer-facing purposes. Product analytics, model improvement, independent use or joint determination may change the analysis. Do not assert roles in a contract without Nigerian counsel.
+
+- [ ] Map each data flow and purpose: WhatsApp number/identifier, message text/media references, customer and conversation history, lead/profile fields, AI prompt/retrieval evidence/output, usage events, security/audit metadata and backups.
+- [ ] Confirm lawful basis, required notices, data subject rights process, controller/processor or joint-controller allocation, processor agreement, subprocessor list, support contact and security obligations with counsel.
+- [ ] Tell customers that the named merchant uses Kleva to process customer messages and may use a third-party AI provider to draft/respond; specify purposes, human escalation, relevant recipients/transfers, retention and how to contact the merchant or object/opt out. Counsel must approve published wording before use.
+- [ ] Review AI provider terms, data region, retention/training controls, subprocessors, deletion, security incident notice and cross-border transfer safeguards. Keep provider credentials server-side and avoid logging prompt/message content.
+- [ ] Assess NDPC registration/major-importance status, DPO appointment and DPIA requirements for the relevant organization and processing, with Nigerian counsel/qualified privacy lead; record the decision and rationale.
+- [ ] Set a merchant-agreed retention schedule only after scoped deletion covers messages, webhook receipts, leads, AI runs, usage/audit evidence, derived artifacts, logs and backups. Until then do not claim automatic deletion or a fixed period.
+- [ ] Define authenticated access, least privilege, access reviews, export/correction/erasure handling, tenant isolation evidence, secure support access, legal holds and access audit. Existing tenant isolation does not itself complete data-subject requests.
+- [ ] Name the incident commander, merchant contact and privacy lead. Exercise containment, evidence preservation, processor-to-controller escalation and applicable NDPA/NDPC reporting timelines. Under the Act, a controller notifies NDPC within 72 hours of awareness where a breach is likely to risk individuals' rights/freedoms; communicate to affected people immediately where high risk is likely, subject to statutory details and counsel.
+- [ ] Confirm Nigeria transfer safeguards and any notification/approval requirement for transfers outside Nigeria; hosting or AI provider geography must be evidenced, not inferred from a vendor's brand.
+- [ ] Train pilot staff on confidentiality, opt-out handling, human handoff, wrong-answer reports, security incidents and deletion requests.
+
+Official Nigerian references checked 2026-11-16: [Nigeria Data Protection Act 2023 (NDPC PDF)](https://ndpc.gov.ng/wp-content/uploads/2024/03/Nigeria_Data_Protection_Act_2023.pdf) and [NDPC GAID 2025 (PDF)](https://ndpc.gov.ng/wp-content/uploads/2025/03/NDP-ACT-GAID-2025-MARCH-20TH.pdf). Applicability and legal interpretation require qualified Nigerian advice.
+
+## QA-002 evidence packet
+
+Store redacted evidence in the restricted release record, with owner, date and environment. Exclude bearer tokens, PINs, customer text, raw phone numbers and identity documents.
+
+- Meta app ID/environment, Business Verification/Advanced Access decisions, granted scopes, App Review and data-handling status.
+- WABA ID and phone-number ID (mask in general QA reports), asset owner/sharing, active verification/quality/limit state, approved template names/categories/status if later implemented.
+- Webhook configuration screenshot/export, subscribed fields, callback TLS test, signed live inbound event, durable processing receipt and outbound/status reconciliation using a controlled tester.
+- Merchant legal/trading identity verification record, named owner account, support contact, active connection, consent version/timestamp, AI disclosure and escalation acknowledgment, operator approval identity/reference, and revocation result.
+- Counsel-approved processor/merchant terms, customer notice/permission and opt-out evidence; provider/subprocessor, hosting/AI regions, retention/deletion and transfer decisions; incident contact and tabletop result.
+- QA-002 end-to-end timeline, costs/rate card, quality/complaint/opt-out review, monitoring, human coverage, rollback/kill-switch result and final go/no-go signatures.
+
+## Sources
+
+- WhatsApp [Business Messaging Policy](https://whatsappbusiness.com/policy/) (last updated 2026-09-23 as shown on page; checked 2026-11-16).
+- Meta [WhatsApp Business Platform overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview), [App Review introduction](https://developers.facebook.com/docs/resp-plat-initiatives/app-review/introduction), [WhatsApp permissions/provider review guidance](https://developers.facebook.com/docs/whatsapp/solution-providers/app-review/sample-submission/), [pricing](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/) and [AI Provider pricing/terms](https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/ai-providers/) (checked 2026-11-16; dashboard approval is the source of actual app/account status).
+- Nigeria Data Protection Commission: [NDP Act 2023](https://ndpc.gov.ng/wp-content/uploads/2024/03/Nigeria_Data_Protection_Act_2023.pdf) and [GAID 2025](https://ndpc.gov.ng/wp-content/uploads/2025/03/NDP-ACT-GAID-2025-MARCH-20TH.pdf) (checked 2026-11-16).

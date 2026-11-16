@@ -64,6 +64,11 @@ export const leadFunctions = [
   'kleva_lead_detail(uuid)',
   'kleva_lead_change_status(uuid,text,bigint)',
 ];
+export const pilotFunctions = [
+  'kleva_pilot_status()',
+  'kleva_pilot_enroll(uuid,text,boolean,boolean)',
+  'kleva_pilot_revoke(uuid)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -109,6 +114,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${leadFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${pilotFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

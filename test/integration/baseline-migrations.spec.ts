@@ -7,6 +7,7 @@ const expectedTables = [
   'assistant_sessions',
   'audit_logs',
   'business_members',
+  'business_pilot_enrollments',
   'business_usage_limits',
   'businesses',
   'channel_connections',

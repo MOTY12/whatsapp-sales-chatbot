@@ -58,6 +58,16 @@ describe('grounded WhatsApp AI response processing', () => {
       `UPDATE public.businesses SET status = 'active' WHERE id = $1`,
       [tenant.business.id],
     );
+    const [pilotAccount] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.accounts(issuer, subject) VALUES ('https://fixture.example', $1) RETURNING id`,
+      [randomUUID()],
+    );
+    await admin.query(
+      `INSERT INTO public.business_pilot_enrollments(business_id,connection_id,merchant_account_id,
+        consent_version,ai_provider_disclosed_at,escalation_acknowledged_at,status,activated_at,activated_by,activation_reference)
+       VALUES ($1,$2,$3,'pilot-merchant-v1',now(),now(),'ACTIVE',now(),'integration-fixture','evidence:fixture')`,
+      [tenant.business.id, connection.id, pilotAccount.id],
+    );
     const usage = new UsageService(runtime);
     await usage.setBusinessLimits(tenant.business.id, {
       monthlyWhatsAppMessages: 5,

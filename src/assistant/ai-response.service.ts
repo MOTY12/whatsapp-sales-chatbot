@@ -44,6 +44,7 @@ type RunRow = {
   business_status: string;
   connection_status: string;
   verified_at: Date | null;
+  pilot_approved: boolean;
 };
 
 @Injectable()
@@ -113,7 +114,11 @@ export class AiResponseService {
       await this.finish(
         row,
         humanTakeover ? 'SKIPPED' : 'HANDOFF_REQUIRED',
-        humanTakeover ? 'HUMAN_TAKEOVER' : 'BUSINESS_OR_CONNECTION_INACTIVE',
+        humanTakeover
+          ? 'HUMAN_TAKEOVER'
+          : !row.pilot_approved
+            ? 'PILOT_APPROVAL_REQUIRED'
+            : 'BUSINESS_OR_CONNECTION_INACTIVE',
       );
       this.log(
         humanTakeover ? 'AI_SKIPPED_HUMAN_TAKEOVER' : 'AI_HANDOFF_REQUIRED',
@@ -301,17 +306,20 @@ export class AiResponseService {
       `SELECT a.id,a.business_id,a.inbound_message_id,a.conversation_id,a.lead_id,
         a.authorized_control_version,a.status,a.error_category,a.evidence,a.reply,m.content AS customer_message,
         c."whatsappId" AS recipient,v.control_mode,v.control_version,b.status AS business_status,
-        ch.status AS connection_status,ch."verifiedAt" AS verified_at
+        ch.status AS connection_status,ch."verifiedAt" AS verified_at,
+        EXISTS (SELECT 1 FROM public.business_pilot_enrollments p
+          WHERE p.business_id=a.business_id AND p.connection_id=ch.id AND p.status='ACTIVE') AS pilot_approved
        FROM public.ai_response_runs a JOIN public.messages m ON m.id=a.inbound_message_id AND m."businessId"=a.business_id
        JOIN public.conversations v ON v.id=a.conversation_id AND v."businessId"=a.business_id
        JOIN public.customers c ON c.id=v."customerId" AND c."businessId"=a.business_id
        JOIN public.businesses b ON b.id=a.business_id
-       JOIN LATERAL (SELECT status,"verifiedAt" FROM public.channel_connections WHERE "businessId"=a.business_id
+       JOIN LATERAL (SELECT id,status,"verifiedAt" FROM public.channel_connections WHERE "businessId"=a.business_id
          AND provider='whatsapp' ORDER BY "updatedAt" DESC LIMIT 1) ch ON true
        WHERE a.id=$1 AND a.business_id=$2`,
       [id, businessId],
     );
-    return row ?? null;
+    if (!row) return null;
+    return row;
   }
 
   private isAuthorized(row: RunRow | null): boolean {
@@ -320,6 +328,7 @@ export class AiResponseService {
       row.business_status === 'active' &&
       row.connection_status === 'active' &&
       row.verified_at &&
+      row.pilot_approved === true &&
       row.control_mode === 'AUTO' &&
       String(row.control_version) === String(row.authorized_control_version),
     );

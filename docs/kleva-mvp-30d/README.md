@@ -13,3 +13,5 @@ See the [merchant business API](merchant-business-api.md) for onboarding, profil
 See the [supervised WhatsApp connection API](whatsapp-connection-api.md) for credentials, provisioning and deployment.
 
 See the [WhatsApp webhook intake guide](whatsapp-webhook-intake.md) for acknowledgement, deduplication and retention rules.
+
+See the [POLICY-001 pilot readiness record](policy-001-pilot-readiness.md) for Meta policy evidence, merchant activation controls, privacy readiness and QA-002 evidence requirements.

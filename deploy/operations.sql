@@ -19,6 +19,13 @@ FROM public.ai_response_runs
 GROUP BY status, error_category
 ORDER BY status, error_category;
 
+SELECT status, count(*) AS pilot_enrollments,
+       min(created_at) AS oldest_enrollment,
+       max(updated_at) AS last_updated_at
+FROM public.business_pilot_enrollments
+GROUP BY status
+ORDER BY status;
+
 SELECT CASE WHEN processed_at IS NULL THEN 'pending'
             WHEN processing_outcome IS NULL THEN 'processed'
             ELSE processing_outcome END AS receipt_state,

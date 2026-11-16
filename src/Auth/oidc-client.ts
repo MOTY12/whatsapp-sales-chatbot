@@ -3,14 +3,28 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type * as Oidc from 'openid-client';
 import {
   MERCHANT_AUTH_CONFIG,
   type MerchantAuthConfig,
 } from './merchant-database';
 
+export class OidcStageFailure extends Error {
+  constructor(
+    readonly category: string,
+    readonly providerCode?: string,
+  ) {
+    super(category);
+    this.name = 'OidcStageFailure';
+  }
+}
+
 @Injectable()
 export class MerchantOidcClient {
+  private readonly callbackStage = new AsyncLocalStorage<{
+    tokenEndpointSucceeded: boolean;
+  }>();
   private discovery?: Promise<{
     client: typeof Oidc;
     configuration: Oidc.Configuration;
@@ -26,10 +40,11 @@ export class MerchantOidcClient {
         'Merchant authentication is unavailable.',
       );
     const settings = this.config;
-    this.discovery ??= this.discover(settings).catch(() => {
+    this.discovery ??= this.discover(settings).catch((error: unknown) => {
       this.discovery = undefined;
-      throw new ServiceUnavailableException(
-        'Identity provider is unavailable.',
+      throw new OidcStageFailure(
+        'OIDC_DISCOVERY_FAILED',
+        this.providerErrorCode(error),
       );
     });
     return this.discovery;
@@ -38,6 +53,7 @@ export class MerchantOidcClient {
   private async discover(settings: NonNullable<MerchantAuthConfig>) {
     const client = await import('openid-client');
     const local = settings.issuer.protocol === 'http:';
+    let tokenEndpoint = '';
     const configuration = await client.discovery(
       settings.issuer,
       settings.clientId,
@@ -46,18 +62,30 @@ export class MerchantOidcClient {
       {
         execute: local ? [client.allowInsecureRequests] : [],
         timeout: 5,
-        [client.customFetch]: (url, options) =>
-          fetch(url, {
+        [client.customFetch]: async (url, options) => {
+          const response = await fetch(url, {
             ...options,
             body:
               options.body instanceof Uint8Array
                 ? Uint8Array.from(options.body)
                 : options.body,
             redirect: 'error',
-          }),
+          });
+          const stage = this.callbackStage.getStore();
+          if (
+            stage &&
+            tokenEndpoint &&
+            new URL(url).href === tokenEndpoint &&
+            response.ok
+          ) {
+            stage.tokenEndpointSucceeded = true;
+          }
+          return response;
+        },
       },
     );
     const metadata = configuration.serverMetadata();
+    tokenEndpoint = metadata.token_endpoint ?? '';
     if (
       new URL(metadata.issuer).href !== settings.issuer.href ||
       (metadata.code_challenge_methods_supported &&
@@ -111,20 +139,53 @@ export class MerchantOidcClient {
     verifier: string,
   ) {
     const { client, configuration } = await this.provider();
-    const tokens = await client.authorizationCodeGrant(configuration, url, {
-      expectedState: state,
-      expectedNonce: nonce,
-      pkceCodeVerifier: verifier,
-      idTokenExpected: true,
+    const stage = { tokenEndpointSucceeded: false };
+    return this.callbackStage.run(stage, async () => {
+      let tokens: Awaited<ReturnType<typeof client.authorizationCodeGrant>>;
+      try {
+        tokens = await client.authorizationCodeGrant(configuration, url, {
+          expectedState: state,
+          expectedNonce: nonce,
+          pkceCodeVerifier: verifier,
+          idTokenExpected: true,
+        });
+      } catch (error) {
+        throw new OidcStageFailure(
+          stage.tokenEndpointSucceeded
+            ? 'OIDC_ID_TOKEN_INVALID'
+            : 'OIDC_TOKEN_EXCHANGE_FAILED',
+          this.providerErrorCode(error, client),
+        );
+      }
+      const claims = tokens.claims();
+      if (
+        !claims ||
+        !claims.sub ||
+        claims.iss !== configuration.serverMetadata().issuer
+      ) {
+        throw new OidcStageFailure('OIDC_ID_TOKEN_INVALID');
+      }
+      return { issuer: claims.iss, subject: claims.sub };
     });
-    const claims = tokens.claims();
+  }
+
+  private providerErrorCode(error: unknown, client?: typeof Oidc) {
     if (
-      !claims ||
-      !claims.sub ||
-      claims.iss !== configuration.serverMetadata().issuer
+      client &&
+      error instanceof client.ResponseBodyError &&
+      /^[a-z][a-z0-9_]{1,39}$/.test(error.error)
     ) {
-      throw new Error('Missing verified identity.');
+      return error.error;
     }
-    return { issuer: claims.iss, subject: claims.sub };
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      typeof error.code === 'string' &&
+      /^[A-Z0-9_]{4,40}$/.test(error.code)
+    ) {
+      return error.code;
+    }
+    return undefined;
   }
 }

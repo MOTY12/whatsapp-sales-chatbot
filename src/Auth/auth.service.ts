@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -12,6 +13,8 @@ import {
   type MerchantAuthConfig,
 } from './merchant-database';
 import { MerchantOidcClient } from './oidc-client';
+import { OidcStageFailure } from './oidc-client';
+import { errorCode, postgresErrorCategory } from '../config/logging';
 
 const opaquePattern = /^[A-Za-z0-9_-]{43}$/;
 const token = () => randomBytes(32).toString('base64url');
@@ -24,6 +27,8 @@ export function isOpaque(value?: string): value is string {
 
 @Injectable()
 export class MerchantAuthService {
+  private readonly logger = new Logger(MerchantAuthService.name);
+
   constructor(
     private readonly database: MerchantDatabase,
     private readonly oidc: MerchantOidcClient,
@@ -44,19 +49,40 @@ export class MerchantAuthService {
     const binding = token();
     const nonce = token();
     const verifier = token();
-    const url = await this.oidc.authorizationUrl(
-      redirect,
-      state,
-      nonce,
-      verifier,
-    );
-    await this.database.identityConnection().query(
-      `
-      INSERT INTO merchant_login_attempts (state_digest, binding_digest, nonce, verifier)
-      VALUES ($1, $2, $3, $4)
-    `,
-      [digest(state), digest(binding), nonce, verifier],
-    );
+    let url: URL;
+    try {
+      url = await this.oidc.authorizationUrl(redirect, state, nonce, verifier);
+    } catch (error) {
+      this.logFailure(
+        error instanceof OidcStageFailure
+          ? error.category
+          : 'OIDC_AUTHORIZATION_REQUEST_FAILED',
+        error,
+        error instanceof OidcStageFailure ? error.providerCode : undefined,
+      );
+      throw new ServiceUnavailableException(
+        'Identity provider is unavailable.',
+      );
+    }
+    try {
+      await this.database.identityConnection().query(
+        `
+        INSERT INTO merchant_login_attempts (state_digest, binding_digest, nonce, verifier)
+        VALUES ($1, $2, $3, $4)
+      `,
+        [digest(state), digest(binding), nonce, verifier],
+      );
+    } catch (error) {
+      this.logFailure(
+        this.databaseFailureCategory(error),
+        error,
+        undefined,
+        'login_attempt_persist',
+      );
+      throw new ServiceUnavailableException(
+        'Merchant authentication is unavailable.',
+      );
+    }
     return { url: url.href, binding };
   }
 
@@ -65,18 +91,36 @@ export class MerchantAuthService {
     url.search = query;
     const states = url.searchParams.getAll('state');
     const state = states[0];
-    if (states.length !== 1 || !isOpaque(state) || !isOpaque(binding)) {
+    if (states.length !== 1 || !isOpaque(state)) {
+      this.logFailure('OIDC_STATE_INVALID');
+      throw new BadRequestException('Invalid or expired login attempt.');
+    }
+    if (!isOpaque(binding)) {
+      this.logFailure('OIDC_BINDING_INVALID');
       throw new BadRequestException('Invalid or expired login attempt.');
     }
     const database = this.database.identityConnection();
-    const [attempt] = await database.query<
-      { nonce: string; verifier: string }[]
-    >('SELECT * FROM public.kleva_consume_login($1, $2)', [
-      digest(state),
-      digest(binding),
-    ]);
-    if (!attempt)
+    let attempt: { nonce: string; verifier: string } | undefined;
+    try {
+      [attempt] = await database.query<{ nonce: string; verifier: string }[]>(
+        'SELECT * FROM public.kleva_consume_login($1, $2)',
+        [digest(state), digest(binding)],
+      );
+    } catch (error) {
+      this.logFailure(
+        this.databaseFailureCategory(error),
+        error,
+        undefined,
+        'login_attempt_consume',
+      );
+      throw new ServiceUnavailableException(
+        'Merchant authentication is unavailable.',
+      );
+    }
+    if (!attempt) {
+      this.logFailure('OIDC_STATE_INVALID');
       throw new BadRequestException('Invalid or expired login attempt.');
+    }
 
     let identity: Awaited<ReturnType<MerchantOidcClient['verifyCallback']>>;
     try {
@@ -86,21 +130,40 @@ export class MerchantAuthService {
         attempt.nonce,
         attempt.verifier,
       );
-    } catch {
+    } catch (error) {
+      this.logFailure(
+        error instanceof OidcStageFailure
+          ? error.category
+          : 'OIDC_CALLBACK_VALIDATION_FAILED',
+        error,
+        error instanceof OidcStageFailure ? error.providerCode : undefined,
+      );
       throw new UnauthorizedException('Identity provider verification failed.');
     }
     const session = token();
     const csrf = token();
-    await database.query(
-      'SELECT public.kleva_issue_session($1, $2, $3, $4, $5)',
-      [
-        identity.issuer,
-        identity.subject,
-        digest(session),
-        digest(csrf),
-        isOpaque(previousSession) ? digest(previousSession) : null,
-      ],
-    );
+    try {
+      await database.query(
+        'SELECT public.kleva_issue_session($1, $2, $3, $4, $5)',
+        [
+          identity.issuer,
+          identity.subject,
+          digest(session),
+          digest(csrf),
+          isOpaque(previousSession) ? digest(previousSession) : null,
+        ],
+      );
+    } catch (error) {
+      this.logFailure(
+        this.databaseFailureCategory(error),
+        error,
+        undefined,
+        'session_create',
+      );
+      throw new ServiceUnavailableException(
+        'Merchant session could not be created.',
+      );
+    }
     return { session, csrf };
   }
 
@@ -134,6 +197,30 @@ export class MerchantAuthService {
         sessionDigest,
         digest(csrf),
       ]);
+  }
+
+  private databaseFailureCategory(error: unknown) {
+    return errorCode(error) === '42501'
+      ? 'OIDC_DATABASE_PERMISSION_DENIED'
+      : 'OIDC_DATABASE_OPERATION_FAILED';
+  }
+
+  private logFailure(
+    category: string,
+    error?: unknown,
+    providerCode?: string,
+    stage?: string,
+  ) {
+    const code = errorCode(error);
+    const pgCategory = postgresErrorCategory(error);
+    this.logger.error({
+      event: 'merchant_auth.failure',
+      category,
+      ...(code ? { errorCode: code } : {}),
+      ...(pgCategory ? { databaseCategory: pgCategory } : {}),
+      ...(providerCode ? { providerCode } : {}),
+      ...(stage ? { stage } : {}),
+    });
   }
 }
 

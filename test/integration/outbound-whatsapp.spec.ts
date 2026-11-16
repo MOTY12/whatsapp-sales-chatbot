@@ -27,6 +27,8 @@ describe('durable WhatsApp outbound messages', () => {
   let recipient: string;
   let metaFixture: Awaited<ReturnType<typeof startMetaFixture>>;
   let credentialCipher: CredentialCipher;
+  let originalAiEnabled: string | undefined;
+  let originalAiKey: string | undefined;
   let originalMetaEnv: Pick<
     NodeJS.ProcessEnv,
     | 'META_GRAPH_BASE_URL'
@@ -35,6 +37,10 @@ describe('durable WhatsApp outbound messages', () => {
   >;
 
   beforeAll(async () => {
+    originalAiEnabled = process.env.AI_RESPONSES_ENABLED;
+    originalAiKey = process.env.OPENAI_API_KEY;
+    process.env.AI_RESPONSES_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'outbound-fixture-key';
     originalMetaEnv = {
       META_GRAPH_BASE_URL: process.env.META_GRAPH_BASE_URL,
       WHATSAPP_CREDENTIAL_KEY_ID: process.env.WHATSAPP_CREDENTIAL_KEY_ID,
@@ -69,6 +75,16 @@ describe('durable WhatsApp outbound messages', () => {
       `INSERT INTO public.channel_connections (id, "businessId", provider, "externalAccountId", "externalAssetId", status, "verifiedAt")
        VALUES ($1,$2,'whatsapp','waba-fixture',$3,'active',now())`,
       [connectionId, businessId, 'phone-' + connectionId],
+    );
+    const [pilotAccount] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.accounts(issuer, subject) VALUES ('https://fixture.example', $1) RETURNING id`,
+      [randomUUID()],
+    );
+    await admin.query(
+      `INSERT INTO public.business_pilot_enrollments(business_id,connection_id,merchant_account_id,
+        consent_version,ai_provider_disclosed_at,escalation_acknowledged_at,status,activated_at,activated_by,activation_reference)
+       VALUES ($1,$2,$3,'pilot-merchant-v1',now(),now(),'ACTIVE',now(),'integration-fixture','evidence:fixture')`,
+      [businessId, connectionId, pilotAccount.id],
     );
     await admin.query(
       `INSERT INTO public.whatsapp_credentials (business_id, connection_id, envelope)
@@ -127,6 +143,11 @@ describe('durable WhatsApp outbound messages', () => {
       if (value === undefined) delete process.env[envKey];
       else process.env[envKey] = value;
     }
+    if (originalAiEnabled === undefined)
+      delete process.env.AI_RESPONSES_ENABLED;
+    else process.env.AI_RESPONSES_ENABLED = originalAiEnabled;
+    if (originalAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalAiKey;
     await database?.close();
   });
 

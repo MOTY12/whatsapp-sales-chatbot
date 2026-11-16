@@ -24,6 +24,29 @@ async function openInbox(page: Page) {
   await expect(page.getByRole('button', { name: /Amina Yusuf/ })).toBeVisible();
 }
 
+test('hydrates without app warnings in an extension-free browser', async ({ page }) => {
+  const hydrationWarnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /hydration|did not match/i.test(message.text())) {
+      hydrationWarnings.push(message.text());
+    }
+  });
+  page.on('pageerror', (error) => {
+    if (/hydration|did not match/i.test(error.message)) hydrationWarnings.push(error.message);
+  });
+
+  await signInAndCreateBusiness(page);
+  await openInbox(page);
+  await expect(page.locator('.mobile-menu')).toHaveAttribute('data-hydrated', 'true');
+  await expect.poll(() => hydrationWarnings).toEqual([]);
+  await expect.poll(() => page.evaluate(() =>
+    ['data-psi-id', 'data-new-gr-c-s-check-loaded', 'data-gr-ext-installed',
+      'data-gr-ext-go-mode', 'data-gr-aaa-loaded'].filter((name) =>
+      document.documentElement.hasAttribute(name) || document.body.hasAttribute(name),
+    ),
+  )).toEqual([]);
+});
+
 test('lists conversations, loads history, and paginates older messages without losing scroll', async ({ page }) => {
   await signInAndCreateBusiness(page);
   await openInbox(page);

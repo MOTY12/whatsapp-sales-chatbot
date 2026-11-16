@@ -30,6 +30,7 @@ const initial = () => ({
   business_status: 'active',
   connection_status: 'active',
   verified_at: new Date(),
+  pilot_approved: true,
 });
 
 describe('AiResponseService', () => {

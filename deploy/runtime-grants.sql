@@ -18,6 +18,7 @@ GRANT SELECT, INSERT ON public.webhook_receipts TO kleva_runtime_app;
 GRANT UPDATE (handed_off_at, processed_at, processing_outcome)
   ON public.webhook_receipts TO kleva_runtime_app;
 GRANT SELECT ON public.whatsapp_credentials TO kleva_runtime_app;
+GRANT SELECT ON public.business_pilot_enrollments TO kleva_runtime_app;
 GRANT UPDATE (expires_at, revision)
   ON public.whatsapp_credentials TO kleva_runtime_app;
 GRANT EXECUTE ON FUNCTION public.kleva_published_faqs(uuid) TO kleva_runtime_app;

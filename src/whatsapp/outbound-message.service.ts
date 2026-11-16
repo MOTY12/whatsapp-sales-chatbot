@@ -8,6 +8,7 @@ import type { WhatsAppCloudApiClient } from './interfaces/whatsapp-cloud-api-cli
 import { WHATSAPP_CLOUD_API_CLIENT } from './interfaces/whatsapp-cloud-api-client.interface';
 import type { OutgoingWhatsAppMessage } from './types/whatsapp.types';
 import type { OutboxOperation } from '../database/entities/outbox-operation.entity';
+import { aiConfig } from '../config/env';
 
 export const whatsappOutboundOperation = 'whatsapp.outbound';
 
@@ -509,6 +510,23 @@ export class OutboundMessageService {
   ): Promise<'claimed' | 'suppressed' | 'lost'> {
     return this.database.transaction(async (manager) => {
       if (row.authorization_kind === 'AI') {
+        if (!aiConfig().enabled) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'AI_DISABLED', updated_at = now()
+              WHERE id = $1 AND business_id = $2 AND status = 'RESERVED'`,
+            [row.id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.messages SET status = 'suppressed' WHERE id = $1 AND "businessId" = $2`,
+            [row.message_id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
+              WHERE id = $1 AND business_id = $2`,
+            [row.response_intent_id, row.business_id],
+          );
+          return 'suppressed';
+        }
         if (!row.conversation_id || row.control_version === null) {
           await manager.query(
             `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'MISSING_CONTROL_FENCE', updated_at = now()
@@ -538,6 +556,31 @@ export class OutboundMessageService {
         ) {
           await manager.query(
             `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'TAKEOVER_FENCE', updated_at = now()
+              WHERE id = $1 AND business_id = $2 AND status = 'RESERVED'`,
+            [row.id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.messages SET status = 'suppressed' WHERE id = $1 AND "businessId" = $2`,
+            [row.message_id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
+              WHERE id = $1 AND business_id = $2`,
+            [row.response_intent_id, row.business_id],
+          );
+          return 'suppressed';
+        }
+        const [pilot] = await manager.query<{ approved: boolean }[]>(
+          `SELECT EXISTS (SELECT 1 FROM public.business_pilot_enrollments
+            WHERE business_id = $1 AND status = 'ACTIVE'
+              AND connection_id = (SELECT id FROM public.channel_connections
+                WHERE "businessId" = $1 AND provider = 'whatsapp'
+                ORDER BY "updatedAt" DESC LIMIT 1)) AS approved`,
+          [row.business_id],
+        );
+        if (!pilot?.approved) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status = 'SUPPRESSED', last_error = 'PILOT_APPROVAL_REQUIRED', updated_at = now()
               WHERE id = $1 AND business_id = $2 AND status = 'RESERVED'`,
             [row.id, row.business_id],
           );
