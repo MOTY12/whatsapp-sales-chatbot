@@ -6,6 +6,9 @@ import {
   Module,
   OnApplicationBootstrap,
 } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import type { DataSource } from 'typeorm';
+import { writeFile, unlink } from 'node:fs/promises';
 import {
   handoffWhatsAppReceipt,
   whatsappReceiptOperation,
@@ -43,10 +46,16 @@ export class WorkerRuntime
   private readonly queue = createQueue(this.config);
   private readonly relay: OutboxRelay;
   private readonly worker: ReturnType<typeof createWorker>;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private redisReady = false;
+  private healthProbeFailed = false;
+  private heartbeatTask?: Promise<void>;
+  private readonly heartbeatPath = '/tmp/kleva-worker-heartbeat';
 
   constructor(
     outbox: OutboxStore,
     @Inject(OUTBOX_HANDLERS) handlers: ReadonlyMap<string, OutboxHandler>,
+    @InjectDataSource() private readonly database: DataSource,
   ) {
     this.queue.on('error', () =>
       this.logger.warn('Outbox producer Redis connection error.'),
@@ -56,27 +65,69 @@ export class WorkerRuntime
     this.worker = createWorker(this.config, (data, id) =>
       processor.process(data, id),
     );
-    this.worker.on('error', () =>
-      this.logger.warn('Outbox worker connection or processing error.'),
-    );
+    this.worker.on('ready', () => {
+      this.redisReady = true;
+    });
+    this.worker.on('error', () => {
+      this.redisReady = false;
+      this.logger.warn('Outbox worker connection or processing error.');
+    });
     this.worker.on('failed', () => this.logger.warn('BullMQ delivery failed.'));
   }
 
-  onApplicationBootstrap(): void {
-    void this.worker
-      .run()
-      .catch(() => this.logger.error('Outbox consumer stopped unexpectedly.'));
+  async onApplicationBootstrap(): Promise<void> {
+    await Promise.all([
+      this.worker.waitUntilReady(),
+      this.queue.waitUntilReady(),
+    ]);
+    this.redisReady = true;
+    this.heartbeatTimer = setInterval(() => {
+      this.heartbeatTask ??= this.writeHeartbeat().finally(() => {
+        this.heartbeatTask = undefined;
+      });
+    }, 10000);
+    this.heartbeatTimer.unref();
+    await this.writeHeartbeat();
+    void this.worker.run().catch(() => {
+      this.logger.error('Outbox consumer stopped unexpectedly.');
+      process.kill(process.pid, 'SIGTERM');
+    });
     this.relay.start();
   }
 
   async beforeApplicationShutdown(): Promise<void> {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
     const results = await Promise.allSettled([
       this.relay.stop(),
       this.worker.close(),
+      this.heartbeatTask,
     ]);
-    await this.queue.close();
-    if (results.some(({ status }) => status === 'rejected')) {
+    const queueResult = await Promise.allSettled([this.queue.close()]);
+    await unlink(this.heartbeatPath).catch(() => undefined);
+    if (
+      [...results, ...queueResult].some(({ status }) => status === 'rejected')
+    ) {
       throw new Error('Outbox runtime shutdown failed.');
+    }
+  }
+
+  private async writeHeartbeat(): Promise<void> {
+    try {
+      if (!this.redisReady || !this.worker.isRunning()) {
+        await unlink(this.heartbeatPath).catch(() => undefined);
+        return;
+      }
+      await this.database.query('SELECT 1');
+      await this.queue.getJobCounts();
+      await writeFile(this.heartbeatPath, `${Date.now()}\n`, { mode: 0o600 });
+      this.healthProbeFailed = false;
+    } catch {
+      await unlink(this.heartbeatPath).catch(() => undefined);
+      if (!this.healthProbeFailed) {
+        this.logger.warn('Worker health probe failed.');
+        this.healthProbeFailed = true;
+      }
     }
   }
 }

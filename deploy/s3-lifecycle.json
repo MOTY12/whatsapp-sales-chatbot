@@ -1,0 +1,32 @@
+{
+  "Rules": [
+    {
+      "ID": "kleva-staging-daily-35-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "kleva/staging/daily/" },
+      "Expiration": { "Days": 35 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "kleva-staging-monthly-395-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "kleva/staging/monthly/" },
+      "Expiration": { "Days": 395 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "kleva-production-daily-35-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "kleva/production/daily/" },
+      "Expiration": { "Days": 35 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "kleva-production-monthly-395-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "kleva/production/monthly/" },
+      "Expiration": { "Days": 395 },
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    }
+  ]
+}

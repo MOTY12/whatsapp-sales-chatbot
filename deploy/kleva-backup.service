@@ -1,0 +1,21 @@
+[Unit]
+Description=Encrypted Kleva PostgreSQL backup to off-host object storage
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kleva-backup
+Group=kleva-backup
+EnvironmentFile=/etc/kleva/backup.env
+ExecStart=/opt/kleva/current/scripts/backup-postgres.sh
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

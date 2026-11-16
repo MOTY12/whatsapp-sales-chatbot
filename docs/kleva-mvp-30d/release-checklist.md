@@ -20,6 +20,12 @@
 - [x] RAG-002 / initial AGENT-001 local slice uses one configured OpenAI-compatible chat-completions adapter with bounded timeout/retry, evidence-ID and claim validation, handoff status, token reservation/reconciliation, and the existing outbound/send-control fence. AI processing intent is written from eligible persisted customer messages in the webhook transaction; replay-safe AI runs and minimal outbox payloads prevent duplicate generation/delivery. Local unit and PostgreSQL integration cover generated product replies, exact price/currency, insufficient evidence, fallback handoff, takeover races, model outage and idempotent repeated execution.
 - [x] SALES-001 captures one tenant-scoped lead per verified customer conversation in the inbound transaction, audits manual status changes, and links the dashboard to retained message history. Local PostgreSQL webhook coverage excludes owner/onboarding events and the dashboard browser workflow covers status updates and conversation navigation. No historical conversation backfill is performed.
 - [ ] Alert on usage limits, uncertain deliveries and degraded dependencies.
+- [x] Multi-stage non-root API and standalone dashboard images build; Compose keeps Redis private and PostgreSQL external.
+- [x] API/dashboard health probes, worker heartbeat, graceful API/worker shutdown, production OIDC/keyring validation and migration advisory lock are in place.
+- [x] Caddy HTTPS/redirect routing, request-size cap, proxy configuration and webhook raw-body path validate locally; live certificate and callback remain staging checks.
+- [x] Operations SQL, alert thresholds/actions, incident response, rollback and proposed retention guidance are documented.
+- [x] Disposable local PostgreSQL custom-format dump/restore succeeded; this did not exercise age/S3 encryption or an off-host backup.
+- [ ] Configure cloud log/alert delivery, complete age-encrypted S3 upload and restore test, and record staging backup/restore duration.
 
 ## Staging and live release
 

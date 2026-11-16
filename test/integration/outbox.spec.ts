@@ -373,6 +373,7 @@ describe('durable outbox with PostgreSQL and Redis', () => {
           },
         ],
       ]),
+      source,
     );
     runtime.onApplicationBootstrap();
     try {

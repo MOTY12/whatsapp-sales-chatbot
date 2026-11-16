@@ -89,12 +89,16 @@ export const correlateRequest: RequestHandler = (request, response, next) => {
   requestContext.run(requestId, () => {
     response.once('finish', () => {
       requestContext.run(requestId, () => {
-        requestLogger.log({
-          event: 'request.completed',
+        const denied =
+          response.statusCode === 401 || response.statusCode === 403;
+        const event = {
+          event: denied ? 'security.request_denied' : 'request.completed',
           method: request.method,
           status: response.statusCode,
           durationMs: Math.round(performance.now() - start),
-        });
+        };
+        if (denied) requestLogger.warn(event);
+        else requestLogger.log(event);
       });
     });
     next();

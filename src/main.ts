@@ -28,6 +28,7 @@ async function bootstrap() {
       abortOnError: false,
       logger,
     });
+    app.enableShutdownHooks();
     app.use(correlateRequest);
     app.useBodyParser('raw', {
       limit: '256kb',

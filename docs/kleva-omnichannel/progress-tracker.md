@@ -34,10 +34,10 @@ Planning snapshot at `adb74b3ec7d8810c3788119cdb1e220bb79cf61a`. TENANT-002 refl
 | AGENT-001 | Paid pilot | IN_PROGRESS (initial response slice verified locally) | RAG-002, INBOX-002, TOOLS-001 | Eligible verified customer texts can receive grounded, metered WhatsApp replies with handoff and takeover fencing. Bounded conversation memory, typed tool registry, per-tenant activation and staging opt-in remain open for the broader agent milestone. |
 | LEARNING-001 | Paid pilot | NOT_STARTED | AGENT-001 | Capture feedback and group redacted gaps. |
 | ANALYTICS-001 | Paid pilot | NOT_STARTED | AGENT-001 | Ship tenant-scoped support analytics. |
-| OPS-001 | Paid pilot | NOT_STARTED | AGENT-001 | Monitor, throttle and recover API and workers. |
+| OPS-001 | Paid pilot | VERIFIED locally; staging BLOCKED | AGENT-001 | Compose topology, API/dashboard containers, worker heartbeat and recovery, safe request-denial logs, operational SQL and alert actions are prepared locally. Cloud alert delivery, domain/OIDC/Meta checks, and deployed recovery remain staging gates; see [OPS runbooks](../ops/pilot-deployment.md). |
 | LEARNING-002 | Paid pilot | NOT_STARTED | LEARNING-001, KNOWLEDGE-003 | Review, approve, publish and replay suggestions. |
 | PILOT-001 | Paid pilot | NOT_STARTED | ANALYTICS-001, METER-001, OPS-001 | Prepare paid pilot and manual collection. |
-| OPS-002 | Paid pilot | NOT_STARTED | LEARNING-002 | Enforce retention, deletion and restore controls. |
+| OPS-002 | Paid pilot | VERIFIED locally; staging BLOCKED | FOUNDATION-002, FOUNDATION-003, FOUNDATION-004 | Restricted backup role, age/S3 backup scripts, disposable-only restore guard, retention proposal and restore procedure documented. Local PostgreSQL dump/restore verified; encrypted off-host restore and approved tenant deletion policy remain open. |
 | QA-001 | Paid pilot | NOT_STARTED | ANALYTICS-001, OPS-001, OPS-002, LEARNING-002, TOOLS-001, SALES-002, METER-001 | Exercise the full flow and failure matrix in CI. |
 | QA-002 | Paid pilot | NOT_STARTED | QA-001, POLICY-001, PILOT-001 | Run staged Meta pilot and release gates. |
 | CHANNEL-002 | Expansion | NOT_STARTED | QA-002, CHANNEL-001 | Add authorized website live chat. |

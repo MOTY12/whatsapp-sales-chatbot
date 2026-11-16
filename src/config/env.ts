@@ -238,13 +238,20 @@ export function logLevelsConfig(env = process.env) {
 }
 
 export function redisConfig(env = process.env) {
+  const production = applicationEnvironment(env) === 'production';
   const url = env.REDIS_URL?.trim() || undefined;
   if (url) validatedUrl(url, 'REDIS_URL', ['redis:', 'rediss:']);
+  const password = env.REDIS_PASSWORD?.trim() || undefined;
+  if (production && (!password || isPlaceholder(password))) {
+    throw new Error(
+      'REDIS_PASSWORD is required and must not be a placeholder in production.',
+    );
+  }
   return {
     url,
     host: env.REDIS_HOST?.trim() || 'localhost',
     port: port(env, 'REDIS_PORT', 6379),
-    password: env.REDIS_PASSWORD || undefined,
+    password,
   };
 }
 
@@ -374,8 +381,15 @@ export function merchantAuthConfig(env = process.env) {
     'IDENTITY_DATABASE_USER',
     'IDENTITY_DATABASE_PASSWORD',
   ] as const;
-  if (keys.every((key) => !env[key]?.trim())) return undefined;
   const production = applicationEnvironment(env) === 'production';
+  if (keys.every((key) => !env[key]?.trim())) {
+    if (production) {
+      throw new Error(
+        `Missing required environment variables: ${keys.join(', ')}. Set non-placeholder values for this environment.`,
+      );
+    }
+    return undefined;
+  }
   const values = required(env, keys, production);
   const protocols = production ? ['https:'] : ['http:', 'https:'];
   const issuer = validatedUrl(values.OIDC_ISSUER, 'OIDC_ISSUER', protocols);
@@ -444,7 +458,14 @@ export function whatsappCredentialConfig(env = process.env) {
   const current = env.WHATSAPP_CREDENTIAL_KEY_ID?.trim() ?? '';
   const raw = env.WHATSAPP_CREDENTIAL_KEYS?.trim();
   const keys = new Map<string, Buffer>();
-  if (!current && !raw) return { current, keys };
+  if (!current && !raw) {
+    if (applicationEnvironment(env) === 'production') {
+      throw new Error(
+        'WHATSAPP_CREDENTIAL_KEY_ID and WHATSAPP_CREDENTIAL_KEYS are required in production.',
+      );
+    }
+    return { current, keys };
+  }
 
   try {
     const parsed: unknown = JSON.parse(raw ?? '');

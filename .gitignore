@@ -46,6 +46,9 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+.env.runtime
+.env.runtime.*
+deploy/.env.compose.local
 
 # temp directory
 .temp

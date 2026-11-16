@@ -1,0 +1,172 @@
+name: kleva
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in the deployment environment}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    networks:
+      - edge
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: kleva/backend:${KLEVA_RELEASE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ${KLEVA_API_ENV_FILE:-../.env.runtime}
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    expose:
+      - '3000'
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 45s
+    networks:
+      - edge
+      - app
+
+  worker:
+    image: kleva/backend:${KLEVA_RELEASE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/worker.js']
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
+    env_file:
+      - path: ${KLEVA_WORKER_ENV_FILE:-../.env.runtime}
+        required: false
+    environment:
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '/app/worker-healthcheck.cjs']
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    networks:
+      - jobs
+
+  dashboard:
+    build:
+      context: ../apps/merchant-dashboard
+      dockerfile: Dockerfile
+    image: kleva/dashboard:${KLEVA_RELEASE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      KLEVA_BACKEND_ORIGIN: http://api:3000
+      DASHBOARD_PUBLIC_ORIGIN: https://${PUBLIC_DOMAIN}
+    expose:
+      - '3000'
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 45s
+    networks:
+      - edge
+      - app
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - sh
+      - -ec
+      - >-
+        umask 077;
+        printf 'user default on >%s ~* &* +@all\n' "$$REDIS_PASSWORD" > /tmp/users.acl;
+        exec redis-server --appendonly yes --appendfsync everysec
+        --aclfile /tmp/users.acl --maxmemory "$$REDIS_MAXMEMORY"
+        --maxmemory-policy noeviction
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in the deployment environment}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}
+    tmpfs:
+      - /tmp:size=1m,mode=1777
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG',
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - jobs
+
+networks:
+  edge: {}
+  app: {}
+  jobs: {}
+
+volumes:
+  redis_data: {}
+  caddy_data: {}
+  caddy_config: {}

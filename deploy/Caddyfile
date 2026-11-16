@@ -1,0 +1,25 @@
+{$PUBLIC_DOMAIN} {
+	request_body {
+		max_size 300KB
+	}
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=15552000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	@api path /health/* /merchant/* /meta/* /webhooks/*
+	reverse_proxy @api api:3000 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 90s
+		}
+	}
+	reverse_proxy dashboard:3000 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 90s
+		}
+	}
+}

@@ -3,7 +3,10 @@ import {
   appConfig,
   databaseConfig,
   metaConfig,
+  merchantAuthConfig,
+  redisConfig,
   usageConfig,
+  whatsappCredentialConfig,
 } from './env';
 
 const database = {
@@ -125,5 +128,26 @@ describe('environment configuration', () => {
         META_GRAPH_BASE_URL: 'https://graph.example.test',
       }),
     ).toThrow('META_GRAPH_BASE_URL');
+  });
+
+  it('requires production OIDC settings for the merchant dashboard', () => {
+    expect(() => merchantAuthConfig({ NODE_ENV: 'production' })).toThrow(
+      'OIDC_ISSUER',
+    );
+  });
+
+  it('requires a WhatsApp credential keyring in production', () => {
+    expect(() => whatsappCredentialConfig({ NODE_ENV: 'production' })).toThrow(
+      'WHATSAPP_CREDENTIAL_KEY_ID',
+    );
+  });
+
+  it('requires an authenticated Redis connection in production', () => {
+    expect(() => redisConfig({ NODE_ENV: 'production' })).toThrow(
+      'REDIS_PASSWORD',
+    );
+    expect(() =>
+      redisConfig({ NODE_ENV: 'production', REDIS_PASSWORD: 'replace_me' }),
+    ).toThrow('REDIS_PASSWORD');
   });
 });
