@@ -224,6 +224,23 @@ describe('merchant OIDC and tenant isolation', () => {
     }
   });
 
+  it.each(['invalid_client', 'token_endpoint'] as const)(
+    'rejects OIDC token endpoint failure %s without creating an account',
+    async (fault) => {
+      const { authorization, binding } = await start();
+      const subject = 'token-failure-' + fault;
+      const code = idp.authorize(authorization, subject, fault);
+      await request(server)
+        .get('/auth/callback')
+        .set('Cookie', binding)
+        .query({ code, state: authorization.searchParams.get('state') })
+        .expect(401);
+      await expect(
+        admin.getRepository(Account).countBy({ subject }),
+      ).resolves.toBe(0);
+    },
+  );
+
   it('binds login state to the browser and consumes a callback once', async () => {
     const { authorization, binding } = await start();
     const state = authorization.searchParams.get('state');
@@ -246,6 +263,19 @@ describe('merchant OIDC and tenant isolation', () => {
       ),
     );
     expect(concurrent.map(({ status }) => status).sort()).toEqual([302, 400]);
+  });
+
+  it('rejects malformed authorization responses before token exchange', async () => {
+    const { authorization, binding } = await start();
+    const subject = 'malformed-authorization-response';
+    await request(server)
+      .get('/auth/callback')
+      .set('Cookie', binding)
+      .query({ state: authorization.searchParams.get('state') })
+      .expect(401);
+    await expect(
+      admin.getRepository(Account).countBy({ subject }),
+    ).resolves.toBe(0);
   });
 
   it.each([

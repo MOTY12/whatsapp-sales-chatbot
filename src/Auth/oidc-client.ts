@@ -23,6 +23,7 @@ export class OidcStageFailure extends Error {
 @Injectable()
 export class MerchantOidcClient {
   private readonly callbackStage = new AsyncLocalStorage<{
+    tokenEndpointAttempted: boolean;
     tokenEndpointSucceeded: boolean;
   }>();
   private discovery?: Promise<{
@@ -63,6 +64,10 @@ export class MerchantOidcClient {
         execute: local ? [client.allowInsecureRequests] : [],
         timeout: 5,
         [client.customFetch]: async (url, options) => {
+          const stage = this.callbackStage.getStore();
+          const isTokenEndpoint =
+            tokenEndpoint && new URL(url).href === tokenEndpoint;
+          if (stage && isTokenEndpoint) stage.tokenEndpointAttempted = true;
           const response = await fetch(url, {
             ...options,
             body:
@@ -71,13 +76,7 @@ export class MerchantOidcClient {
                 : options.body,
             redirect: 'error',
           });
-          const stage = this.callbackStage.getStore();
-          if (
-            stage &&
-            tokenEndpoint &&
-            new URL(url).href === tokenEndpoint &&
-            response.ok
-          ) {
+          if (stage && isTokenEndpoint && response.ok) {
             stage.tokenEndpointSucceeded = true;
           }
           return response;
@@ -139,7 +138,10 @@ export class MerchantOidcClient {
     verifier: string,
   ) {
     const { client, configuration } = await this.provider();
-    const stage = { tokenEndpointSucceeded: false };
+    const stage = {
+      tokenEndpointAttempted: false,
+      tokenEndpointSucceeded: false,
+    };
     return this.callbackStage.run(stage, async () => {
       let tokens: Awaited<ReturnType<typeof client.authorizationCodeGrant>>;
       try {
@@ -153,7 +155,9 @@ export class MerchantOidcClient {
         throw new OidcStageFailure(
           stage.tokenEndpointSucceeded
             ? 'OIDC_ID_TOKEN_INVALID'
-            : 'OIDC_TOKEN_EXCHANGE_FAILED',
+            : stage.tokenEndpointAttempted
+              ? 'OIDC_TOKEN_EXCHANGE_FAILED'
+              : 'OIDC_CALLBACK_VALIDATION_FAILED',
           this.providerErrorCode(error, client),
         );
       }

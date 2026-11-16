@@ -93,11 +93,12 @@ describe('merchant OIDC route bridge', () => {
     vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response('sensitive provider response', { status: 401 }),
-        ),
+      vi.fn().mockResolvedValue(
+        new Response('sensitive provider response', {
+          status: 401,
+          headers: { 'x-request-id': '5f6c674e-6e7a-4a1a-82cd-6f6c39bdb2df' },
+        }),
+      ),
     );
     const errorLog = vi
       .spyOn(console, 'error')
@@ -120,6 +121,12 @@ describe('merchant OIDC route bridge', () => {
     );
     expect(JSON.stringify(errorLog.mock.calls)).not.toContain(
       'sensitive provider response',
+    );
+    expect(JSON.stringify(errorLog.mock.calls)).toContain(
+      '5f6c674e-6e7a-4a1a-82cd-6f6c39bdb2df',
+    );
+    expect(JSON.stringify(errorLog.mock.calls)).toContain(
+      'OIDC_CALLBACK_BRIDGE_FAILED',
     );
   });
 });

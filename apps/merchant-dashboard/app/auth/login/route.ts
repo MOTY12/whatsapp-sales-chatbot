@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 function logBridgeFailure(stage: string, upstreamStatus?: number) {
   console.error({
     event: 'merchant_auth.bridge_failure',
-    category: 'OIDC_BRIDGE_FAILED',
+    category: 'OIDC_LOGIN_BRIDGE_FAILED',
     stage,
     ...(upstreamStatus ? { upstreamStatus } : {}),
   });

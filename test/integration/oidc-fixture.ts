@@ -8,7 +8,15 @@ import {
 export const clientId = 'kleva-fixture-client';
 export const clientSecret = 'fixture-oidc-secret';
 
-type Fault = 'nonce' | 'issuer' | 'audience' | 'expiry' | 'pkce' | 'signature';
+type Fault =
+  | 'nonce'
+  | 'issuer'
+  | 'audience'
+  | 'expiry'
+  | 'pkce'
+  | 'signature'
+  | 'invalid_client'
+  | 'token_endpoint';
 
 export async function startIdentityProvider() {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -55,6 +63,12 @@ export async function startIdentityProvider() {
         const requestCode = form.get('code') ?? '';
         const fixture = requests.get(requestCode);
         requests.delete(requestCode);
+        if (fixture?.fault === 'invalid_client') {
+          return json(response, { error: 'invalid_client' }, 401);
+        }
+        if (fixture?.fault === 'token_endpoint') {
+          return json(response, { error: 'temporarily_unavailable' }, 503);
+        }
         const verifier = form.get('code_verifier') ?? '';
         const challenge = createHash('sha256')
           .update(verifier)
@@ -66,10 +80,11 @@ export async function startIdentityProvider() {
               .split(':')
               .map((value) => decodeURIComponent(value.replace(/\+/g, ' ')))
           : [];
+        if (id !== clientId || secret !== clientSecret) {
+          return json(response, { error: 'invalid_client' }, 401);
+        }
         if (
           !fixture ||
-          id !== clientId ||
-          secret !== clientSecret ||
           form.get('grant_type') !== 'authorization_code' ||
           form.get('redirect_uri') !==
             fixture.authorization.searchParams.get('redirect_uri') ||

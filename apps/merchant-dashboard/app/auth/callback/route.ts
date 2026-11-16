@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-function logBridgeFailure(stage: string, upstreamStatus?: number) {
+function logBridgeFailure(
+  stage: string,
+  upstreamStatus?: number,
+  upstreamRequestId?: string,
+) {
   console.error({
     event: 'merchant_auth.bridge_failure',
-    category: 'OIDC_BRIDGE_FAILED',
+    category: 'OIDC_CALLBACK_BRIDGE_FAILED',
     stage,
     ...(upstreamStatus ? { upstreamStatus } : {}),
+    ...(upstreamRequestId ? { upstreamRequestId } : {}),
   });
 }
 
@@ -26,7 +31,17 @@ export async function GET(request: NextRequest) {
       signal: AbortSignal.timeout(10_000),
     });
     if (upstream.status !== 302 && upstream.status !== 303) {
-      logBridgeFailure('callback_backend_response_invalid', upstream.status);
+      const requestId = upstream.headers.get('x-request-id');
+      logBridgeFailure(
+        'callback_backend_response_invalid',
+        upstream.status,
+        requestId &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            requestId,
+          )
+          ? requestId
+          : undefined,
+      );
       return NextResponse.redirect(
         new URL('/login?error=callback', request.url),
       );
