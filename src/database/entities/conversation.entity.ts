@@ -19,7 +19,7 @@ export class Conversation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column('uuid')
   businessId: string;
 
   @Column()

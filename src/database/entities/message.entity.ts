@@ -20,10 +20,10 @@ export class Message {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column('uuid')
   conversationId: string;
 
-  @Column()
+  @Column('uuid')
   businessId: string;
 
   @Column()

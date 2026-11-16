@@ -10,6 +10,7 @@ import {
 
 const parentTables = ['users', 'customers', 'conversations'] as const;
 const textBusinessIds = [
+  'messages',
   'notifications',
   'onboarding_sessions',
   'pipeline_stages',

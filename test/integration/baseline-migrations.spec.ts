@@ -288,8 +288,27 @@ describe('PostgreSQL migration baseline', () => {
       VALUES ('default-owner@example.test', 'fixture', 'Owner', '${business.id}', 'owner')
       RETURNING id
     `);
+    const [customer] = await prefix.query<{ id: string }[]>(`
+      INSERT INTO customers (name, phone, "whatsappId", "businessId", "ownerId")
+      VALUES ('Fixture Customer', '2348000000012', '2348000000012', '${business.id}', '${owner.id}')
+      RETURNING id
+    `);
+    const [conversation] = await prefix.query<{ id: string }[]>(`
+      INSERT INTO conversations ("businessId", "customerId")
+      VALUES ('${business.id}', '${customer.id}') RETURNING id
+    `);
+    // Reproduce the deployed schema drift while preserving the existing
+    // conversationId -> conversations.id UUID foreign key and business index.
+    await prefix.query(
+      'ALTER TABLE messages ALTER COLUMN "businessId" TYPE varchar USING "businessId"::varchar',
+    );
+    const [message] = await prefix.query<{ id: string }[]>(`
+      INSERT INTO messages ("businessId", "conversationId", direction, content)
+      VALUES ('${business.id}', '${conversation.id}', 'inbound', 'fixture') RETURNING id
+    `);
     for (const table of [
       'notifications',
+      'messages',
       'onboarding_sessions',
       'pipeline_stages',
     ]) {
@@ -321,9 +340,24 @@ describe('PostgreSQL migration baseline', () => {
       `INSERT INTO onboarding_sessions ("whatsappId", "businessId", "ownerId")
        VALUES ('2348000000011', DEFAULT, DEFAULT)`,
     );
+    const fkReproducer = prefix.createQueryRunner();
+    await fkReproducer.connect();
+    await fkReproducer.startTransaction();
+    await fkReproducer.query(
+      'ALTER TABLE conversations ADD CONSTRAINT test_conversations_tenant_key UNIQUE ("businessId", id)',
+    );
+    await expect(
+      fkReproducer.query(`
+        ALTER TABLE messages ADD CONSTRAINT "FK_messages_conversationId_tenant"
+          FOREIGN KEY ("businessId", "conversationId")
+          REFERENCES conversations ("businessId", id) ON DELETE CASCADE NOT VALID
+      `),
+    ).rejects.toMatchObject({ code: '42804' });
+    await fkReproducer.rollbackTransaction();
+    await fkReproducer.release();
     const originalIndexes = await prefix.query<{ indexname: string }[]>(`
       SELECT indexname FROM pg_indexes WHERE schemaname='public'
-        AND tablename IN ('notifications','onboarding_sessions','pipeline_stages')
+        AND tablename IN ('messages','notifications','onboarding_sessions','pipeline_stages')
       ORDER BY indexname
     `);
     await prefix.destroy();
@@ -343,18 +377,18 @@ describe('PostgreSQL migration baseline', () => {
       SELECT table_name, column_name, data_type, column_default
       FROM information_schema.columns
       WHERE table_schema='public' AND
-        ((table_name IN ('notifications','pipeline_stages') AND column_name='businessId') OR
+        ((table_name IN ('messages','notifications','pipeline_stages') AND column_name='businessId') OR
          (table_name='onboarding_sessions' AND column_name IN ('businessId','ownerId')))
       ORDER BY table_name,column_name
     `);
-    expect(converted).toHaveLength(4);
+    expect(converted).toHaveLength(5);
     expect(converted.every(({ data_type }) => data_type === 'uuid')).toBe(true);
     expect(
       converted.every(({ column_default }) => column_default?.includes('uuid')),
     ).toBe(true);
     const convertedIndexes = await source.query<{ indexname: string }[]>(`
       SELECT indexname FROM pg_indexes WHERE schemaname='public'
-        AND tablename IN ('notifications','onboarding_sessions','pipeline_stages')
+        AND tablename IN ('messages','notifications','onboarding_sessions','pipeline_stages')
       ORDER BY indexname
     `);
     expect(convertedIndexes.map(({ indexname }) => indexname)).toEqual(
@@ -365,9 +399,11 @@ describe('PostgreSQL migration baseline', () => {
         SELECT 'notifications' AS table_name, count(*)::int AS count FROM notifications
         UNION ALL SELECT 'pipeline_stages', count(*)::int FROM pipeline_stages
         UNION ALL SELECT 'onboarding_sessions', count(*)::int FROM onboarding_sessions
+        UNION ALL SELECT 'messages', count(*)::int FROM messages
         ORDER BY table_name
       `),
     ).toEqual([
+      { table_name: 'messages', count: 1 },
       { table_name: 'notifications', count: 1 },
       { table_name: 'onboarding_sessions', count: 1 },
       { table_name: 'pipeline_stages', count: 1 },
@@ -378,6 +414,61 @@ describe('PostgreSQL migration baseline', () => {
         FROM onboarding_sessions
       `),
     ).toEqual([{ business_id: business.id, owner_id: owner.id }]);
+    expect(
+      await source.query<
+        { id: string; business_id: string; conversation_id: string }[]
+      >(`
+        SELECT id::text AS id, "businessId"::text AS business_id,
+          "conversationId"::text AS conversation_id FROM messages
+      `),
+    ).toEqual([
+      {
+        id: message.id,
+        business_id: business.id,
+        conversation_id: conversation.id,
+      },
+    ]);
+    const [sameTenantMessage] = await source.query<
+      { id: string; business_id: string; conversation_id: string }[]
+    >(`
+      INSERT INTO messages ("businessId", "conversationId", direction, content)
+      VALUES ('${business.id}', '${conversation.id}', 'inbound', 'same-tenant fixture')
+      RETURNING id::text AS id, "businessId"::text AS business_id,
+        "conversationId"::text AS conversation_id
+    `);
+    expect(sameTenantMessage).toMatchObject({
+      business_id: business.id,
+      conversation_id: conversation.id,
+    });
+    const compositeFk = await source.query<
+      { convalidated: boolean; definition: string }[]
+    >(`
+      SELECT convalidated, pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint WHERE conname='FK_messages_conversationId_tenant'
+    `);
+    expect(compositeFk).toHaveLength(1);
+    expect(compositeFk[0].convalidated).toBe(true);
+    expect(compositeFk[0].definition).toContain(
+      'FOREIGN KEY ("businessId", "conversationId") REFERENCES conversations("businessId", id)',
+    );
+    const [otherBusiness] = await source.query<{ id: string }[]>(`
+      INSERT INTO businesses (name, phone, "whatsappNumber", "phoneNumberId", "accessToken")
+      VALUES ('Other Shop', '2348000000013', '2348000000013', 'other-phone', 'fixture')
+      RETURNING id
+    `);
+    await expect(
+      source.query(
+        `INSERT INTO messages ("businessId", "conversationId", direction, content)
+         VALUES ('${otherBusiness.id}', '${conversation.id}', 'inbound', 'cross-tenant fixture')`,
+      ),
+    ).rejects.toMatchObject({ code: '23503' });
+    expect(await applyMigrations(source)).toEqual([]);
+    expect(
+      await source.query<{ count: number }[]>(`
+        SELECT count(*)::int AS count FROM pg_constraint
+        WHERE conname='FK_messages_conversationId_tenant'
+      `),
+    ).toEqual([{ count: 1 }]);
 
     await source.undoLastMigration();
     const restored = await source.query<
@@ -385,11 +476,11 @@ describe('PostgreSQL migration baseline', () => {
     >(`
       SELECT data_type,column_default FROM information_schema.columns
       WHERE table_schema='public' AND
-        ((table_name IN ('notifications','pipeline_stages') AND column_name='businessId') OR
+        ((table_name IN ('messages','notifications','pipeline_stages') AND column_name='businessId') OR
          (table_name='onboarding_sessions' AND column_name IN ('businessId','ownerId')))
       ORDER BY table_name,column_name
     `);
-    expect(restored).toHaveLength(4);
+    expect(restored).toHaveLength(5);
     expect(
       restored.every(({ data_type }) => data_type === 'character varying'),
     ).toBe(true);
@@ -406,9 +497,11 @@ describe('PostgreSQL migration baseline', () => {
         SELECT 'notifications' AS table_name, count(*)::int AS count FROM notifications
         UNION ALL SELECT 'pipeline_stages', count(*)::int FROM pipeline_stages
         UNION ALL SELECT 'onboarding_sessions', count(*)::int FROM onboarding_sessions
+        UNION ALL SELECT 'messages', count(*)::int FROM messages
         ORDER BY table_name
       `),
     ).toEqual([
+      { table_name: 'messages', count: 2 },
       { table_name: 'notifications', count: 1 },
       { table_name: 'onboarding_sessions', count: 1 },
       { table_name: 'pipeline_stages', count: 1 },
