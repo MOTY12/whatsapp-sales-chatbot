@@ -84,12 +84,19 @@ export class MerchantEmailDeliveryService {
             ? (error as { code?: unknown; command?: unknown })
             : undefined;
         const connectionFailure =
-          ['ETIMEDOUT', 'ECONNECTION', 'ECONNREFUSED'].includes(
+          [
+            'ETIMEDOUT',
+            'ECONNECTION',
+            'ECONNREFUSED',
+            'EDNS',
+            'ENOTFOUND',
+            'EAI_AGAIN',
+          ].includes(
             typeof safeError?.code === 'string' ? safeError.code : '',
           ) &&
           (safeError?.command === undefined || safeError.command === 'CONN');
         if (!connectionFailure || attempt > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
     }
     {
@@ -97,14 +104,18 @@ export class MerchantEmailDeliveryService {
         failure && typeof failure === 'object'
           ? (failure as { code?: unknown; command?: unknown })
           : undefined;
+      const errorCode =
+        typeof safeError?.code === 'string' &&
+        /^[A-Z0-9_]{1,40}$/.test(safeError.code)
+          ? safeError.code
+          : 'UNCLASSIFIED';
+      const dnsFailure = ['EDNS', 'ENOTFOUND', 'EAI_AGAIN'].includes(errorCode);
       this.logger.error({
         event: 'merchant_auth.email_delivery_failed',
-        category: 'SMTP_DELIVERY_FAILED',
-        errorCode:
-          typeof safeError?.code === 'string' &&
-          /^[A-Z0-9_]{1,40}$/.test(safeError.code)
-            ? safeError.code
-            : 'UNCLASSIFIED',
+        category: dnsFailure
+          ? 'SMTP_DNS_LOOKUP_FAILED'
+          : 'SMTP_DELIVERY_FAILED',
+        errorCode,
         smtpCommand:
           typeof safeError?.command === 'string' &&
           /^[A-Z ]{1,40}$/i.test(safeError.command)
