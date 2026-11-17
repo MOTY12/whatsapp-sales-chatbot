@@ -4,6 +4,7 @@ import {
   databaseConfig,
   metaConfig,
   merchantAuthConfig,
+  oidcEnvironmentDiagnostics,
   redisConfig,
   usageConfig,
   whatsappCredentialConfig,
@@ -134,6 +135,44 @@ describe('environment configuration', () => {
     expect(() => merchantAuthConfig({ NODE_ENV: 'production' })).toThrow(
       'OIDC_ISSUER',
     );
+  });
+
+  it('reports OIDC configuration checks without returning credentials', () => {
+    const diagnostics = oidcEnvironmentDiagnostics({
+      OIDC_ISSUER: 'https://accounts.google.com',
+      OIDC_CLIENT_ID: '123456789012-example.apps.googleusercontent.com',
+      OIDC_CLIENT_SECRET: 'fixture-secret-value',
+      OIDC_REDIRECT_URI: 'http://localhost:3001/auth/callback',
+    });
+
+    expect(diagnostics).toEqual({
+      issuerPresent: true,
+      clientIdPresent: true,
+      clientIdTrimmed: true,
+      clientIdLooksLikeGoogleWebClient: true,
+      clientSecretPresent: true,
+      clientSecretTrimmed: true,
+      clientSecretPlaceholder: false,
+      redirectUriPresent: true,
+      redirectUriMatchesLocalDashboardCallback: true,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain('fixture-secret-value');
+  });
+
+  it('detects missing, padded, placeholder and mismatched OIDC settings safely', () => {
+    expect(
+      oidcEnvironmentDiagnostics({
+        OIDC_CLIENT_ID: 'not-a-google-client',
+        OIDC_CLIENT_SECRET: ' replace_me ',
+        OIDC_REDIRECT_URI: 'http://localhost:3001/wrong',
+      }),
+    ).toMatchObject({
+      issuerPresent: false,
+      clientIdLooksLikeGoogleWebClient: false,
+      clientSecretTrimmed: false,
+      clientSecretPlaceholder: true,
+      redirectUriMatchesLocalDashboardCallback: false,
+    });
   });
 
   it('requires a WhatsApp credential keyring in production', () => {

@@ -370,6 +370,38 @@ export function appConfig(env = process.env) {
 export const merchantRolePattern = /^kleva_merchant_[a-z0-9_]{1,48}$/;
 export const identityRolePattern = /^kleva_identity_[a-z0-9_]{1,48}$/;
 
+/** Reports only safe OIDC configuration checks; never returns credential values. */
+export function oidcEnvironmentDiagnostics(env = process.env) {
+  const clientId = env.OIDC_CLIENT_ID ?? '';
+  const clientSecret = env.OIDC_CLIENT_SECRET ?? '';
+  const redirectUri = env.OIDC_REDIRECT_URI?.trim() ?? '';
+  let expectedRedirect = false;
+  try {
+    const redirect = new URL(redirectUri);
+    expectedRedirect =
+      redirect.href === 'http://localhost:3001/auth/callback' &&
+      !redirect.username &&
+      !redirect.password;
+  } catch {
+    // Presence and validity are reported below without logging the value.
+  }
+
+  return {
+    issuerPresent: Boolean(env.OIDC_ISSUER?.trim()),
+    clientIdPresent: Boolean(clientId.trim()),
+    clientIdTrimmed: clientId === clientId.trim(),
+    clientIdLooksLikeGoogleWebClient:
+      /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(
+        clientId.trim(),
+      ),
+    clientSecretPresent: Boolean(clientSecret.trim()),
+    clientSecretTrimmed: clientSecret === clientSecret.trim(),
+    clientSecretPlaceholder: isPlaceholder(clientSecret.trim()),
+    redirectUriPresent: Boolean(redirectUri),
+    redirectUriMatchesLocalDashboardCallback: expectedRedirect,
+  };
+}
+
 export function merchantAuthConfig(env = process.env) {
   const keys = [
     'OIDC_ISSUER',
@@ -381,6 +413,7 @@ export function merchantAuthConfig(env = process.env) {
     'IDENTITY_DATABASE_USER',
     'IDENTITY_DATABASE_PASSWORD',
   ] as const;
+
   const production = applicationEnvironment(env) === 'production';
   if (keys.every((key) => !env[key]?.trim())) {
     if (production) {

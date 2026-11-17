@@ -38,7 +38,9 @@ function cookiePair(response: Response, name: string) {
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
-const origin = 'http://127.0.0.1:3000';
+const redirectUri =
+  process.env.OIDC_REDIRECT_URI || 'http://127.0.0.1:3000/auth/callback';
+const origin = new URL(redirectUri).origin;
 
 describe('merchant OIDC and tenant isolation', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
@@ -87,7 +89,7 @@ describe('merchant OIDC and tenant isolation', () => {
       OIDC_ISSUER: idp.issuer,
       OIDC_CLIENT_ID: clientId,
       OIDC_CLIENT_SECRET: clientSecret,
-      OIDC_REDIRECT_URI: origin + '/auth/callback',
+      OIDC_REDIRECT_URI: redirectUri,
     };
     // Run Nest under Node's native module loader while keeping the signed
     // provider and disposable database under the suite's control.
@@ -134,9 +136,7 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(302)
       .expect('Cache-Control', 'no-store');
     const authorization = new URL(String(response.headers.location));
-    expect(authorization.searchParams.get('redirect_uri')).toBe(
-      origin + '/auth/callback',
-    );
+    expect(authorization.searchParams.get('redirect_uri')).toBe(redirectUri);
     expect(authorization.searchParams.get('code_challenge_method')).toBe(
       'S256',
     );

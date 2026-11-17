@@ -1,10 +1,12 @@
 import {
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type * as Oidc from 'openid-client';
+import { oidcEnvironmentDiagnostics } from '../config/env';
 import {
   MERCHANT_AUTH_CONFIG,
   type MerchantAuthConfig,
@@ -22,6 +24,7 @@ export class OidcStageFailure extends Error {
 
 @Injectable()
 export class MerchantOidcClient {
+  private readonly logger = new Logger(MerchantOidcClient.name);
   private readonly callbackStage = new AsyncLocalStorage<{
     tokenEndpointAttempted: boolean;
     tokenEndpointSucceeded: boolean;
@@ -30,6 +33,7 @@ export class MerchantOidcClient {
     client: typeof Oidc;
     configuration: Oidc.Configuration;
   }>;
+  private configurationLogged = false;
 
   constructor(
     @Inject(MERCHANT_AUTH_CONFIG) private readonly config: MerchantAuthConfig,
@@ -40,6 +44,14 @@ export class MerchantOidcClient {
       throw new ServiceUnavailableException(
         'Merchant authentication is unavailable.',
       );
+    if (!this.configurationLogged) {
+      this.configurationLogged = true;
+      this.logger.log({
+        event: 'merchant_auth.oidc_configuration',
+        ...oidcEnvironmentDiagnostics(),
+        tokenEndpointAuthenticationMethod: 'client_secret_basic',
+      });
+    }
     const settings = this.config;
     this.discovery ??= this.discover(settings).catch((error: unknown) => {
       this.discovery = undefined;
