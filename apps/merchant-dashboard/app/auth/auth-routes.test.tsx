@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET as login } from './login/route';
+import { GET as signup } from './signup/route';
 import { GET as callback } from './callback/route';
 
 const dashboardOrigin = 'http://localhost:3001';
@@ -41,6 +42,28 @@ describe('merchant OIDC route bridge', () => {
     expect(response.headers.get('set-cookie')).toContain('kleva_oidc_binding=');
     expect(fetchMock).toHaveBeenCalledWith(
       new URL('/auth/login', 'http://localhost:3000'),
+      expect.objectContaining({ redirect: 'manual', cache: 'no-store' }),
+    );
+  });
+
+  it('starts a distinct server-bound signup intent', async () => {
+    vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: {
+          location: providerUrl,
+          'set-cookie': 'kleva_oidc_binding=signup-binding; HttpOnly; Path=/',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await signup();
+
+    expect(response.headers.get('location')).toBe(providerUrl);
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL('/auth/signup', 'http://localhost:3000'),
       expect.objectContaining({ redirect: 'manual', cache: 'no-store' }),
     );
   });
@@ -127,6 +150,52 @@ describe('merchant OIDC route bridge', () => {
     );
     expect(JSON.stringify(errorLog.mock.calls)).toContain(
       'OIDC_CALLBACK_BRIDGE_FAILED',
+    );
+  });
+
+  it('shows the specific registration-versus-login outcome safely', async () => {
+    vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            code: 'merchant_account_not_found',
+            message: 'No merchant account found. Please create an account.',
+          },
+          { status: 401 },
+        ),
+      ),
+    );
+
+    const response = await callback(
+      request(`${dashboardOrigin}/auth/callback?code=fixture&state=fixture`),
+    );
+
+    expect(response.headers.get('location')).toBe(
+      `${dashboardOrigin}/login?error=not_registered`,
+    );
+  });
+
+  it('resumes registration after the backend authenticates a new merchant', async () => {
+    vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
+    const upstreamHeaders = new Headers({ location: '/onboarding' });
+    upstreamHeaders.append('set-cookie', 'kleva_session=session; Path=/');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(null, { status: 302, headers: upstreamHeaders }),
+        ),
+    );
+
+    const response = await callback(
+      request(`${dashboardOrigin}/auth/callback?code=fixture&state=fixture`),
+    );
+
+    expect(response.headers.get('location')).toBe(
+      `${dashboardOrigin}/onboarding`,
     );
   });
 });

@@ -6,6 +6,17 @@ export type Membership = {
   role: 'owner' | 'editor' | 'agent';
 };
 export type Identity = { accountId: string; memberships: Membership[] };
+export type OnboardingStep =
+  | 'business_profile'
+  | 'whatsapp'
+  | 'products_faq'
+  | 'ai_assistant'
+  | 'dashboard';
+export type OnboardingProgress = {
+  current_step: OnboardingStep;
+  completed_steps: string[];
+  updated_at: string;
+};
 export type Business = {
   id: string;
   name: string;
@@ -19,9 +30,14 @@ export type Business = {
 };
 export type WhatsAppStatus = {
   status: 'active' | 'inactive' | 'pending';
+  id?: string;
   displayName?: string | null;
   phoneNumberId?: string;
   wabaId?: string;
+};
+export type MerchantPilotStatus = {
+  status?: 'NOT_ENROLLED' | 'PENDING_REVIEW' | 'ACTIVE' | 'REVOKED';
+  assistant_ready?: boolean;
 };
 
 export type InboxMode = 'AUTO' | 'HUMAN';
@@ -306,6 +322,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   identity: () => request<Identity>('/auth/me'),
+  onboarding: () => request<OnboardingProgress>('/auth/onboarding'),
+  updateOnboarding: (currentStep: OnboardingStep) =>
+    request<OnboardingProgress>('/auth/onboarding', {
+      method: 'POST',
+      body: JSON.stringify({ currentStep }),
+    }),
   business: (id: string) =>
     request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`),
   createBusiness: (
@@ -338,6 +360,28 @@ export const api = {
   whatsapp: (id: string) =>
     request<WhatsAppStatus>(
       `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
+    ),
+  pilot: (id: string) =>
+    request<MerchantPilotStatus>(
+      `/merchant/businesses/${encodeURIComponent(id)}/pilot`,
+    ),
+  enrollPilot: (
+    businessId: string,
+    connectionId: string,
+    aiProviderDisclosureAccepted: boolean,
+    humanEscalationAccepted: boolean,
+  ) =>
+    request<{ status: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/pilot/enroll`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          connectionId,
+          consentVersion: 'pilot-merchant-v1',
+          aiProviderDisclosureAccepted,
+          humanEscalationAccepted,
+        }),
+      },
     ),
   conversations: (businessId: string, limit = 30, cursor?: string) => {
     const query = new URLSearchParams({ limit: String(limit) });

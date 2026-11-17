@@ -22,6 +22,13 @@ export class OidcStageFailure extends Error {
   }
 }
 
+type OidcConfiguration = NonNullable<MerchantAuthConfig> & {
+  issuer: URL;
+  redirect: URL;
+  clientId: string;
+  clientSecret: string;
+};
+
 @Injectable()
 export class MerchantOidcClient {
   private readonly logger = new Logger(MerchantOidcClient.name);
@@ -40,7 +47,12 @@ export class MerchantOidcClient {
   ) {}
 
   private provider() {
-    if (!this.config)
+    if (
+      !this.config?.issuer ||
+      !this.config.clientId ||
+      !this.config.clientSecret ||
+      !this.config.redirect
+    )
       throw new ServiceUnavailableException(
         'Merchant authentication is unavailable.',
       );
@@ -52,7 +64,13 @@ export class MerchantOidcClient {
         tokenEndpointAuthenticationMethod: 'client_secret_basic',
       });
     }
-    const settings = this.config;
+    const settings: OidcConfiguration = {
+      ...this.config,
+      issuer: this.config.issuer,
+      clientId: this.config.clientId,
+      clientSecret: this.config.clientSecret,
+      redirect: this.config.redirect,
+    };
     this.discovery ??= this.discover(settings).catch((error: unknown) => {
       this.discovery = undefined;
       throw new OidcStageFailure(
@@ -63,7 +81,7 @@ export class MerchantOidcClient {
     return this.discovery;
   }
 
-  private async discover(settings: NonNullable<MerchantAuthConfig>) {
+  private async discover(settings: OidcConfiguration) {
     const client = await import('openid-client');
     const local = settings.issuer.protocol === 'http:';
     let tokenEndpoint = '';
@@ -134,7 +152,7 @@ export class MerchantOidcClient {
     const { client, configuration } = await this.provider();
     return client.buildAuthorizationUrl(configuration, {
       redirect_uri: redirect.href,
-      scope: 'openid',
+      scope: 'openid email profile',
       response_type: 'code',
       state,
       nonce,
@@ -181,7 +199,20 @@ export class MerchantOidcClient {
       ) {
         throw new OidcStageFailure('OIDC_ID_TOKEN_INVALID');
       }
-      return { issuer: claims.iss, subject: claims.sub };
+      const email = typeof claims.email === 'string' ? claims.email : undefined;
+      const fullName =
+        typeof claims.name === 'string'
+          ? claims.name
+          : [claims.given_name, claims.family_name]
+              .filter((part): part is string => typeof part === 'string')
+              .join(' ');
+      return {
+        issuer: claims.iss,
+        subject: claims.sub,
+        email,
+        fullName: fullName || undefined,
+        emailVerified: claims.email_verified === true,
+      };
     });
   }
 

@@ -107,8 +107,11 @@ export async function startIdentityProvider() {
                 : fixture.authorization.searchParams.get('nonce'),
             iat: now - (fixture.fault === 'expiry' ? 1000 : 0),
             exp: fixture.fault === 'expiry' ? now - 500 : now + 300,
-            email: 'owner@example.test',
-            email_verified: false,
+            email:
+              fixture.subject.replace(/[^a-zA-Z0-9._-]/g, '-') +
+              '@example.test',
+            email_verified: true,
+            name: fixture.subject.replaceAll('-', ' '),
           }),
         ).toString('base64url');
         const content = header + '.' + claims;

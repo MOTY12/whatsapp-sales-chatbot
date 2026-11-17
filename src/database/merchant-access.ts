@@ -12,6 +12,12 @@ export const initialMerchantPolicyTables = [
 ];
 export const merchantPolicyTables = [
   ...initialMerchantPolicyTables,
+  'merchant_onboarding_progress',
+  'merchant_auth_profiles',
+  'merchant_password_credentials',
+  'merchant_auth_identities',
+  'merchant_auth_tokens',
+  'merchant_auth_rate_limits',
   'merchant_leads',
   'merchant_lead_events',
   'ai_response_runs',
@@ -20,6 +26,23 @@ export const merchantPolicyTables = [
 const identityFunctions = [
   'kleva_consume_login(text,text)',
   'kleva_issue_session(text,text,text,text,text)',
+];
+const registrationFunctions = [
+  'kleva_read_onboarding_progress(text)',
+  'kleva_set_onboarding_step(text,text)',
+];
+const emailAuthFunctions = [
+  'kleva_auth_rate_limit(text,text,integer,integer)',
+  'kleva_register_password(text,text,text,text,timestamptz)',
+  'kleva_password_account(text)',
+  'kleva_create_password_session(text,text,text,text)',
+  'kleva_create_auth_token(text,text,text,timestamptz)',
+  'kleva_auth_profile_for_delivery(text)',
+  'kleva_verify_email(text)',
+  'kleva_reset_password(text,text)',
+  'kleva_set_password(text,text)',
+  'kleva_complete_oidc_auth_v2(text,text,text,text,boolean,text,text,text,text,uuid,text)',
+  'kleva_consume_auth_attempt(text,text)',
 ];
 const sessionFunctions = [
   'kleva_session_account(text,text)',
@@ -119,7 +142,7 @@ export async function grantMerchantAccess(
       `GRANT EXECUTE ON FUNCTION ${pilotFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${identityFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...identityFunctions, 'kleva_list_memberships(text)', ...registrationFunctions, ...emailAuthFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,
     );
   });
 }

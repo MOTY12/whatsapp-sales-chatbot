@@ -49,6 +49,8 @@ import { MerchantLeads1760000000016 } from './migrations/1760000000016-MerchantL
 import { AiResponseRuns1760000000017 } from './migrations/1760000000017-AiResponseRuns';
 import { MerchantPilotApproval1760000000018 } from './migrations/1760000000018-MerchantPilotApproval';
 import { MerchantLead } from './entities/merchant-lead.entity';
+import { MerchantSignupAndOnboarding1760000000019 } from './migrations/1760000000019-MerchantSignupAndOnboarding';
+import { MerchantEmailAuthentication1760000000020 } from './migrations/1760000000020-MerchantEmailAuthentication';
 
 export const databaseEntities = [
   Business,
@@ -96,4 +98,6 @@ export const databaseMigrations = [
   MerchantLeads1760000000016,
   AiResponseRuns1760000000017,
   MerchantPilotApproval1760000000018,
+  MerchantSignupAndOnboarding1760000000019,
+  MerchantEmailAuthentication1760000000020,
 ];

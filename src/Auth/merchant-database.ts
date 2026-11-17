@@ -1,13 +1,18 @@
 import {
   Inject,
   Injectable,
+  Logger,
   OnApplicationShutdown,
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { merchantAuthConfig } from '../config/env';
-import { databaseLogger } from '../config/logging';
+import {
+  databaseLogger,
+  errorCode,
+  postgresErrorCategory,
+} from '../config/logging';
 import { merchantPolicyTables } from '../database/merchant-access';
 
 export const MERCHANT_AUTH_CONFIG = Symbol('MERCHANT_AUTH_CONFIG');
@@ -15,6 +20,7 @@ export type MerchantAuthConfig = ReturnType<typeof merchantAuthConfig>;
 
 @Injectable()
 export class MerchantDatabase implements OnModuleInit, OnApplicationShutdown {
+  private readonly logger = new Logger(MerchantDatabase.name);
   private source?: DataSource;
   private identity?: DataSource;
 
@@ -40,6 +46,8 @@ export class MerchantDatabase implements OnModuleInit, OnApplicationShutdown {
     options: NonNullable<MerchantAuthConfig>['database'],
     identity: boolean,
   ) {
+    let stage: 'connection' | 'role_validation' = 'connection';
+    let failureCategory: string | undefined;
     const source = new DataSource({
       ...options,
       poolSize: 4,
@@ -48,6 +56,7 @@ export class MerchantDatabase implements OnModuleInit, OnApplicationShutdown {
     });
     try {
       await source.initialize();
+      stage = 'role_validation';
       const [result] = await source.query<{ restricted: boolean }[]>(
         `
         SELECT current_user = $1 AND session_user = current_user
@@ -70,12 +79,24 @@ export class MerchantDatabase implements OnModuleInit, OnApplicationShutdown {
         [options.username, merchantPolicyTables, identity],
       );
       if (!result?.restricted) {
-        throw new Error(
-          'Merchant database role is not restricted or RLS is missing.',
-        );
+        failureCategory = 'role_policy_check_failed';
+        throw new Error('Merchant database role policy check failed.');
       }
       return source;
-    } catch {
+    } catch (error) {
+      const code = errorCode(error) ?? nestedDatabaseErrorCode(error);
+      this.logger.error({
+        event: 'merchant_database.initialization_failed',
+        role: identity ? 'identity' : 'merchant',
+        stage,
+        category:
+          failureCategory ??
+          (stage === 'connection'
+            ? 'database_connection_failed'
+            : 'role_policy_query_failed'),
+        ...(code ? { databaseErrorCode: code } : {}),
+        ...(code ? { databaseCategory: postgresErrorCategory({ code }) } : {}),
+      });
       if (source.isInitialized) await source.destroy();
       throw new Error('Merchant database role initialization failed.');
     }
@@ -100,4 +121,10 @@ export class MerchantDatabase implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown() {
     await Promise.all([this.source?.destroy(), this.identity?.destroy()]);
   }
+}
+
+function nestedDatabaseErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('driverError' in error))
+    return undefined;
+  return errorCode(error.driverError);
 }

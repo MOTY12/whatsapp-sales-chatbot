@@ -38,6 +38,30 @@ function cookiePair(response: Response, name: string) {
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+function mailToken(message: string | undefined) {
+  const decoded = (message ?? '').replace(/=\r?\n/g, '').replace(/=3D/gi, '=');
+  return decoded.match(/token=([A-Za-z0-9_-]{43})/)?.[1];
+}
+async function waitForMail(
+  smtp: { messages: string[] },
+  previousCount: number,
+) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const message = smtp.messages[previousCount];
+    if (message) return message;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('Expected the local SMTP fixture to capture a message.');
+}
+async function clearEmailAuthenticationFixtures(admin: DataSource) {
+  await admin.query('DELETE FROM public.merchant_auth_tokens');
+  await admin.query('DELETE FROM public.merchant_password_credentials');
+  await admin.query('DELETE FROM public.merchant_auth_profiles');
+  await admin.query(
+    `DELETE FROM public.merchant_auth_identities i USING public.accounts a
+     WHERE i.account_id=a.id AND (a.issuer<>i.issuer OR a.subject<>i.subject)`,
+  );
+}
 const redirectUri =
   process.env.OIDC_REDIRECT_URI || 'http://127.0.0.1:3000/auth/callback';
 const origin = new URL(redirectUri).origin;
@@ -46,6 +70,7 @@ describe('merchant OIDC and tenant isolation', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
   let idp: Awaited<ReturnType<typeof startIdentityProvider>>;
   let meta: Awaited<ReturnType<typeof startMetaFixture>>;
+  let smtp: { messages: string[] };
   let app: ReturnType<typeof fork>;
   let server: string;
   let merchantDatabase: MerchantDatabase;
@@ -63,6 +88,7 @@ describe('merchant OIDC and tenant isolation', () => {
     const credentials = await database.merchantCredentials(admin);
     idp = await startIdentityProvider();
     meta = await startMetaFixture();
+    smtp = { messages: [] };
     env = {
       ...process.env,
       NODE_ENV: 'test',
@@ -90,6 +116,15 @@ describe('merchant OIDC and tenant isolation', () => {
       OIDC_CLIENT_ID: clientId,
       OIDC_CLIENT_SECRET: clientSecret,
       OIDC_REDIRECT_URI: redirectUri,
+      EMAIL_AUTH_ENABLED: 'true',
+      EMAIL_SMTP_HOST: '127.0.0.1',
+      EMAIL_SMTP_PORT: '587',
+      EMAIL_SMTP_SECURE: 'false',
+      EMAIL_SMTP_USER: 'fixture-user',
+      EMAIL_SMTP_PASSWORD: 'fixture-password',
+      EMAIL_FROM: 'no-reply@example.test',
+      MERCHANT_PUBLIC_ORIGIN: 'http://localhost:3001',
+      AUTH_RATE_LIMIT_SECRET: randomBytes(32).toString('base64url'),
     };
     // Run Nest under Node's native module loader while keeping the signed
     // provider and disposable database under the suite's control.
@@ -97,16 +132,29 @@ describe('merchant OIDC and tenant isolation', () => {
       env,
       execArgv: ['-r', 'ts-node/register/transpile-only'],
     });
-    const [port] = (await Promise.race([
+    app.on('message', (message: unknown) => {
+      if (
+        message &&
+        typeof message === 'object' &&
+        'type' in message &&
+        message.type === 'smtp_message' &&
+        'message' in message &&
+        typeof message.message === 'string'
+      ) {
+        smtp.messages.push(message.message);
+      }
+    });
+    const [ready] = (await Promise.race([
       once(app, 'message'),
       once(app, 'exit').then(([code]) => {
         throw new Error(
           'Merchant auth fixture exited with code ' + String(code),
         );
       }),
-    ])) as [unknown];
-    if (typeof port !== 'number') throw new Error('Expected auth fixture port');
-    server = 'http://127.0.0.1:' + String(port);
+    ])) as [{ type: string; port?: number }];
+    if (ready.type !== 'ready' || typeof ready.port !== 'number')
+      throw new Error('Expected auth fixture port');
+    server = 'http://127.0.0.1:' + String(ready.port);
 
     merchantDatabase = new MerchantDatabase(merchantAuthConfig(env));
     await merchantDatabase.onModuleInit();
@@ -129,9 +177,9 @@ describe('merchant OIDC and tenant isolation', () => {
     }
   });
 
-  async function start() {
+  async function start(intent: 'signup' | 'login' = 'signup') {
     const response = await request(server)
-      .get('/auth/login')
+      .get(`/auth/${intent}`)
       .query({ redirect_uri: 'https://untrusted.example.test/callback' })
       .expect(302)
       .expect('Cache-Control', 'no-store');
@@ -149,16 +197,29 @@ describe('merchant OIDC and tenant isolation', () => {
     };
   }
 
-  async function login(subject: string, previous?: string) {
-    const { authorization, binding } = await start();
+  async function callbackAttempt(
+    subject: string,
+    intent: 'signup' | 'login',
+    previous?: string,
+  ): Promise<Response> {
+    const { authorization, binding } = await start(intent);
     const state = authorization.searchParams.get('state');
     const code = idp.authorize(authorization, subject);
-    const response = await request(server)
+    return await request(server)
       .get('/auth/callback')
       .query({ code, state })
-      .set('Cookie', previous ? binding + '; ' + previous : binding)
-      .expect(302)
-      .expect('Location', '/auth/me');
+      .set('Cookie', previous ? binding + '; ' + previous : binding);
+  }
+
+  async function authenticate(
+    subject: string,
+    intent: 'signup' | 'login' = 'signup',
+    previous?: string,
+    expectedLocation = '/onboarding',
+  ) {
+    const response = await callbackAttempt(subject, intent, previous);
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(expectedLocation);
     expect(cookieHeader(response, 'kleva_session')).toMatch(
       /HttpOnly; SameSite=Lax/i,
     );
@@ -166,15 +227,32 @@ describe('merchant OIDC and tenant isolation', () => {
     expect(response.text).not.toContain('private-provider');
     const session = cookiePair(response, 'kleva_session');
     const csrf = cookiePair(response, 'kleva_csrf').split('=')[1];
-    const account = await admin
-      .getRepository(Account)
-      .findOneByOrFail({ issuer: idp.issuer, subject });
+    const [account] = await admin.query<{ id: string }[]>(
+      `SELECT a.id FROM public.accounts a
+       LEFT JOIN public.merchant_auth_identities i ON i.account_id=a.id
+       WHERE (a.issuer=$1 AND a.subject=$2) OR (i.issuer=$1 AND i.subject=$2)
+       ORDER BY a.id LIMIT 1`,
+      [idp.issuer, subject],
+    );
+    if (!account) throw new Error('Expected merchant identity fixture.');
     return {
       session,
       csrf,
       accountId: account.id,
       digest: hash(session.split('=')[1]),
     };
+  }
+
+  async function login(subject: string, previous?: string) {
+    return authenticate(subject, 'signup', previous);
+  }
+
+  async function signIn(
+    subject: string,
+    previous?: string,
+    expectedLocation = '/onboarding',
+  ) {
+    return authenticate(subject, 'login', previous, expectedLocation);
   }
 
   it('rejects unsafe configuration and anonymous merchant requests', async () => {
@@ -197,6 +275,316 @@ describe('merchant OIDC and tenant isolation', () => {
     await request(server).get('/auth/businesses').expect(401);
   });
 
+  it('separates signup from sign-in and rejects duplicate registrations', async () => {
+    const missingSubject = 'not-registered-before-login';
+    const signInResponse = await callbackAttempt(missingSubject, 'login');
+    expect(signInResponse.status).toBe(401);
+    expect(signInResponse.body).toMatchObject({
+      code: 'merchant_account_not_found',
+      message: 'No merchant account found. Please create an account.',
+    });
+    await expect(
+      admin.getRepository(Account).countBy({ subject: missingSubject }),
+    ).resolves.toBe(0);
+
+    const subject = 'explicit-signup-then-login';
+    const created = await login(subject);
+    const duplicate = await callbackAttempt(subject, 'signup');
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body).toMatchObject({
+      code: 'merchant_account_exists',
+      message: 'An account already exists. Please sign in.',
+    });
+    await expect(
+      admin.getRepository(Account).countBy({ subject }),
+    ).resolves.toBe(1);
+    const returning = await signIn(subject);
+    expect(returning.accountId).toBe(created.accountId);
+  });
+
+  it('registers verified Argon2id email identities and rotates all sessions after password reset', async () => {
+    const email = 'Merchant.Email@example.test';
+    const password = 'correct horse battery staple - kleva';
+    const registrationMailIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/register')
+      .send({ fullName: 'Merchant Owner', email, password })
+      .expect(202)
+      .expect(({ body }: Response) =>
+        expect((body as { message: string }).message).toBe(
+          'If registration can proceed, we sent an email with the next step.',
+        ),
+      );
+    const registrationMail = await waitForMail(smtp, registrationMailIndex);
+    const verificationToken = mailToken(registrationMail);
+    expect(verificationToken).toBeDefined();
+
+    await request(server)
+      .post('/auth/register')
+      .send({
+        fullName: 'Duplicate Owner',
+        email: email.toLowerCase(),
+        password,
+      })
+      .expect(202);
+    await request(server)
+      .post('/auth/register')
+      .send({ fullName: 'Invalid Owner', email: 'not-an-email', password })
+      .expect(400);
+    await request(server)
+      .post('/auth/register')
+      .send({
+        fullName: 'Weak Owner',
+        email: 'weak@example.test',
+        password: 'password123456',
+      })
+      .expect(400);
+    await request(server)
+      .post('/auth/login/password')
+      .send({ email, password })
+      .expect(403)
+      .expect(({ body }: Response) =>
+        expect((body as { message: string }).message).toContain(
+          'Verify your email address',
+        ),
+      );
+
+    const verified = await request(server)
+      .post('/auth/verify-email')
+      .send({ token: verificationToken })
+      .expect(200);
+    expect((verified.body as { verified: boolean }).verified).toBe(true);
+    await request(server)
+      .post('/auth/verify-email')
+      .send({ token: verificationToken })
+      .expect(200)
+      .expect(({ body }: Response) =>
+        expect((body as { verified: boolean }).verified).toBe(false),
+      );
+
+    const expiredEmail = 'expired-verification@example.test';
+    const expiredVerificationIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/register')
+      .send({ fullName: 'Expired Owner', email: expiredEmail, password })
+      .expect(202);
+    const expiredVerification = mailToken(
+      await waitForMail(smtp, expiredVerificationIndex),
+    );
+    expect(expiredVerification).toBeDefined();
+    await admin.query(
+      "UPDATE public.merchant_auth_tokens SET expires_at=now()-interval '1 second' WHERE token_digest=$1",
+      [hash(expiredVerification!)],
+    );
+    await request(server)
+      .post('/auth/verify-email')
+      .send({ token: expiredVerification })
+      .expect(200)
+      .expect(({ body }: Response) =>
+        expect((body as { verified: boolean }).verified).toBe(false),
+      );
+    await request(server)
+      .post('/auth/login/password')
+      .send({ email: expiredEmail, password })
+      .expect(403);
+
+    await request(server)
+      .post('/auth/login/password')
+      .send({ email: email.toLowerCase(), password: 'incorrect password' })
+      .expect(401)
+      .expect(({ body }: Response) =>
+        expect((body as { message: string }).message).toBe(
+          'Invalid email or password.',
+        ),
+      );
+    const signedIn = await request(server)
+      .post('/auth/login/password')
+      .send({ email, password })
+      .expect(200);
+    expect((signedIn.body as { nextPath: string }).nextPath).toBe(
+      '/onboarding',
+    );
+    const session = cookiePair(signedIn, 'kleva_session');
+    expect(cookieHeader(signedIn, 'kleva_session')).toMatch(/HttpOnly/i);
+
+    const expiredResetMailIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/forgot-password')
+      .send({ email })
+      .expect(200);
+    const expiredResetMail = await waitForMail(smtp, expiredResetMailIndex);
+    const resetToken = mailToken(expiredResetMail);
+    expect(resetToken).toBeDefined();
+    await admin.query(
+      "UPDATE public.merchant_auth_tokens SET expires_at=now()-interval '1 second' WHERE token_digest=$1",
+      [hash(resetToken!)],
+    );
+    await request(server)
+      .post('/auth/reset-password')
+      .send({ token: resetToken, password: 'new password after expiry 2026' })
+      .expect(400);
+
+    const liveResetMailIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/forgot-password')
+      .send({ email })
+      .expect(200);
+    const liveResetMail = await waitForMail(smtp, liveResetMailIndex);
+    const liveResetToken = mailToken(liveResetMail);
+    expect(liveResetToken).toBeDefined();
+    const nextPassword = 'new password after reset 2026';
+    const confirmationMailIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/reset-password')
+      .send({ token: liveResetToken, password: nextPassword })
+      .expect(200);
+    const confirmationMail = await waitForMail(smtp, confirmationMailIndex);
+    expect(confirmationMail).toContain('Your Kleva password was changed');
+    await request(server)
+      .post('/auth/reset-password')
+      .send({ token: liveResetToken, password: nextPassword })
+      .expect(400);
+    await request(server).get('/auth/me').set('Cookie', session).expect(401);
+    await request(server)
+      .post('/auth/login/password')
+      .send({ email, password })
+      .expect(401);
+    const newLogin = await request(server)
+      .post('/auth/login/password')
+      .send({ email, password: nextPassword })
+      .expect(200);
+    expect(cookieHeader(newLogin, 'kleva_session')).toMatch(/HttpOnly/i);
+    const newCsrf = cookiePair(newLogin, 'kleva_csrf').split('=')[1];
+    expect(newCsrf).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    await request(server)
+      .post('/auth/password')
+      .set('Cookie', cookiePair(newLogin, 'kleva_session'))
+      .send({ password: 'updated password with CSRF validation' })
+      .expect(403);
+    await request(server)
+      .post('/auth/password')
+      .set('Cookie', cookiePair(newLogin, 'kleva_session'))
+      .set('Origin', origin)
+      .set('X-CSRF-Token', newCsrf)
+      .send({ password: 'updated password with CSRF validation' })
+      .expect(200);
+    const [profile] = await admin.query<
+      { email: string; full_name: string; verified: boolean; hash: string }[]
+    >(
+      `SELECT p.email,p.full_name,p.email_verified_at IS NOT NULL AS verified,
+        c.password_hash AS hash FROM public.merchant_auth_profiles p
+       JOIN public.merchant_password_credentials c USING(account_id)
+       WHERE p.email=$1`,
+      [email.toLowerCase()],
+    );
+    expect(profile).toMatchObject({
+      email: email.toLowerCase(),
+      full_name: 'Merchant Owner',
+      verified: true,
+    });
+    expect(profile.hash).not.toContain(password);
+    expect(profile.hash).toMatch(/^\$argon2id\$/);
+  });
+
+  it('links Google to an authenticated password identity without email-based account merging', async () => {
+    const email = 'linked@example.test';
+    const password = 'linking merchant identity with a long passphrase';
+    const verificationIndex = smtp.messages.length;
+    await request(server)
+      .post('/auth/register')
+      .send({ fullName: 'Linked Owner', email, password })
+      .expect(202);
+    const verification = mailToken(await waitForMail(smtp, verificationIndex));
+    await request(server)
+      .post('/auth/verify-email')
+      .send({ token: verification })
+      .expect(200);
+    const passwordLogin = await request(server)
+      .post('/auth/login/password')
+      .send({ email, password })
+      .expect(200);
+    const passwordSession = cookiePair(passwordLogin, 'kleva_session');
+    const googleStart = await request(server)
+      .get('/auth/google/link')
+      .set('Cookie', passwordSession)
+      .expect(302);
+    const authorization = new URL(String(googleStart.headers.location));
+    const binding = cookiePair(googleStart, 'kleva_oidc_binding');
+    const state = authorization.searchParams.get('state');
+    const code = idp.authorize(authorization, 'linked-google-identity');
+    const linked = await request(server)
+      .get('/auth/callback')
+      .set('Cookie', `${binding}; ${passwordSession}`)
+      .query({ code, state })
+      .expect(302);
+    const linkedSession = cookiePair(linked, 'kleva_session');
+    const identity = await request(server)
+      .get('/auth/me')
+      .set('Cookie', linkedSession)
+      .expect(200);
+    const accountId = (identity.body as { accountId: string }).accountId;
+    const googleLogin = await signIn('linked-google-identity');
+    expect(googleLogin.accountId).toBe(accountId);
+
+    const manualEmail = 'manual-match@example.test';
+    const manualAccountId = randomUUID();
+    await admin.query(
+      `INSERT INTO public.accounts(id,issuer,subject)
+       VALUES($1::uuid,'urn:kleva:password',$2)`,
+      [manualAccountId, manualAccountId],
+    );
+    await admin.query(
+      `INSERT INTO public.merchant_auth_profiles
+       (account_id,email,full_name,email_verified_at)
+       VALUES($1,$2,'Manual Match Owner',now())`,
+      [manualAccountId, manualEmail],
+    );
+    const sameEmailGoogleSignup = await callbackAttempt(
+      'manual-match',
+      'signup',
+    );
+    expect(sameEmailGoogleSignup.status).toBe(409);
+    const [identities] = await admin.query<{ count: string }[]>(
+      `SELECT count(*)::text AS count FROM public.merchant_auth_identities
+       WHERE issuer=$1 AND subject='manual-match'`,
+      [idp.issuer],
+    );
+    expect(identities.count).toBe('0');
+  });
+
+  it('persists onboarding navigation across sessions without marking optional integrations ready', async () => {
+    const merchant = await login('resume-onboarding-session');
+    const initial = await request(server)
+      .get('/auth/onboarding')
+      .set('Cookie', merchant.session)
+      .expect(200);
+    expect(initial.body).toMatchObject({
+      current_step: 'business_profile',
+      completed_steps: ['account'],
+    });
+    await request(server)
+      .post('/auth/onboarding')
+      .set('Cookie', merchant.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', merchant.csrf)
+      .send({ currentStep: 'ai_assistant' })
+      .expect(201)
+      .then(({ body }) =>
+        expect(body).toMatchObject({ current_step: 'ai_assistant' }),
+      );
+    const returning = await signIn('resume-onboarding-session');
+    const resumed = await request(server)
+      .get('/auth/onboarding')
+      .set('Cookie', returning.session)
+      .expect(200);
+    const resumedBody = resumed.body as {
+      current_step: string;
+      completed_steps: string[];
+    };
+    expect(resumedBody.current_step).toBe('ai_assistant');
+    expect(resumedBody.completed_steps).toEqual(['account']);
+  });
+
   it('fails closed when the identity role cannot create a session', async () => {
     const { authorization, binding } = await start();
     const subject = 'session-permission-fixture';
@@ -206,7 +594,7 @@ describe('merchant OIDC and tenant isolation', () => {
     const quotedIdentityRole = `"${identityRole.replaceAll('"', '""')}"`;
 
     await admin.query(
-      `REVOKE EXECUTE ON FUNCTION public.kleva_issue_session(text,text,text,text,text) FROM ${quotedIdentityRole}`,
+      `REVOKE EXECUTE ON FUNCTION public.kleva_complete_oidc_auth_v2(text,text,text,text,boolean,text,text,text,text,uuid,text) FROM ${quotedIdentityRole}`,
     );
     try {
       await request(server)
@@ -219,7 +607,7 @@ describe('merchant OIDC and tenant isolation', () => {
       ).resolves.toBe(0);
     } finally {
       await admin.query(
-        `GRANT EXECUTE ON FUNCTION public.kleva_issue_session(text,text,text,text,text) TO ${quotedIdentityRole}`,
+        `GRANT EXECUTE ON FUNCTION public.kleva_complete_oidc_auth_v2(text,text,text,text,boolean,text,text,text,text,uuid,text) TO ${quotedIdentityRole}`,
       );
     }
   });
@@ -263,6 +651,25 @@ describe('merchant OIDC and tenant isolation', () => {
       ),
     );
     expect(concurrent.map(({ status }) => status).sort()).toEqual([302, 400]);
+  });
+
+  it('rejects an expired registration state without creating an identity', async () => {
+    const { authorization, binding } = await start('signup');
+    const subject = 'expired-registration-state';
+    const state = authorization.searchParams.get('state');
+    const code = idp.authorize(authorization, subject);
+    await admin.query(
+      "UPDATE merchant_login_attempts SET expires_at = now() - interval '1 second' WHERE state_digest = $1",
+      [hash(state ?? '')],
+    );
+    await request(server)
+      .get('/auth/callback')
+      .set('Cookie', binding)
+      .query({ code, state })
+      .expect(400);
+    await expect(
+      admin.getRepository(Account).countBy({ subject }),
+    ).resolves.toBe(0);
   });
 
   it('rejects malformed authorization responses before token exchange', async () => {
@@ -318,7 +725,7 @@ describe('merchant OIDC and tenant isolation', () => {
       admin.getRepository(BusinessMember).countBy({ accountId: old.accountId }),
     ).resolves.toBe(0);
 
-    const rotated = await login('session-fixture', old.session);
+    const rotated = await signIn('session-fixture', old.session);
     expect(rotated.session).not.toEqual(old.session);
     expect(rotated.accountId).toBe(old.accountId);
     await request(server)
@@ -908,6 +1315,12 @@ describe('merchant OIDC and tenant isolation', () => {
         'DELETE FROM public.knowledge_faqs WHERE business_id = $1',
         [first.business.id],
       );
+      // This disposable migration-cycle fixture intentionally removes the
+      // onboarding state that makes migration 0019 refuse a data-losing down.
+      await admin.query('DELETE FROM public.merchant_onboarding_progress');
+      await admin.query('DELETE FROM public.merchant_login_attempts');
+      await clearEmailAuthenticationFixtures(admin);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await applyMigrations(admin);
@@ -1171,6 +1584,14 @@ describe('merchant OIDC and tenant isolation', () => {
           .connection()
           .query('SELECT * FROM public.merchant_products'),
       ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      // This disposable migration-cycle fixture intentionally removes the
+      // onboarding state that makes migration 0019 refuse a data-losing down.
+      await admin.query('DELETE FROM public.merchant_onboarding_progress');
+      await admin.query('DELETE FROM public.merchant_login_attempts');
+      await clearEmailAuthenticationFixtures(admin);
+      await admin.undoLastMigration();
+      await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
@@ -1421,6 +1842,14 @@ describe('merchant OIDC and tenant isolation', () => {
         phoneNumberId: null,
         accessToken: null,
       });
+      await request(server)
+        .post('/auth/onboarding')
+        .set('Cookie', merchant.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', merchant.csrf)
+        .send({ currentStep: 'dashboard' })
+        .expect(201);
+      await signIn('onboarding-concurrency', undefined, '/dashboard');
       const other = await login('onboarding-other-account');
       const distinct = await create(other, key).send(profile).expect(201);
       expect(distinct.body).not.toEqual(body);
@@ -1548,26 +1977,8 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
-        'Merchant onboarding data exists',
-      );
-      await applyMigrations(admin);
-      await grantMerchantAccess(
-        admin,
-        env.MERCHANT_DATABASE_USER!,
-        env.IDENTITY_DATABASE_USER!,
+        'Merchant email authentication data exists',
       );
     });
   });

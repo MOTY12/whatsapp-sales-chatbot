@@ -2,13 +2,23 @@ import 'dotenv/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { appConfig } from './config/env';
+import {
+  appConfig,
+  merchantAuthConfig,
+  merchantEmailAuthConfig,
+  whatsappCredentialConfig,
+} from './config/env';
 import { ApplicationLogger, correlateRequest } from './config/logging';
 
 async function bootstrap() {
   let config: ReturnType<typeof appConfig>;
   try {
     config = appConfig();
+    // Validate settings currently consumed by provider constructors as well,
+    // so failures are reported before Nest wraps them as a generic startup error.
+    merchantAuthConfig();
+    merchantEmailAuthConfig();
+    whatsappCredentialConfig();
   } catch (error) {
     // Configuration errors report variable names and expected formats.
     console.error(

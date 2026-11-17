@@ -403,11 +403,13 @@ export function oidcEnvironmentDiagnostics(env = process.env) {
 }
 
 export function merchantAuthConfig(env = process.env) {
-  const keys = [
+  const oidcKeys = [
     'OIDC_ISSUER',
     'OIDC_CLIENT_ID',
     'OIDC_CLIENT_SECRET',
     'OIDC_REDIRECT_URI',
+  ] as const;
+  const databaseKeys = [
     'MERCHANT_DATABASE_USER',
     'MERCHANT_DATABASE_PASSWORD',
     'IDENTITY_DATABASE_USER',
@@ -415,52 +417,72 @@ export function merchantAuthConfig(env = process.env) {
   ] as const;
 
   const production = applicationEnvironment(env) === 'production';
-  if (keys.every((key) => !env[key]?.trim())) {
+  const oidcConfigured = oidcKeys.some((key) => Boolean(env[key]?.trim()));
+  const emailEnabled = flag(env, 'EMAIL_AUTH_ENABLED', false);
+  if (!oidcConfigured && !emailEnabled) {
     if (production) {
       throw new Error(
-        `Missing required environment variables: ${keys.join(', ')}. Set non-placeholder values for this environment.`,
+        `Missing required environment variables: ${oidcKeys.join(', ')} or set EMAIL_AUTH_ENABLED=true.`,
       );
     }
     return undefined;
   }
-  const values = required(env, keys, production);
-  const protocols = production ? ['https:'] : ['http:', 'https:'];
-  const issuer = validatedUrl(values.OIDC_ISSUER, 'OIDC_ISSUER', protocols);
-  const redirect = validatedUrl(
-    values.OIDC_REDIRECT_URI,
-    'OIDC_REDIRECT_URI',
-    protocols,
-  );
-  for (const url of [issuer, redirect]) {
-    if (
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      (url.protocol === 'http:' &&
-        !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
-    ) {
+  const databaseValues = required(env, databaseKeys, production);
+  let issuer: URL | undefined;
+  let redirect: URL | undefined;
+  let clientId: string | undefined;
+  let clientSecret: string | undefined;
+  if (oidcConfigured) {
+    const values = required(env, oidcKeys, production);
+    const protocols = production ? ['https:'] : ['http:', 'https:'];
+    issuer = validatedUrl(values.OIDC_ISSUER, 'OIDC_ISSUER', protocols);
+    redirect = validatedUrl(
+      values.OIDC_REDIRECT_URI,
+      'OIDC_REDIRECT_URI',
+      protocols,
+    );
+    for (const url of [issuer, redirect]) {
+      if (
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        (url.protocol === 'http:' &&
+          !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+      ) {
+        throw new Error(
+          'OIDC URLs must use HTTPS or local development HTTP, without credentials, query strings or fragments.',
+        );
+      }
+    }
+    if (redirect.pathname !== '/auth/callback') {
       throw new Error(
-        'OIDC URLs must use HTTPS or local development HTTP, without credentials, query strings or fragments.',
+        'OIDC_REDIRECT_URI must point to /auth/callback on the merchant origin.',
       );
     }
+    clientId = values.OIDC_CLIENT_ID;
+    clientSecret = values.OIDC_CLIENT_SECRET;
   }
-  if (redirect.pathname !== '/auth/callback') {
-    throw new Error(
-      'OIDC_REDIRECT_URI must point to /auth/callback on the merchant origin.',
-    );
-  }
+  const csrfOrigin =
+    redirect?.origin ??
+    (emailEnabled
+      ? validatedUrl(
+          env.MERCHANT_PUBLIC_ORIGIN?.trim() ?? '',
+          'MERCHANT_PUBLIC_ORIGIN',
+          production ? ['https:'] : ['http:', 'https:'],
+        ).origin
+      : undefined);
   if (
-    !merchantRolePattern.test(values.MERCHANT_DATABASE_USER) ||
-    values.MERCHANT_DATABASE_USER === env.DATABASE_USER?.trim()
+    !merchantRolePattern.test(databaseValues.MERCHANT_DATABASE_USER) ||
+    databaseValues.MERCHANT_DATABASE_USER === env.DATABASE_USER?.trim()
   ) {
     throw new Error(
       'MERCHANT_DATABASE_USER must be a separate kleva_merchant_* login.',
     );
   }
   if (
-    !identityRolePattern.test(values.IDENTITY_DATABASE_USER) ||
-    values.IDENTITY_DATABASE_USER === env.DATABASE_USER?.trim()
+    !identityRolePattern.test(databaseValues.IDENTITY_DATABASE_USER) ||
+    databaseValues.IDENTITY_DATABASE_USER === env.DATABASE_USER?.trim()
   ) {
     throw new Error(
       'IDENTITY_DATABASE_USER must be a separate kleva_identity_* login.',
@@ -469,21 +491,80 @@ export function merchantAuthConfig(env = process.env) {
   return {
     issuer,
     redirect,
-    secureCookies: redirect.protocol === 'https:',
-    clientId: values.OIDC_CLIENT_ID,
-    clientSecret: values.OIDC_CLIENT_SECRET,
+    secureCookies: production || redirect?.protocol === 'https:',
+    csrfOrigin,
+    clientId,
+    clientSecret,
     identityDatabase: databaseConfig({
       ...env,
-      DATABASE_USER: values.IDENTITY_DATABASE_USER,
-      DATABASE_PASSWORD: env.IDENTITY_DATABASE_PASSWORD,
+      DATABASE_USER: databaseValues.IDENTITY_DATABASE_USER,
+      DATABASE_PASSWORD: databaseValues.IDENTITY_DATABASE_PASSWORD,
       DATABASE_LOGGING: 'false',
     }),
     database: databaseConfig({
       ...env,
-      DATABASE_USER: values.MERCHANT_DATABASE_USER,
-      DATABASE_PASSWORD: env.MERCHANT_DATABASE_PASSWORD,
+      DATABASE_USER: databaseValues.MERCHANT_DATABASE_USER,
+      DATABASE_PASSWORD: databaseValues.MERCHANT_DATABASE_PASSWORD,
       DATABASE_LOGGING: 'false',
     }),
+  };
+}
+
+export function merchantEmailAuthConfig(env = process.env) {
+  const enabled = flag(env, 'EMAIL_AUTH_ENABLED', false);
+  if (!enabled) return { enabled: false as const };
+
+  const production = applicationEnvironment(env) === 'production';
+  const values = required(
+    env,
+    [
+      'EMAIL_SMTP_HOST',
+      'EMAIL_SMTP_USER',
+      'EMAIL_SMTP_PASSWORD',
+      'EMAIL_FROM',
+      'MERCHANT_PUBLIC_ORIGIN',
+      'AUTH_RATE_LIMIT_SECRET',
+    ],
+    production,
+  );
+  const sender = values.EMAIL_FROM.trim();
+  if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(sender)) {
+    throw new Error('EMAIL_FROM must be a valid email address.');
+  }
+  if (
+    values.AUTH_RATE_LIMIT_SECRET.length < 32 ||
+    isPlaceholder(values.AUTH_RATE_LIMIT_SECRET)
+  ) {
+    throw new Error(
+      'AUTH_RATE_LIMIT_SECRET must contain at least 32 characters.',
+    );
+  }
+  const origin = validatedUrl(
+    values.MERCHANT_PUBLIC_ORIGIN,
+    'MERCHANT_PUBLIC_ORIGIN',
+    production ? ['https:'] : ['http:', 'https:'],
+  );
+  if (
+    origin.username ||
+    origin.password ||
+    origin.pathname !== '/' ||
+    origin.search ||
+    origin.hash
+  ) {
+    throw new Error(
+      'MERCHANT_PUBLIC_ORIGIN must be an origin without credentials, path, query or fragment.',
+    );
+  }
+  return {
+    enabled: true as const,
+    host: values.EMAIL_SMTP_HOST,
+    port: port(env, 'EMAIL_SMTP_PORT', 587),
+    secure: flag(env, 'EMAIL_SMTP_SECURE', false),
+    username: values.EMAIL_SMTP_USER,
+    password: values.EMAIL_SMTP_PASSWORD,
+    from: sender,
+    publicOrigin: origin.origin,
+    rateLimitSecret: values.AUTH_RATE_LIMIT_SECRET,
   };
 }
 

@@ -31,6 +31,29 @@ export async function GET(request: NextRequest) {
       signal: AbortSignal.timeout(10_000),
     });
     if (upstream.status !== 302 && upstream.status !== 303) {
+      let code: unknown;
+      try {
+        const payload: unknown = await upstream.json();
+        if (payload && typeof payload === 'object' && 'code' in payload)
+          code = payload.code;
+      } catch {
+        // Provider and backend response bodies are never shown or logged.
+      }
+      if (code === 'merchant_account_not_found') {
+        return NextResponse.redirect(
+          new URL('/login?error=not_registered', request.url),
+        );
+      }
+      if (code === 'merchant_account_exists') {
+        return NextResponse.redirect(
+          new URL('/signup?error=account_exists', request.url),
+        );
+      }
+      if (code === 'identity_already_linked') {
+        return NextResponse.redirect(
+          new URL('/dashboard/settings?error=google_linked', request.url),
+        );
+      }
       const requestId = upstream.headers.get('x-request-id');
       logBridgeFailure(
         'callback_backend_response_invalid',
@@ -46,7 +69,20 @@ export async function GET(request: NextRequest) {
         new URL('/login?error=callback', request.url),
       );
     }
-    const response = NextResponse.redirect(new URL('/dashboard', request.url));
+    const location = upstream.headers.get('location');
+    let destination = '/dashboard';
+    if (location) {
+      const target = new URL(location, backend);
+      const allowed = new Set(['/dashboard', '/onboarding', '/auth/me']);
+      if (
+        target.origin === new URL(backend).origin &&
+        allowed.has(target.pathname)
+      ) {
+        destination =
+          target.pathname === '/auth/me' ? '/dashboard' : target.pathname;
+      }
+    }
+    const response = NextResponse.redirect(new URL(destination, request.url));
     const cookies = upstream.headers.getSetCookie?.() ?? [];
     for (const cookie of cookies) response.headers.append('Set-Cookie', cookie);
     return response;
