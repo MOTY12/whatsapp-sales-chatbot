@@ -4,6 +4,7 @@ import {
   databaseConfig,
   metaConfig,
   merchantAuthConfig,
+  merchantEmailAuthConfig,
   oidcEnvironmentDiagnostics,
   redisConfig,
   usageConfig,
@@ -135,6 +136,44 @@ describe('environment configuration', () => {
     expect(() => merchantAuthConfig({ NODE_ENV: 'production' })).toThrow(
       'OIDC_ISSUER',
     );
+  });
+
+  it('validates Mailjet configuration without exposing values', () => {
+    expect(merchantEmailAuthConfig({}).enabled).toBe(false);
+    expect(() =>
+      merchantEmailAuthConfig({ EMAIL_AUTH_ENABLED: 'true' }),
+    ).toThrow(/MAILJET_API_KEY/);
+    const configured = merchantEmailAuthConfig({
+      EMAIL_AUTH_ENABLED: 'true',
+      EMAIL_PROVIDER: 'mailjet',
+      MAILJET_API_KEY: 'fixture-api-key',
+      MAILJET_SECRET_KEY: 'fixture-secret-key',
+      MAILJET_SENDER_EMAIL: 'merchant@example.test',
+      MAILJET_SENDER_NAME: 'Kleva',
+      FRONTEND_URL: 'http://localhost:3001',
+      EMAIL_PAYLOAD_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
+      AUTH_RATE_LIMIT_SECRET: 'fixture-rate-limit-secret-long-enough',
+    });
+    expect(configured).toMatchObject({
+      enabled: true,
+      provider: 'mailjet',
+      senderEmail: 'merchant@example.test',
+      frontendUrl: 'http://localhost:3001',
+    });
+    expect(configured.encryptionKey).toHaveLength(32);
+    expect(() =>
+      merchantEmailAuthConfig({
+        EMAIL_AUTH_ENABLED: 'true',
+        EMAIL_PROVIDER: 'smtp',
+        MAILJET_API_KEY: 'fixture-api-key',
+        MAILJET_SECRET_KEY: 'fixture-secret-key',
+        MAILJET_SENDER_EMAIL: 'merchant@example.test',
+        MAILJET_SENDER_NAME: 'Kleva',
+        FRONTEND_URL: 'http://localhost:3001',
+        EMAIL_PAYLOAD_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
+        AUTH_RATE_LIMIT_SECRET: 'fixture-rate-limit-secret-long-enough',
+      }),
+    ).toThrow('EMAIL_PROVIDER must be mailjet');
   });
 
   it('reports OIDC configuration checks without returning credentials', () => {

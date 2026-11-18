@@ -26,6 +26,8 @@ import {
 } from '../assistant/ai-response.service';
 import { OutboxModule } from './outbox.module';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { EmailModule } from '../Email/email.module';
+import { EmailService } from '../Email/email.service';
 import {
   OutboundMessageService,
   whatsappOutboundOperation,
@@ -133,7 +135,13 @@ export class WorkerRuntime
 }
 
 @Module({
-  imports: [OutboxModule, UsageModule, WhatsAppModule, AssistantModule],
+  imports: [
+    OutboxModule,
+    UsageModule,
+    WhatsAppModule,
+    AssistantModule,
+    EmailModule,
+  ],
   providers: [
     WorkerRuntime,
     WhatsAppResponseIntentDispatcher,
@@ -143,9 +151,14 @@ export class WorkerRuntime
         responses: WhatsAppResponseIntentDispatcher,
         outbound: OutboundMessageService,
         ai: AiResponseService,
+        email: EmailService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
+          [
+            'merchant.email',
+            { execute: (operation) => email.execute(operation) },
+          ],
           [
             whatsappResponseOperation,
             { execute: (operation) => responses.execute(operation) },
@@ -163,6 +176,7 @@ export class WorkerRuntime
         WhatsAppResponseIntentDispatcher,
         OutboundMessageService,
         AiResponseService,
+        EmailService,
       ],
     },
   ],

@@ -518,18 +518,34 @@ export function merchantEmailAuthConfig(env = process.env) {
   const values = required(
     env,
     [
-      'EMAIL_SMTP_HOST',
-      'EMAIL_SMTP_USER',
-      'EMAIL_SMTP_PASSWORD',
-      'EMAIL_FROM',
-      'MERCHANT_PUBLIC_ORIGIN',
+      'EMAIL_PROVIDER',
+      'MAILJET_API_KEY',
+      'MAILJET_SECRET_KEY',
+      'MAILJET_SENDER_EMAIL',
+      'MAILJET_SENDER_NAME',
+      'FRONTEND_URL',
+      'EMAIL_PAYLOAD_ENCRYPTION_KEY',
       'AUTH_RATE_LIMIT_SECRET',
     ],
     production,
   );
-  const sender = values.EMAIL_FROM.trim();
+  if (values.EMAIL_PROVIDER !== 'mailjet')
+    throw new Error('EMAIL_PROVIDER must be mailjet.');
+  if (
+    isPlaceholder(values.MAILJET_API_KEY) ||
+    isPlaceholder(values.MAILJET_SECRET_KEY)
+  ) {
+    throw new Error('Mailjet API credentials must not be placeholders.');
+  }
+  const sender = values.MAILJET_SENDER_EMAIL.trim();
   if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(sender)) {
-    throw new Error('EMAIL_FROM must be a valid email address.');
+    throw new Error('MAILJET_SENDER_EMAIL must be a valid email address.');
+  }
+  if (
+    !values.MAILJET_SENDER_NAME.trim() ||
+    values.MAILJET_SENDER_NAME.length > 120
+  ) {
+    throw new Error('MAILJET_SENDER_NAME must be 1–120 characters.');
   }
   if (
     values.AUTH_RATE_LIMIT_SECRET.length < 32 ||
@@ -540,8 +556,8 @@ export function merchantEmailAuthConfig(env = process.env) {
     );
   }
   const origin = validatedUrl(
-    values.MERCHANT_PUBLIC_ORIGIN,
-    'MERCHANT_PUBLIC_ORIGIN',
+    values.FRONTEND_URL,
+    'FRONTEND_URL',
     production ? ['https:'] : ['http:', 'https:'],
   );
   if (
@@ -552,18 +568,31 @@ export function merchantEmailAuthConfig(env = process.env) {
     origin.hash
   ) {
     throw new Error(
-      'MERCHANT_PUBLIC_ORIGIN must be an origin without credentials, path, query or fragment.',
+      'FRONTEND_URL must be an origin without credentials, path, query or fragment.',
     );
   }
+  const encryptionKey = Buffer.from(
+    values.EMAIL_PAYLOAD_ENCRYPTION_KEY,
+    'base64url',
+  );
+  if (
+    encryptionKey.length !== 32 ||
+    encryptionKey.toString('base64url') !==
+      values.EMAIL_PAYLOAD_ENCRYPTION_KEY ||
+    isPlaceholder(values.EMAIL_PAYLOAD_ENCRYPTION_KEY)
+  )
+    throw new Error(
+      'EMAIL_PAYLOAD_ENCRYPTION_KEY must be a base64url 32-byte key.',
+    );
   return {
     enabled: true as const,
-    host: values.EMAIL_SMTP_HOST,
-    port: port(env, 'EMAIL_SMTP_PORT', 587),
-    secure: flag(env, 'EMAIL_SMTP_SECURE', false),
-    username: values.EMAIL_SMTP_USER,
-    password: values.EMAIL_SMTP_PASSWORD,
-    from: sender,
-    publicOrigin: origin.origin,
+    provider: 'mailjet' as const,
+    apiKey: values.MAILJET_API_KEY,
+    secretKey: values.MAILJET_SECRET_KEY,
+    senderEmail: sender,
+    senderName: values.MAILJET_SENDER_NAME.trim(),
+    encryptionKey,
+    frontendUrl: origin.origin,
     rateLimitSecret: values.AUTH_RATE_LIMIT_SECRET,
   };
 }

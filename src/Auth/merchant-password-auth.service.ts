@@ -5,17 +5,15 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHmac, createHash, randomBytes } from 'node:crypto';
 import { MerchantDatabase } from './merchant-database';
-import {
-  MERCHANT_EMAIL_AUTH_CONFIG,
-  type MerchantEmailAuthConfig,
-  MerchantEmailDeliveryService,
-} from './merchant-email-delivery.service';
+import { EMAIL_CONFIG, type EmailConfig } from '../Email/email.config';
+import { EmailService } from '../Email/email.service';
 
 const argonOptions = {
   type: argon2.argon2id as 2,
@@ -49,6 +47,7 @@ export type PasswordLoginResult = {
 
 @Injectable()
 export class MerchantPasswordAuthService {
+  private readonly logger = new Logger(MerchantPasswordAuthService.name);
   private readonly dummyHash = argon2.hash(
     'not-a-real-merchant-password-' + randomBytes(32).toString('hex'),
     argonOptions,
@@ -56,9 +55,8 @@ export class MerchantPasswordAuthService {
 
   constructor(
     private readonly database: MerchantDatabase,
-    private readonly email: MerchantEmailDeliveryService,
-    @Inject(MERCHANT_EMAIL_AUTH_CONFIG)
-    private readonly config: MerchantEmailAuthConfig,
+    private readonly email: EmailService,
+    @Inject(EMAIL_CONFIG) private readonly config: EmailConfig,
   ) {}
 
   async register(
@@ -95,6 +93,10 @@ export class MerchantPasswordAuthService {
         );
       } catch {
         // The response stays enumeration-safe; the merchant can request a resend.
+        this.logger.warn({
+          event: 'merchant_auth.email_enqueue_failed',
+          kind: 'verification',
+        });
       }
     }
     return {
@@ -223,7 +225,10 @@ export class MerchantPasswordAuthService {
             raw,
           );
         } catch {
-          // Keep responses identical for known and unknown addresses.
+          this.logger.warn({
+            event: 'merchant_auth.email_enqueue_failed',
+            kind: 'verification',
+          });
         }
       }
     }
@@ -264,7 +269,10 @@ export class MerchantPasswordAuthService {
             raw,
           );
         } catch {
-          // Keep responses identical for known and unknown addresses.
+          this.logger.warn({
+            event: 'merchant_auth.email_enqueue_failed',
+            kind: 'password_reset',
+          });
         }
       }
     }
@@ -297,7 +305,12 @@ export class MerchantPasswordAuthService {
     if (result.email && result.full_name) {
       await this.email
         .sendPasswordChanged(result.email, result.full_name)
-        .catch(() => undefined);
+        .catch(() => {
+          this.logger.warn({
+            event: 'merchant_auth.email_enqueue_failed',
+            kind: 'password_changed',
+          });
+        });
     }
     return { message: 'Your password has been changed. Sign in again.' };
   }
@@ -364,7 +377,7 @@ export class MerchantPasswordAuthService {
       );
   }
 
-  private enabledConfig(): Extract<MerchantEmailAuthConfig, { enabled: true }> {
+  private enabledConfig(): EmailConfig {
     if (!this.config.enabled)
       throw new BadRequestException('Email authentication is not configured.');
     return this.config;

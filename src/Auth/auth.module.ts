@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { merchantAuthConfig, merchantEmailAuthConfig } from '../config/env';
+import { merchantAuthConfig } from '../config/env';
 import { MerchantAuthController } from './auth.controller';
 import { MerchantCsrfGuard, MerchantSessionGuard } from './auth.guards';
 import { MerchantAuthService } from './auth.service';
@@ -24,14 +24,11 @@ import { MerchantLeadsController } from './merchant-leads.controller';
 import { MerchantLeadsService } from './merchant-leads.service';
 import { MerchantPilotController } from './merchant-pilot.controller';
 import { MerchantPilotService } from './merchant-pilot.service';
-import {
-  MERCHANT_EMAIL_AUTH_CONFIG,
-  MerchantEmailDeliveryService,
-} from './merchant-email-delivery.service';
 import { MerchantPasswordAuthService } from './merchant-password-auth.service';
+import { EmailModule } from '../Email/email.module';
 
 @Module({
-  imports: [CredentialCipherModule, OutboundModule],
+  imports: [CredentialCipherModule, OutboundModule, EmailModule],
   controllers: [
     MerchantAuthController,
     MerchantBusinessController,
@@ -44,15 +41,10 @@ import { MerchantPasswordAuthService } from './merchant-password-auth.service';
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
-    {
-      provide: MERCHANT_EMAIL_AUTH_CONFIG,
-      useFactory: () => merchantEmailAuthConfig(),
-    },
     MerchantDatabase,
     MerchantOidcClient,
     MerchantAuthService,
     MerchantPasswordAuthService,
-    MerchantEmailDeliveryService,
     MerchantAccess,
     MerchantBusinessService,
     MerchantWhatsAppService,

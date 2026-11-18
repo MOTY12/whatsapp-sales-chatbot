@@ -29,6 +29,7 @@ export type ExternalJobHandler = (
   operation: Readonly<OutboxOperation>,
 ) => Promise<void>;
 export type OutboxHandler = JobHandler | { execute: ExternalJobHandler };
+export class PermanentJobFailure extends Error {}
 
 function retryDelay(failures: number) {
   const delay = Math.min(60_000, 1000 * 2 ** Math.min(6, failures - 1));
@@ -210,7 +211,8 @@ export class OutboxStore {
   async fail(job: OutboxOperation, error: OutboxError): Promise<void> {
     const terminal =
       job.attempts >= maxExecutionAttempts ||
-      error === 'UNREGISTERED_OPERATION';
+      error === 'UNREGISTERED_OPERATION' ||
+      error === 'PERMANENT_PROVIDER_FAILURE';
     await this.database.query(
       `
       UPDATE outbox_operations SET status = $3, "leaseToken" = NULL,

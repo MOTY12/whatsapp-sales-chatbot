@@ -51,6 +51,8 @@ import { MerchantPilotApproval1760000000018 } from './migrations/1760000000018-M
 import { MerchantLead } from './entities/merchant-lead.entity';
 import { MerchantSignupAndOnboarding1760000000019 } from './migrations/1760000000019-MerchantSignupAndOnboarding';
 import { MerchantEmailAuthentication1760000000020 } from './migrations/1760000000020-MerchantEmailAuthentication';
+import { DurableMerchantEmail1760000000021 } from './migrations/1760000000021-DurableMerchantEmail';
+import { MerchantEmailDelivery } from './entities/merchant-email-delivery.entity';
 
 export const databaseEntities = [
   Business,
@@ -75,6 +77,7 @@ export const databaseEntities = [
   MerchantProduct,
   MerchantProductRevision,
   MerchantLead,
+  MerchantEmailDelivery,
 ];
 
 export const databaseMigrations = [
@@ -100,4 +103,5 @@ export const databaseMigrations = [
   MerchantPilotApproval1760000000018,
   MerchantSignupAndOnboarding1760000000019,
   MerchantEmailAuthentication1760000000020,
+  DurableMerchantEmail1760000000021,
 ];

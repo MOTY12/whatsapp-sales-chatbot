@@ -1,5 +1,10 @@
 import { Logger } from '@nestjs/common';
-import { OutboxHandler, OutboxStore, uuidPattern } from './outbox.store';
+import {
+  OutboxHandler,
+  OutboxStore,
+  PermanentJobFailure,
+  uuidPattern,
+} from './outbox.store';
 import type { Delivery } from './queue';
 
 export class OutboxProcessor {
@@ -37,10 +42,16 @@ export class OutboxProcessor {
         await handler.execute(job);
         await this.outbox.completeExternal(job);
       }
-    } catch {
-      await this.outbox.fail(job, 'HANDLER_FAILED');
+    } catch (error) {
+      const permanent = error instanceof PermanentJobFailure;
+      await this.outbox.fail(
+        job,
+        permanent ? 'PERMANENT_PROVIDER_FAILURE' : 'HANDLER_FAILED',
+      );
       this.logger.warn({
-        event: 'outbox.handler_failed',
+        event: permanent
+          ? 'outbox.handler_permanent_failure'
+          : 'outbox.handler_failed',
         attempt: job.attempts,
       });
     }

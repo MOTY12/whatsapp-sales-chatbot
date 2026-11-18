@@ -19,7 +19,8 @@ export type OutboxError =
   | 'REDIS_UNAVAILABLE'
   | 'EXECUTION_LEASE_EXPIRED'
   | 'HANDLER_FAILED'
-  | 'UNREGISTERED_OPERATION';
+  | 'UNREGISTERED_OPERATION'
+  | 'PERMANENT_PROVIDER_FAILURE';
 
 @Entity('outbox_operations')
 export class OutboxOperation {

@@ -43,17 +43,21 @@ function mailToken(message: string | undefined) {
   return decoded.match(/token=([A-Za-z0-9_-]{43})/)?.[1];
 }
 async function waitForMail(
-  smtp: { messages: string[] },
+  mailjet: { messages: string[] },
   previousCount: number,
 ) {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const message = smtp.messages[previousCount];
+    const message = mailjet.messages[previousCount];
     if (message) return message;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error('Expected the local SMTP fixture to capture a message.');
 }
 async function clearEmailAuthenticationFixtures(admin: DataSource) {
+  await admin.query(
+    "DELETE FROM public.outbox_operations WHERE operation = 'merchant.email'",
+  );
+  await admin.query('DELETE FROM public.merchant_email_deliveries');
   await admin.query('DELETE FROM public.merchant_auth_tokens');
   await admin.query('DELETE FROM public.merchant_password_credentials');
   await admin.query('DELETE FROM public.merchant_auth_profiles');
@@ -70,7 +74,7 @@ describe('merchant OIDC and tenant isolation', () => {
   let database: Awaited<ReturnType<typeof createIntegrationDatabase>>;
   let idp: Awaited<ReturnType<typeof startIdentityProvider>>;
   let meta: Awaited<ReturnType<typeof startMetaFixture>>;
-  let smtp: { messages: string[] };
+  let mailjet: { messages: string[] };
   let app: ReturnType<typeof fork>;
   let server: string;
   let merchantDatabase: MerchantDatabase;
@@ -86,9 +90,10 @@ describe('merchant OIDC and tenant isolation', () => {
     first = await seedTenant(admin, 1);
     second = await seedTenant(admin, 2);
     const credentials = await database.merchantCredentials(admin);
+    await database.grantRuntimeAccess(admin);
     idp = await startIdentityProvider();
     meta = await startMetaFixture();
-    smtp = { messages: [] };
+    mailjet = { messages: [] };
     env = {
       ...process.env,
       NODE_ENV: 'test',
@@ -117,13 +122,13 @@ describe('merchant OIDC and tenant isolation', () => {
       OIDC_CLIENT_SECRET: clientSecret,
       OIDC_REDIRECT_URI: redirectUri,
       EMAIL_AUTH_ENABLED: 'true',
-      EMAIL_SMTP_HOST: '127.0.0.1',
-      EMAIL_SMTP_PORT: '587',
-      EMAIL_SMTP_SECURE: 'false',
-      EMAIL_SMTP_USER: 'fixture-user',
-      EMAIL_SMTP_PASSWORD: 'fixture-password',
-      EMAIL_FROM: 'no-reply@example.test',
-      MERCHANT_PUBLIC_ORIGIN: 'http://localhost:3001',
+      EMAIL_PROVIDER: 'mailjet',
+      MAILJET_API_KEY: 'fixture-api-key',
+      MAILJET_SECRET_KEY: 'fixture-secret-key',
+      MAILJET_SENDER_EMAIL: 'no-reply@example.test',
+      MAILJET_SENDER_NAME: 'Kleva test',
+      FRONTEND_URL: 'http://localhost:3001',
+      EMAIL_PAYLOAD_ENCRYPTION_KEY: randomBytes(32).toString('base64url'),
       AUTH_RATE_LIMIT_SECRET: randomBytes(32).toString('base64url'),
     };
     // Run Nest under Node's native module loader while keeping the signed
@@ -137,11 +142,11 @@ describe('merchant OIDC and tenant isolation', () => {
         message &&
         typeof message === 'object' &&
         'type' in message &&
-        message.type === 'smtp_message' &&
+        message.type === 'mailjet_message' &&
         'message' in message &&
         typeof message.message === 'string'
       ) {
-        smtp.messages.push(message.message);
+        mailjet.messages.push(message.message);
       }
     });
     const [ready] = (await Promise.race([
@@ -305,7 +310,7 @@ describe('merchant OIDC and tenant isolation', () => {
   it('registers verified Argon2id email identities and rotates all sessions after password reset', async () => {
     const email = 'Merchant.Email@example.test';
     const password = 'correct horse battery staple - kleva';
-    const registrationMailIndex = smtp.messages.length;
+    const registrationMailIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/register')
       .send({ fullName: 'Merchant Owner', email, password })
@@ -315,7 +320,7 @@ describe('merchant OIDC and tenant isolation', () => {
           'If registration can proceed, we sent an email with the next step.',
         ),
       );
-    const registrationMail = await waitForMail(smtp, registrationMailIndex);
+    const registrationMail = await waitForMail(mailjet, registrationMailIndex);
     const verificationToken = mailToken(registrationMail);
     expect(verificationToken).toBeDefined();
 
@@ -363,13 +368,13 @@ describe('merchant OIDC and tenant isolation', () => {
       );
 
     const expiredEmail = 'expired-verification@example.test';
-    const expiredVerificationIndex = smtp.messages.length;
+    const expiredVerificationIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/register')
       .send({ fullName: 'Expired Owner', email: expiredEmail, password })
       .expect(202);
     const expiredVerification = mailToken(
-      await waitForMail(smtp, expiredVerificationIndex),
+      await waitForMail(mailjet, expiredVerificationIndex),
     );
     expect(expiredVerification).toBeDefined();
     await admin.query(
@@ -407,12 +412,12 @@ describe('merchant OIDC and tenant isolation', () => {
     const session = cookiePair(signedIn, 'kleva_session');
     expect(cookieHeader(signedIn, 'kleva_session')).toMatch(/HttpOnly/i);
 
-    const expiredResetMailIndex = smtp.messages.length;
+    const expiredResetMailIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/forgot-password')
       .send({ email })
       .expect(200);
-    const expiredResetMail = await waitForMail(smtp, expiredResetMailIndex);
+    const expiredResetMail = await waitForMail(mailjet, expiredResetMailIndex);
     const resetToken = mailToken(expiredResetMail);
     expect(resetToken).toBeDefined();
     await admin.query(
@@ -424,21 +429,21 @@ describe('merchant OIDC and tenant isolation', () => {
       .send({ token: resetToken, password: 'new password after expiry 2026' })
       .expect(400);
 
-    const liveResetMailIndex = smtp.messages.length;
+    const liveResetMailIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/forgot-password')
       .send({ email })
       .expect(200);
-    const liveResetMail = await waitForMail(smtp, liveResetMailIndex);
+    const liveResetMail = await waitForMail(mailjet, liveResetMailIndex);
     const liveResetToken = mailToken(liveResetMail);
     expect(liveResetToken).toBeDefined();
     const nextPassword = 'new password after reset 2026';
-    const confirmationMailIndex = smtp.messages.length;
+    const confirmationMailIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/reset-password')
       .send({ token: liveResetToken, password: nextPassword })
       .expect(200);
-    const confirmationMail = await waitForMail(smtp, confirmationMailIndex);
+    const confirmationMail = await waitForMail(mailjet, confirmationMailIndex);
     expect(confirmationMail).toContain('Your Kleva password was changed');
     await request(server)
       .post('/auth/reset-password')
@@ -489,12 +494,14 @@ describe('merchant OIDC and tenant isolation', () => {
   it('links Google to an authenticated password identity without email-based account merging', async () => {
     const email = 'linked@example.test';
     const password = 'linking merchant identity with a long passphrase';
-    const verificationIndex = smtp.messages.length;
+    const verificationIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/register')
       .send({ fullName: 'Linked Owner', email, password })
       .expect(202);
-    const verification = mailToken(await waitForMail(smtp, verificationIndex));
+    const verification = mailToken(
+      await waitForMail(mailjet, verificationIndex),
+    );
     await request(server)
       .post('/auth/verify-email')
       .send({ token: verification })
@@ -1323,6 +1330,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await applyMigrations(admin);
       await grantMerchantAccess(
         admin,
@@ -1589,6 +1597,7 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
@@ -1977,9 +1986,12 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant email authentication data exists',
       );
+      await applyMigrations(admin);
+      await database.grantRuntimeAccess(admin);
     });
   });
 

@@ -50,7 +50,6 @@
     "dayjs": "^1.11.21",
     "dotenv": "^17.4.2",
     "ioredis": "^5.11.1",
-    "nodemailer": "^10.6.0",
     "openid-client": "^6.8.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
