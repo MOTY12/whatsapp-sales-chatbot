@@ -21,6 +21,7 @@ export const merchantPolicyTables = [
   'merchant_leads',
   'merchant_lead_events',
   'ai_response_runs',
+  'whatsapp_signup_attempts',
 ];
 
 const identityFunctions = [
@@ -58,6 +59,15 @@ export const secureWhatsAppFunctions = [
   'kleva_whatsapp_status()',
   'kleva_write_whatsapp(text,integer,uuid,text,text,text,jsonb,timestamptz)',
   'kleva_whatsapp_candidate(text)',
+];
+export const embeddedWhatsAppFunctions = [
+  'kleva_whatsapp_status_v2()',
+  'kleva_whatsapp_signup_start(uuid,timestamptz)',
+  'kleva_whatsapp_signup_claim(uuid)',
+  'kleva_whatsapp_signup_update(uuid,text,text)',
+  'kleva_whatsapp_signup_finish(uuid)',
+  'kleva_whatsapp_signup_status()',
+  'kleva_write_whatsapp_v2(text,integer,uuid,text,text,text,text,jsonb,timestamptz)',
 ];
 export const inboxFunctions = [
   'kleva_inbox_list(integer,timestamptz,uuid)',
@@ -125,6 +135,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${inboxFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

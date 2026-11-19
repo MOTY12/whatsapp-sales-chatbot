@@ -30,10 +30,28 @@ export type Business = {
 };
 export type WhatsAppStatus = {
   status: 'active' | 'inactive' | 'pending';
+  connectionState?:
+    'not_connected' | 'connecting' | 'action_required' | 'failed' | 'connected';
   id?: string;
   displayName?: string | null;
+  displayPhoneNumber?: string | null;
   phoneNumberId?: string;
   wabaId?: string;
+  signupFailure?: string | null;
+  signupExpiresAt?: string | null;
+};
+export type EmbeddedWhatsAppSignup = {
+  attemptId: string;
+  appId: string;
+  configId: string;
+  apiVersion: string;
+};
+export type EmbeddedWhatsAppSignupCompletion = {
+  attemptId: string;
+  code: string;
+  wabaId: string;
+  phoneNumberId: string;
+  registrationPin: string;
 };
 export type MerchantPilotStatus = {
   status?: 'NOT_ENROLLED' | 'PENDING_REVIEW' | 'ACTIVE' | 'REVOKED';
@@ -186,7 +204,11 @@ const backend = () => {
   return url.origin;
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 8000,
+): Promise<T> {
   const jar = await cookies();
   const cookieHeader = jar
     .getAll()
@@ -215,7 +237,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ...init,
         headers,
         cache: 'no-store',
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (
         !safeRead ||
@@ -360,6 +382,34 @@ export const api = {
   whatsapp: (id: string) =>
     request<WhatsAppStatus>(
       `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
+    ),
+  disconnectWhatsApp: (id: string) =>
+    request<WhatsAppStatus>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
+      { method: 'DELETE' },
+    ),
+  startWhatsAppSignup: (id: string) =>
+    request<EmbeddedWhatsAppSignup>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp/embedded-signup/start`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+  completeWhatsAppSignup: (
+    id: string,
+    body: EmbeddedWhatsAppSignupCompletion,
+  ) =>
+    request<WhatsAppStatus>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp/embedded-signup/complete`,
+      { method: 'POST', body: JSON.stringify(body) },
+      30000,
+    ),
+  reportWhatsAppSignup: (
+    id: string,
+    attemptId: string,
+    outcome: 'action_required' | 'failed' | 'cancelled',
+  ) =>
+    request<{ ok: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp/embedded-signup/report`,
+      { method: 'POST', body: JSON.stringify({ attemptId, outcome }) },
     ),
   pilot: (id: string) =>
     request<MerchantPilotStatus>(

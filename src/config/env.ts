@@ -169,7 +169,7 @@ export function metaConfig(env = process.env) {
       'META_GRAPH_BASE_URL must be a Graph API origin. Production requires https://graph.facebook.com.',
     );
   }
-  const apiVersion = env.WHATSAPP_API_VERSION?.trim() || 'v25.0';
+  const apiVersion = env.WHATSAPP_API_VERSION?.trim() || 'v27.0';
   if (!/^v\d+\.\d+$/.test(apiVersion)) {
     throw new Error('WHATSAPP_API_VERSION must use the vMAJOR.MINOR format.');
   }

@@ -1,15 +1,36 @@
-# Supervised WhatsApp connection
+# Self-service WhatsApp connection
 
-Base path is `/merchant/businesses/:businessId/whatsapp`. All routes require the merchant session. Writes require an active owner, the configured merchant Origin and the CSRF header. Responses carry `Cache-Control: no-store`.
+Base path is `/merchant/businesses/:businessId/whatsapp`. All routes require the merchant session. Writes require an active owner, the configured merchant Origin and the CSRF header. Responses carry `Cache-Control: no-store`. The dashboard loads the Meta JavaScript SDK on the WhatsApp page and starts Embedded Signup v4 from the owner's click. The App ID, configuration ID and Graph API version are returned by the authenticated start endpoint; the App Secret and exchanged business token remain server-side.
 
-| Method | Request | Result |
-| --- | --- | --- |
-| GET | None | Status, or `{"status":"pending"}` before secure activation |
-| POST | JSON `wabaId`, `phoneNumberId` and `accessToken` | 201 after verifying and activating the specified asset, or reconnecting the same inactive asset |
-| PATCH /credential | JSON `accessToken` | 200 after re-verifying the already bound asset and replacing the credential |
-| DELETE | None | 200 with inactive status and the encrypted credential cleared |
+| Method                           | Request                                                                                             | Result                                                                                                                                                          |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET                              | None                                                                                                | Connection state and account display details, without credentials                                                                                               |
+| POST `/embedded-signup/start`    | Empty JSON object                                                                                   | Creates or resumes a short-lived attempt and returns public SDK settings                                                                                        |
+| POST `/embedded-signup/complete` | `attemptId`, one-time authorization `code`, WABA ID, phone-number ID and six-digit registration PIN | Claims the attempt once, exchanges the code server-to-server, subscribes the WABA, registers the number, verifies Meta state and stores an encrypted credential |
+| POST `/embedded-signup/report`   | `attemptId`, outcome `action_required`, `failed` or `cancelled`                                     | Saves a safe recovery state without logging Meta payloads                                                                                                       |
+| PATCH `/credential`              | JSON `accessToken`                                                                                  | Retained for authorized credential rotation of the already-bound asset                                                                                          |
+| DELETE                           | None                                                                                                | Clears the encrypted credential and disconnects the channel while preserving the ownership record                                                               |
 
-Status responses contain ID, WABA and phone IDs, display name, status and revision. Active owners, editors and agents can read status. Validation and Meta rejection return 400. Concurrent changes and reserved assets return 409. The server holds no database transaction open during Graph verification, and rechecks the owner on commit. A failed rotation leaves the prior credential unchanged. A connection survives disconnect as an ownership record. Connect never transfers it to another business.
+Connection states are `not_connected`, `connecting`, `action_required`, `failed` and `connected`. Status responses contain IDs, display name, display phone number, state and safe failure class; they never contain access tokens or authorization codes. Active owners, editors and agents can read status; only owners can connect, reconnect and disconnect. Attempt rows are bound to both business and owner account in PostgreSQL. A database unique index permits only one open attempt per business, and an atomic claim prevents callback replay and concurrent token exchanges. Expired attempts can be retried. Tenant scoped SECURITY DEFINER functions persist attempts and credentials while the restricted dashboard role receives only function EXECUTE grants.
+
+The backend does not trust WABA or phone IDs reported by the browser on their own. It exchanges the short-lived code, subscribes the returned WABA to the app, invokes the phone-number Register API with the merchant's PIN, then checks token validity, app identity, required scopes, asset membership, app subscription and Meta's returned display number before marking the connection active. Credentials use the existing tenant-and-connection bound AES-256-GCM envelope. Any failure leaves a safe attempt classification and never makes the connection active. A connection survives disconnect as an ownership record; an asset cannot be transferred to another business. The existing WhatsApp webhook and processing path remain unchanged.
+
+The Web Embedded Signup v4 flow must be configured in Meta Login for Business. Meta requires a Tech Provider or Solution Partner, an HTTPS deployment host, allowed domains and valid OAuth redirect URI entries, a v4 Embedded Signup configuration, and the `account_update` webhook subscription. Configure Cloud API only and request Advanced Access for `whatsapp_business_management` and `whatsapp_business_messaging`. The app webhook must also subscribe to WhatsApp `messages` so inbound messages reach Kleva's existing endpoint. Local HTTP development may not be accepted as an allowed Meta domain; verify this in the Meta App Dashboard before testing. See [Meta Embedded Signup implementation](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation), [v4 configuration and permissions](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/version-4) and [server-side customer onboarding steps](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider).
+
+Set these values in the backend runtime secret store (never in `NEXT_PUBLIC_*` variables):
+
+```dotenv
+META_APP_ID=<Meta app ID>
+META_APP_SECRET=<Meta app secret>
+WHATSAPP_BUSINESS_CONFIG_ID=<Facebook Login for Business configuration ID>
+WHATSAPP_API_VERSION=v27.0
+META_GRAPH_BASE_URL=https://graph.facebook.com
+WHATSAPP_VERIFY_TOKEN=<random webhook verification value>
+WHATSAPP_CREDENTIAL_KEY_ID=<active key ID>
+WHATSAPP_CREDENTIAL_KEYS=<JSON key ID to 32-byte base64url key map>
+```
+
+Also set `DASHBOARD_PUBLIC_ORIGIN` to the exact dashboard origin for same-origin and CSRF checks. The `META_REDIRECT_URI` environment value is retained for the legacy supervised callback and is not sent for the Embedded Signup code exchange. Apply `MerchantEmbeddedWhatsApp1760000000022`, then rerun `npm run auth:grant` as the migration owner so the restricted merchant role can execute only the scoped signup/status functions.
 
 The verifier uses the configured Graph API version. It checks the app and token with Meta's debug endpoint, verifies WhatsApp management and messaging scopes and targeted grants when returned, then checks WABA phone membership and app subscription. The supervisor must complete the subscription and use an approved asset before submission. The verifier checks the first page of each edge, up to 100 entries. It refuses activation without positive evidence. The fixture covers response shape and failure handling. Live provider verification is pending. [Token debug reference](https://developers.facebook.com/docs/graph-api/reference/debug_token/) · [WABA reference](https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/)
 

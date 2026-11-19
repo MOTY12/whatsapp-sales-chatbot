@@ -101,6 +101,8 @@ describe('merchant OIDC and tenant isolation', () => {
       NODE_ENV: 'test',
       META_GRAPH_BASE_URL: meta.origin,
       META_APP_ID: '123',
+      WHATSAPP_BUSINESS_CONFIG_ID: 'fixture-config',
+      WHATSAPP_API_VERSION: 'v25.0',
       WHATSAPP_PHONE_NUMBER_ID: '100',
       META_APP_SECRET: 'fixture-app-secret',
       WHATSAPP_CREDENTIAL_KEY_ID: 'fixture',
@@ -2119,7 +2121,13 @@ describe('merchant OIDC and tenant isolation', () => {
     await request(server)
       .get(path)
       .set(headers(owner))
-      .expect(200, { status: 'pending' });
+      .expect(200)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({
+          status: 'pending',
+          connectionState: 'not_connected',
+        }),
+      );
 
     const race = await Promise.all([
       request(server).post(path).set(headers(owner)).send(payload),
@@ -2132,6 +2140,7 @@ describe('merchant OIDC and tenant isolation', () => {
       phoneNumberId: '789',
       wabaId: '456',
       displayName: 'Fixture shop',
+      displayPhoneNumber: null,
       status: 'active',
       revision: 1,
     });
@@ -2281,5 +2290,128 @@ describe('merchant OIDC and tenant isolation', () => {
     } finally {
       jest.restoreAllMocks();
     }
+  });
+
+  it('completes Meta Embedded Signup once and enforces owner and tenant boundaries', async () => {
+    const owner = await login('embedded-whatsapp-owner');
+    const other = await login('embedded-whatsapp-other');
+    await admin.getRepository(BusinessMember).insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: second.business.id,
+        accountId: other.accountId,
+        role: 'owner',
+      },
+    ]);
+    const path = `/merchant/businesses/${first.business.id}/whatsapp`;
+    const otherPath = `/merchant/businesses/${second.business.id}/whatsapp`;
+    const headers = (merchant: typeof owner) => ({
+      Cookie: merchant.session,
+      Origin: origin,
+      'X-CSRF-Token': merchant.csrf,
+    });
+    const failedAttempt = await request(server)
+      .post(`${path}/embedded-signup/start`)
+      .set(headers(owner))
+      .send({})
+      .expect(201);
+    const failedAttemptBody = failedAttempt.body as { attemptId: string };
+    await request(server)
+      .post(`${path}/embedded-signup/complete`)
+      .set(headers(owner))
+      .send({
+        attemptId: failedAttemptBody.attemptId,
+        code: 'invalid-fixture-code',
+        wabaId: '456',
+        phoneNumberId: '789',
+        registrationPin: '123456',
+      })
+      .expect(400);
+    await request(server)
+      .get(path)
+      .set(headers(owner))
+      .expect(200)
+      .expect(({ body }) =>
+        expect((body as { connectionState?: string }).connectionState).toBe(
+          'failed',
+        ),
+      );
+    const started = await request(server)
+      .post(`${path}/embedded-signup/start`)
+      .set(headers(owner))
+      .send({})
+      .expect(201);
+    const startedBody = started.body as {
+      attemptId: string;
+      appId: string;
+      configId: string;
+      apiVersion: string;
+    };
+    expect(startedBody).toMatchObject({
+      attemptId: expect.any(String),
+      appId: '123',
+      configId: 'fixture-config',
+      apiVersion: 'v25.0',
+    });
+    const resumed = await request(server)
+      .post(`${path}/embedded-signup/start`)
+      .set(headers(owner))
+      .send({})
+      .expect(201);
+    expect((resumed.body as { attemptId: string }).attemptId).toBe(
+      startedBody.attemptId,
+    );
+    const completionBody = {
+      attemptId: startedBody.attemptId,
+      code: 'embedded-fixture-code',
+      wabaId: '456',
+      phoneNumberId: '789',
+      registrationPin: '123456',
+    };
+    await request(server)
+      .post(`${otherPath}/embedded-signup/complete`)
+      .set(headers(other))
+      .send(completionBody)
+      .expect(409);
+    const completion = await request(server)
+      .post(`${path}/embedded-signup/complete`)
+      .set(headers(owner))
+      .send(completionBody)
+      .expect(201);
+    expect(completion.body).toMatchObject({
+      wabaId: '456',
+      phoneNumberId: '789',
+      displayPhoneNumber: '+1 555 010 0100',
+      status: 'active',
+    });
+    expect(completion.text).not.toContain('embedded-fixture-token');
+    expect(completion.text).not.toContain('123456');
+    const [stored] = await admin.query<{ envelope: unknown }[]>(
+      'SELECT envelope FROM public.whatsapp_credentials WHERE business_id = $1',
+      [first.business.id],
+    );
+    expect(JSON.stringify(stored.envelope)).not.toContain(
+      'embedded-fixture-token',
+    );
+    await request(server)
+      .post(`${path}/embedded-signup/complete`)
+      .set(headers(owner))
+      .send(completionBody)
+      .expect(409);
+    await request(server)
+      .get(path)
+      .set(headers(owner))
+      .expect(200)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({
+          connectionState: 'connected',
+          displayPhoneNumber: '+1 555 010 0100',
+        }),
+      );
+    await request(server).delete(path).set(headers(owner)).expect(200);
   });
 });

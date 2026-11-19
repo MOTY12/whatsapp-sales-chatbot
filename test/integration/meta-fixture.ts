@@ -7,13 +7,22 @@ export async function startMetaFixture() {
     const token = request.headers.authorization?.slice(7);
     let body: object = {};
     let status = 200;
-    if (url.pathname.endsWith('/debug_token')) {
+    if (url.pathname.endsWith('/oauth/access_token')) {
+      body =
+        url.searchParams.get('code') === 'embedded-fixture-code'
+          ? { access_token: 'embedded-fixture-token', expires_in: 3600 }
+          : { error: { message: 'invalid code' } };
+      status =
+        url.searchParams.get('code') === 'embedded-fixture-code' ? 200 : 400;
+    } else if (url.pathname.endsWith('/debug_token')) {
       const input = url.searchParams.get('input_token');
       body = {
         data: {
           app_id: '123',
           is_valid:
-            token === '123|fixture-app-secret' && input !== 'invalid-token',
+            token === '123|fixture-app-secret' &&
+            input !== 'invalid-token' &&
+            input !== 'bad-embedded-token',
           expires_at: 0,
           scopes: [
             'whatsapp_business_management',
@@ -22,9 +31,25 @@ export async function startMetaFixture() {
         },
       };
     } else if (url.pathname.endsWith('/456/phone_numbers')) {
-      body = { data: [{ id: '789', verified_name: 'Fixture shop' }] };
+      body = {
+        data: [
+          {
+            id: '789',
+            verified_name: 'Fixture shop',
+            display_phone_number: '+1 555 010 0100',
+          },
+        ],
+      };
     } else if (url.pathname.endsWith('/456/subscribed_apps')) {
-      body = { data: [{ whatsapp_business_api_data: { id: '123' } }] };
+      body =
+        request.method === 'POST'
+          ? { success: true }
+          : { data: [{ whatsapp_business_api_data: { id: '123' } }] };
+    } else if (
+      url.pathname.endsWith('/789/register') &&
+      request.method === 'POST'
+    ) {
+      body = { success: true };
     } else if (/\/[^/]+\/messages$/.test(url.pathname)) {
       sent.push(token ?? '');
       body =

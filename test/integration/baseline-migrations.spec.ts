@@ -44,6 +44,7 @@ const expectedTables = [
   'users',
   'webhook_receipts',
   'whatsapp_credentials',
+  'whatsapp_signup_attempts',
   'whatsapp_outbound_messages',
   'whatsapp_response_intents',
   'whatsapp_unmatched_statuses',
