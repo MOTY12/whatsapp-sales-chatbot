@@ -81,6 +81,7 @@ describe('merchant OIDC and tenant isolation', () => {
   let admin: DataSource;
   let first: Awaited<ReturnType<typeof seedTenant>>;
   let second: Awaited<ReturnType<typeof seedTenant>>;
+  let runtimeUsername: string;
   let env: NodeJS.ProcessEnv;
 
   beforeAll(async () => {
@@ -90,6 +91,7 @@ describe('merchant OIDC and tenant isolation', () => {
     first = await seedTenant(admin, 1);
     second = await seedTenant(admin, 2);
     const credentials = await database.merchantCredentials(admin);
+    runtimeUsername = credentials.runtimeUsername;
     await database.grantRuntimeAccess(admin);
     idp = await startIdentityProvider();
     meta = await startMetaFixture();
@@ -412,6 +414,27 @@ describe('merchant OIDC and tenant isolation', () => {
     const session = cookiePair(signedIn, 'kleva_session');
     expect(cookieHeader(signedIn, 'kleva_session')).toMatch(/HttpOnly/i);
 
+    const failedEnqueueMailCount = mailjet.messages.length;
+    await admin.query(
+      `REVOKE INSERT ON public.merchant_email_deliveries FROM "${runtimeUsername}"`,
+    );
+    try {
+      await request(server)
+        .post('/auth/forgot-password')
+        .send({ email })
+        .expect(200)
+        .expect(({ body }: Response) =>
+          expect((body as { message: string }).message).toBe(
+            'If an account can reset its password, an email has been sent.',
+          ),
+        );
+      expect(mailjet.messages).toHaveLength(failedEnqueueMailCount);
+    } finally {
+      await admin.query(
+        `GRANT INSERT ON public.merchant_email_deliveries TO "${runtimeUsername}"`,
+      );
+    }
+
     const expiredResetMailIndex = mailjet.messages.length;
     await request(server)
       .post('/auth/forgot-password')
@@ -437,6 +460,41 @@ describe('merchant OIDC and tenant isolation', () => {
     const liveResetMail = await waitForMail(mailjet, liveResetMailIndex);
     const liveResetToken = mailToken(liveResetMail);
     expect(liveResetToken).toBeDefined();
+    let submittedResetEmail:
+      | {
+          email_status: string;
+          operation_status: string;
+          provider_message_id: string;
+        }
+      | undefined;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      [submittedResetEmail] = await admin.query<
+        {
+          email_status: string;
+          operation_status: string;
+          provider_message_id: string;
+        }[]
+      >(
+        `SELECT delivery.status AS email_status, operation.status AS operation_status,
+          delivery.provider_message_id
+         FROM public.outbox_operations operation
+         JOIN public.merchant_email_deliveries delivery
+           ON delivery.id = (operation.metadata->>'deliveryId')::uuid
+         WHERE operation.operation = 'merchant.email'
+         ORDER BY operation."createdAt" DESC LIMIT 1`,
+      );
+      if (
+        submittedResetEmail?.email_status === 'ACCEPTED' &&
+        submittedResetEmail.operation_status === 'COMPLETED'
+      )
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(submittedResetEmail).toMatchObject({
+      email_status: 'ACCEPTED',
+      operation_status: 'COMPLETED',
+      provider_message_id: '123',
+    });
     const nextPassword = 'new password after reset 2026';
     const confirmationMailIndex = mailjet.messages.length;
     await request(server)
