@@ -7,9 +7,9 @@ This is a standalone Next.js App Router application. The NestJS server remains t
 Copy `.env.example` to `.env.local` in this directory and set:
 
 - `KLEVA_BACKEND_ORIGIN`: private/server-side Nest origin. Never prefix it with `NEXT_PUBLIC_`.
-- `DASHBOARD_PUBLIC_ORIGIN`: the exact browser origin serving Next.js; used for the backend's same-origin CSRF proof.
+- `DASHBOARD_PUBLIC_ORIGIN`: the exact browser origin serving Next.js; set this in both the dashboard `.env.local` and backend `.env`. Nest uses it for CSRF origin validation and to select Secure `__Host-` cookies when the dashboard is HTTPS.
 
-Configure backend `OIDC_REDIRECT_URI` to `${DASHBOARD_PUBLIC_ORIGIN}/auth/callback` and register that exact callback with the identity provider. Start Nest using the existing root scripts, then run `npm run dashboard:dev` from the repository root (dashboard at port 3001 by default; backend must be reachable at port 3000). In production serve dashboard and API through the same browser origin or an HTTPS reverse proxy. Browser-facing session cookies are set by the dashboard callback bridge and forwarded server-to-server to Nest.
+For local use, set `DASHBOARD_PUBLIC_ORIGIN=http://localhost:3001` and `KLEVA_BACKEND_ORIGIN=http://localhost:3000`. For an HTTPS tunnel, set `DASHBOARD_PUBLIC_ORIGIN` in both apps to that exact tunnel origin while keeping `KLEVA_BACKEND_ORIGIN=http://localhost:3000`; the browser posts to the same-origin `/api/auth` route and only the Next.js server calls Nest. Do not derive the dashboard origin from proxy headers or set a wildcard. Configure backend `OIDC_REDIRECT_URI` separately to the callback URL registered with the identity provider. Start Nest using the existing root scripts, then run `npm run dashboard:dev` from the repository root (dashboard at port 3001 by default; backend must be reachable at port 3000). Browser-facing session cookies are set by Nest and forwarded by the Next.js auth bridge without changing their attributes.
 
 ## Architecture
 

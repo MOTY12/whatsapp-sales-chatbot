@@ -36,6 +36,38 @@ export async function POST(
       { message: 'Authentication is temporarily unavailable.' },
       { status: 503 },
     );
+  const configuredDashboardOrigin = process.env.DASHBOARD_PUBLIC_ORIGIN?.trim();
+  let dashboardOrigin: URL;
+  try {
+    dashboardOrigin = new URL(
+      configuredDashboardOrigin || new URL(request.url).origin,
+    );
+  } catch {
+    return NextResponse.json(
+      { message: 'Authentication is temporarily unavailable.' },
+      { status: 503 },
+    );
+  }
+  if (
+    dashboardOrigin.username ||
+    dashboardOrigin.password ||
+    dashboardOrigin.pathname !== '/' ||
+    dashboardOrigin.search ||
+    dashboardOrigin.hash ||
+    (dashboardOrigin.protocol !== 'https:' &&
+      !['localhost', '127.0.0.1', '[::1]'].includes(dashboardOrigin.hostname))
+  ) {
+    return NextResponse.json(
+      { message: 'Authentication is temporarily unavailable.' },
+      { status: 503 },
+    );
+  }
+  if (request.headers.get('origin') !== dashboardOrigin.origin) {
+    return NextResponse.json(
+      { message: 'Invalid request origin.' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   const body = await request.text();
   if (body.length > 16_384)
     return NextResponse.json(
@@ -57,8 +89,7 @@ export async function POST(
         ...((request.headers.get('x-csrf-token') ?? csrf)
           ? { 'X-CSRF-Token': request.headers.get('x-csrf-token') ?? csrf! }
           : {}),
-        Origin:
-          process.env.DASHBOARD_PUBLIC_ORIGIN ?? new URL(request.url).origin,
+        Origin: dashboardOrigin.origin,
       },
       body,
       redirect: 'manual',

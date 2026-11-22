@@ -463,15 +463,36 @@ export function merchantAuthConfig(env = process.env) {
     clientId = values.OIDC_CLIENT_ID;
     clientSecret = values.OIDC_CLIENT_SECRET;
   }
-  const csrfOrigin =
-    redirect?.origin ??
-    (emailEnabled
+  const configuredDashboardOrigin =
+    env.DASHBOARD_PUBLIC_ORIGIN?.trim() || env.MERCHANT_PUBLIC_ORIGIN?.trim();
+  const dashboardUrl = configuredDashboardOrigin
+    ? validatedUrl(
+        configuredDashboardOrigin,
+        env.DASHBOARD_PUBLIC_ORIGIN?.trim()
+          ? 'DASHBOARD_PUBLIC_ORIGIN'
+          : 'MERCHANT_PUBLIC_ORIGIN',
+        production ? ['https:'] : ['http:', 'https:'],
+      )
+    : emailEnabled && !redirect
       ? validatedUrl(
           env.MERCHANT_PUBLIC_ORIGIN?.trim() ?? '',
           'MERCHANT_PUBLIC_ORIGIN',
           production ? ['https:'] : ['http:', 'https:'],
-        ).origin
-      : undefined);
+        )
+      : redirect;
+  if (
+    dashboardUrl &&
+    (dashboardUrl.username ||
+      dashboardUrl.password ||
+      dashboardUrl.pathname !== '/' ||
+      dashboardUrl.search ||
+      dashboardUrl.hash)
+  ) {
+    throw new Error(
+      'DASHBOARD_PUBLIC_ORIGIN must be an origin without credentials, path, query or fragment.',
+    );
+  }
+  const csrfOrigin = dashboardUrl?.origin;
   if (
     !merchantRolePattern.test(databaseValues.MERCHANT_DATABASE_USER) ||
     databaseValues.MERCHANT_DATABASE_USER === env.DATABASE_USER?.trim()
@@ -491,7 +512,10 @@ export function merchantAuthConfig(env = process.env) {
   return {
     issuer,
     redirect,
-    secureCookies: production || redirect?.protocol === 'https:',
+    secureCookies:
+      production ||
+      dashboardUrl?.protocol === 'https:' ||
+      redirect?.protocol === 'https:',
     csrfOrigin,
     clientId,
     clientSecret,

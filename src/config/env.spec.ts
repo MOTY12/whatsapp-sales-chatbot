@@ -138,6 +138,67 @@ describe('environment configuration', () => {
     );
   });
 
+  it.each([
+    {
+      label: 'local HTTP',
+      dashboardOrigin: 'http://localhost:3001',
+      secureCookies: false,
+    },
+    {
+      label: 'HTTPS tunnel',
+      dashboardOrigin: 'https://merchant-preview.ngrok-free.app',
+      secureCookies: true,
+    },
+  ])(
+    'uses the configured dashboard origin for CSRF and cookie security on $label',
+    ({ dashboardOrigin, secureCookies }) => {
+      const config = merchantAuthConfig({
+        ...database,
+        MERCHANT_DATABASE_USER: 'kleva_merchant_test',
+        MERCHANT_DATABASE_PASSWORD: 'merchant-db-fixture',
+        IDENTITY_DATABASE_USER: 'kleva_identity_test',
+        IDENTITY_DATABASE_PASSWORD: 'identity-db-fixture',
+        OIDC_ISSUER: 'https://accounts.example.test',
+        OIDC_CLIENT_ID: 'fixture-client',
+        OIDC_CLIENT_SECRET: 'fixture-secret',
+        OIDC_REDIRECT_URI: 'http://localhost:3001/auth/callback',
+        DASHBOARD_PUBLIC_ORIGIN: dashboardOrigin,
+      });
+
+      expect(config).toMatchObject({
+        csrfOrigin: dashboardOrigin,
+        secureCookies,
+      });
+    },
+  );
+
+  it('rejects dashboard origins that include a path or credentials', () => {
+    const authEnv = {
+      ...database,
+      MERCHANT_DATABASE_USER: 'kleva_merchant_test',
+      MERCHANT_DATABASE_PASSWORD: 'merchant-db-fixture',
+      IDENTITY_DATABASE_USER: 'kleva_identity_test',
+      IDENTITY_DATABASE_PASSWORD: 'identity-db-fixture',
+      OIDC_ISSUER: 'https://accounts.example.test',
+      OIDC_CLIENT_ID: 'fixture-client',
+      OIDC_CLIENT_SECRET: 'fixture-secret',
+      OIDC_REDIRECT_URI: 'http://localhost:3001/auth/callback',
+    };
+
+    expect(() =>
+      merchantAuthConfig({
+        ...authEnv,
+        DASHBOARD_PUBLIC_ORIGIN: 'https://merchant.example.test/dashboard',
+      }),
+    ).toThrow('DASHBOARD_PUBLIC_ORIGIN');
+    expect(() =>
+      merchantAuthConfig({
+        ...authEnv,
+        DASHBOARD_PUBLIC_ORIGIN: 'https://user:secret@merchant.example.test',
+      }),
+    ).toThrow('DASHBOARD_PUBLIC_ORIGIN');
+  });
+
   it('validates Mailjet configuration without exposing values', () => {
     expect(merchantEmailAuthConfig({}).enabled).toBe(false);
     expect(() =>

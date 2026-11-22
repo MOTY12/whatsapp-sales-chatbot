@@ -58,7 +58,7 @@ Register a confidential OIDC client with Authorization Code, S256 PKCE, `client_
 
 - `GET /auth/login` starts sign-in. `GET /auth/callback` consumes the browser-bound attempt and redirects to `/auth/me`.
 - `GET /auth/me` returns the account ID and active memberships. `GET /auth/businesses` lists those memberships. `GET /auth/businesses/:businessId` checks current membership and permissions before returning a minimal business profile.
-- `POST /auth/logout` revokes the session. Send the configured callback origin in `Origin` and the value of the CSRF cookie in `X-CSRF-Token`. HTTPS cookie names have the `__Host-` prefix. The CSRF cookie is readable by same-origin code. The session and login binding cookies are HttpOnly and all use SameSite=Lax.
+- `POST /auth/logout` revokes the session. Send `DASHBOARD_PUBLIC_ORIGIN` in `Origin` and the value of the CSRF cookie in `X-CSRF-Token`. HTTPS dashboard origins use Secure `__Host-` cookies. The CSRF cookie is readable by same-origin code. The session and login binding cookies are HttpOnly and all use SameSite=Lax.
 - Sessions last eight hours and rotate on successful sign-in. Login attempts expire after ten minutes and can be consumed once. PostgreSQL stores session and CSRF digests. Provider tokens stay out of cookies and responses.
 
 | Role | Business profile | Team management permission | Knowledge permission | Inbox permission |

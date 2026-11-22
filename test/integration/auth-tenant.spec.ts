@@ -125,6 +125,7 @@ describe('merchant OIDC and tenant isolation', () => {
       OIDC_CLIENT_ID: clientId,
       OIDC_CLIENT_SECRET: clientSecret,
       OIDC_REDIRECT_URI: redirectUri,
+      DASHBOARD_PUBLIC_ORIGIN: origin,
       EMAIL_AUTH_ENABLED: 'true',
       EMAIL_PROVIDER: 'mailjet',
       MAILJET_API_KEY: 'fixture-api-key',
@@ -415,6 +416,7 @@ describe('merchant OIDC and tenant isolation', () => {
     );
     const session = cookiePair(signedIn, 'kleva_session');
     expect(cookieHeader(signedIn, 'kleva_session')).toMatch(/HttpOnly/i);
+    await request(server).get('/auth/me').set('Cookie', session).expect(200);
 
     const failedEnqueueMailCount = mailjet.messages.length;
     await admin.query(
@@ -1664,6 +1666,9 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
+      // Migrations 0015–0022 were added after this rollback guard was written.
+      // The seven calls above unwind through migration 0016; unwind 0015 too.
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -2047,10 +2052,17 @@ describe('merchant OIDC and tenant isolation', () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
       await admin.undoLastMigration();
+      // Migration 0022 adds WhatsApp signup state after email authentication.
+      await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant email authentication data exists',
       );
       await applyMigrations(admin);
+      await grantMerchantAccess(
+        admin,
+        env.MERCHANT_DATABASE_USER!,
+        env.IDENTITY_DATABASE_USER!,
+      );
       await database.grantRuntimeAccess(admin);
     });
   });
@@ -2335,11 +2347,12 @@ describe('merchant OIDC and tenant isolation', () => {
       .get(path)
       .set(headers(owner))
       .expect(200)
-      .expect(({ body }) =>
-        expect((body as { connectionState?: string }).connectionState).toBe(
-          'failed',
-        ),
-      );
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          connectionState: 'action_required',
+          signupFailure: 'META_CODE_EXCHANGE_FAILED',
+        });
+      });
     const started = await request(server)
       .post(`${path}/embedded-signup/start`)
       .set(headers(owner))
