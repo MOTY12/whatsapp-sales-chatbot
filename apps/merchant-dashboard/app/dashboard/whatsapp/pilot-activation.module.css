@@ -74,6 +74,27 @@
   padding-top: 8px;
 }
 
+.checks {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8faf9;
+  list-style: none;
+}
+
+.checks li {
+  display: flex;
+  gap: 9px;
+  color: #60716b;
+  line-height: 1.45;
+}
+
+.checks li[data-complete='true'] {
+  color: #17634e;
+}
+
 .form label,
 .revokeForm label {
   display: flex;

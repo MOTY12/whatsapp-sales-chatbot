@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { aiConfig } from '../config/env';
+import { aiResponsesEnabled } from '../config/env';
 import type { MerchantPrincipal } from './auth.service';
 import { MerchantAccess } from './merchant-access.service';
 
@@ -40,13 +40,24 @@ export class MerchantPilotService {
         const [connection] = await manager.query<
           { id: string; status: string }[]
         >('SELECT id, status FROM public.kleva_whatsapp_status()');
+        const [business] = await manager.query<{ status: string }[]>(
+          'SELECT status FROM public.kleva_read_merchant_profile()',
+        );
+        const connectionActive = connection?.status === 'active';
+        const pilotApproved = row?.status === 'ACTIVE';
+        const approvalMatchesConnection =
+          pilotApproved && connection?.id === row.connection_id;
+        const prerequisites = {
+          businessActive: business?.status === 'active',
+          whatsappConnectedAndVerified: connectionActive,
+          pilotApproved,
+          approvalMatchesConnection,
+          aiResponsesEnabled: aiResponsesEnabled(),
+        };
         return {
           ...(row ?? { enrollment_id: null, status: 'NOT_ENROLLED' }),
-          assistant_ready:
-            row?.status === 'ACTIVE' &&
-            connection?.status === 'active' &&
-            connection.id === row.connection_id &&
-            aiConfig().enabled,
+          prerequisites,
+          assistant_ready: Object.values(prerequisites).every(Boolean),
         };
       },
     );

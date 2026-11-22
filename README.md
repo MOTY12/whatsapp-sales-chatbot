@@ -1,111 +1,124 @@
-# Kleva WhatsApp Sales Assistant
+# Kleva Merchant WhatsApp Sales Assistant
 
-Kleva is a NestJS and PostgreSQL backend for WhatsApp business onboarding, inbound lead capture, and owner-facing assistant commands. WhatsApp is the product interface. This repository does not include a customer dashboard.
+Kleva is a tenant-isolated merchant SaaS application. The NestJS API handles merchant identity, business and channel access, knowledge, conversations, leads, metering, and signed Meta webhooks. PostgreSQL is the durable system of record; the outbox relay dispatches work to BullMQ/Redis; a separate worker handles WhatsApp receipts, AI responses, outbound messages, and merchant email. The Next.js merchant dashboard provides onboarding, WhatsApp connection, products, FAQs, leads, and a conversation inbox.
 
-## Local setup
+## Local prerequisites
 
-Use Node.js 22 and PostgreSQL 16 to match CI.
+- Node.js 22
+- PostgreSQL 16 with the extensions required by the migrations
+- Redis 7+
+- A publicly reachable HTTPS URL for real Meta webhook and Embedded Signup tests
+
+Install dependencies and configure the backend from the safe template:
 
 ```bash
 npm ci
 cp .env.example .env
-createdb -U postgres kleva_db
-# Set the database and Meta boot settings below in .env.
+```
+
+Fill in local PostgreSQL settings, then apply migrations and provision the restricted merchant/identity database logins as described in [DATABASE_SETUP.md](DATABASE_SETUP.md):
+
+```bash
 npm run migration:run
+npm run auth:grant
+```
+
+The migration connection must own the schema and have permission to create/alter schema objects. The HTTP API uses PostgreSQL. Redis is required by the separate worker, not by migrations or unrelated CLI commands.
+
+## Start the application
+
+Run three processes in separate terminals:
+
+```bash
 npm run start:dev
-```
-
-The API listens on `PORT` (default 3000). Configure the database before running migrations. The HTTP app also loads the Meta Embedded Signup service at boot.
-
-Required for local boot:
-
-- PostgreSQL connection settings (`DATABASE_HOST`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`)
-- Non-empty Meta settings (`META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `WHATSAPP_BUSINESS_CONFIG_ID`, `WHATSAPP_API_VERSION`)
-
-Set `DATABASE_PORT` if PostgreSQL uses a port other than 5432. The API and migration CLI use the same database settings. The CLI only requires the database settings. The example Meta values suffice for local boot and a smoke check of `GET /`. Before connecting Meta, configure real Meta app credentials and a public HTTPS callback, and set `WHATSAPP_VERIFY_TOKEN` to match the webhook subscription.
-
-`NODE_ENV` accepts `development` (default), `test`, or `production`. `PORT` defaults to 3000 and `LOG_LEVEL` defaults to `log`. The HTTP process and migration CLI use PostgreSQL. Redis is used by the separate worker, and OpenAI settings are optional.
-
-For production, use `NODE_ENV=production`, `DATABASE_SSL=true`, and `DATABASE_SSL_CA` containing the trusted PostgreSQL CA bundle in PEM format. Use a `DATABASE_HOST` covered by the server certificate. Production also requires non-placeholder Meta credentials, an HTTPS callback, and the webhook verify token. Its Graph origin is fixed to `https://graph.facebook.com`. Local PostgreSQL can use `DATABASE_SSL=false`. See the [database TLS configuration](DATABASE_SETUP.md#database-tls) for details.
-
-`WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are a development fallback. Connected businesses use the Meta access token and phone-number ID stored on the business record.
-
-## Webhook configuration
-
-Set Meta's callback URL to `https://your-public-url/webhooks/whatsapp`.
-
-- GET uses `WHATSAPP_VERIFY_TOKEN` for the subscription challenge.
-- POST requires `X-Hub-Signature-256`. Kleva verifies it against `META_APP_SECRET` using the unmodified raw request body (`rawBody: true` in `src/main.ts`).
-
-Inbound customer text events are resolved by Meta `phone_number_id`. PostgreSQL enforces unique provider IDs for stored messages. Owner commands currently take a separate path before message insertion.
-
-## Database and migrations
-
-```bash
-npm run migration:run
-npm run migration:revert
-```
-
-Migrations create the baseline schema, webhook and onboarding persistence, assistant persistence, and the background job outbox.
-
-TypeORM synchronization is disabled in every environment. Run migrations before starting the application whenever the schema changes.
-
-See `DATABASE_SETUP.md` for PostgreSQL details.
-
-## Merchant sign-in
-
-Register a confidential OIDC client with Authorization Code, S256 PKCE, `client_secret_basic`, and RS256 ID tokens. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and the exact `OIDC_REDIRECT_URI` ending in `/auth/callback`. Register that same URI with the provider. Use HTTPS in production and loopback HTTP for local development. Set the two dedicated database credentials after applying migrations and grants. Leaving all merchant settings empty disables merchant auth. [Database role setup](DATABASE_SETUP.md#merchant-database-roles-and-rls)
-
-- `GET /auth/login` starts sign-in. `GET /auth/callback` consumes the browser-bound attempt and redirects to `/auth/me`.
-- `GET /auth/me` returns the account ID and active memberships. `GET /auth/businesses` lists those memberships. `GET /auth/businesses/:businessId` checks current membership and permissions before returning a minimal business profile.
-- `POST /auth/logout` revokes the session. Send `DASHBOARD_PUBLIC_ORIGIN` in `Origin` and the value of the CSRF cookie in `X-CSRF-Token`. HTTPS dashboard origins use Secure `__Host-` cookies. The CSRF cookie is readable by same-origin code. The session and login binding cookies are HttpOnly and all use SameSite=Lax.
-- Sessions last eight hours and rotate on successful sign-in. Login attempts expire after ten minutes and can be consumed once. PostgreSQL stores session and CSRF digests. Provider tokens stay out of cookies and responses.
-
-| Role | Business profile | Team management permission | Knowledge permission | Inbox permission |
-| --- | --- | --- | --- | --- |
-| Owner | Yes | Yes | Yes | Yes |
-| Editor | Yes | | Yes | |
-| Agent | Yes | | | Yes |
-| Legacy staff | | | | |
-
-The permission helper defines team, knowledge and inbox access for later feature routes. Staff can see their own membership list. Signing in creates an issuer/subject account and does not claim a legacy membership.
-
-## Workers
-
-Apply the database migrations, then start the worker separately. The migration command also builds the application.
-
-```bash
-npm run migration:run
 npm run start:worker
+npm run dashboard:dev
 ```
 
-The worker uses the shared PostgreSQL configuration and Redis 7 or newer. Set `REDIS_URL` or `REDIS_HOST`, `REDIS_PORT`, and optional `REDIS_PASSWORD`. `REDIS_URL` takes precedence and accepts `rediss://` for verified TLS. Use a distinct `JOBS_QUEUE_PREFIX` for each deployment and share it across that deployment's worker replicas. The default prefix is `kleva-<NODE_ENV>`. `JOBS_CONCURRENCY` defaults to 4 per worker.
+Nest listens on `PORT` (default `3000`), the worker polls the PostgreSQL outbox and consumes BullMQ jobs, and Next.js serves the dashboard at `http://localhost:3001` by default. Configure the dashboard server environment in `apps/merchant-dashboard/.env.local`:
 
-The relay polls PostgreSQL every second. A job contains only the outbox operation ID, and the Redis job ID combines that ID with the execution attempt. PostgreSQL retries failed dispatches with backoff and recovers expired leases and missing Redis jobs. Handler failures retry up to five execution attempts before the operation is marked `FAILED`. The worker drains active handlers on SIGINT or SIGTERM. Run `node dist/worker.js` directly if your process manager signals only its immediate child.
+```dotenv
+KLEVA_BACKEND_ORIGIN=http://localhost:3000
+DASHBOARD_PUBLIC_ORIGIN=http://localhost:3001
+```
 
-Feature modules can write an intent through `OutboxStore.write` inside their TypeORM transaction. Use a stable UUID per logical operation and put only UUID references in metadata. Register the operation's handler in the worker. PostgreSQL effects performed through the supplied transaction manager commit together with the completion marker. Keep those transactions short. External calls need their own idempotency or reconciliation. This release ships the infrastructure with an empty feature handler registry. WhatsApp webhooks still run through the HTTP process.
+Set the same `DASHBOARD_PUBLIC_ORIGIN` in the backend `.env`. For simultaneous localhost and HTTPS-tunnel use, list each exact origin in `DASHBOARD_ALLOWED_ORIGINS` in both environments; never use a wildcard. The Next server calls Nest through `KLEVA_BACKEND_ORIGIN`; browser requests use same-origin dashboard routes. See [the dashboard guide](apps/merchant-dashboard/README.md).
 
-## Scripts
+## Merchant setup and first pilot
+
+1. Register or sign in using the enabled merchant authentication method. Google OIDC needs a registered client and exact callback URI; email/password additionally requires `EMAIL_AUTH_ENABLED=true` and configured Mailjet credentials and sender. Keep provider secrets server-side.
+2. Create a business and complete its profile.
+3. On `/dashboard/whatsapp`, start the official Meta Embedded Signup flow. Kleva exchanges the returned code server-side, verifies the WABA and phone number, subscribes the app, registers the phone when required, encrypts the token, and only then reports the connection active. Configure the Meta app, approved permissions, Embedded Signup configuration, HTTPS webhook URL `/webhooks/whatsapp`, and `WHATSAPP_VERIFY_TOKEN` before attempting a live connection. Details: [WhatsApp connection setup](docs/kleva-mvp-30d/whatsapp-connection-api.md).
+4. Publish at least one FAQ or product in the dashboard. Draft and unpublished revisions are excluded from customer retrieval. Set product price, currency and availability only to merchant-confirmed values.
+5. An authorized business owner requests activation in the WhatsApp page and accepts both pilot disclosures. The request remains `PENDING_REVIEW`; it does not enable AI.
+6. A separately provisioned platform operator reviews the release evidence and activates the pending connection using the scoped operator CLI described below. Set `AI_RESPONSES_ENABLED=true` and the AI provider key only in the approved worker runtime after all pilot gates are met. The dashboard lists each readiness prerequisite and never claims readiness from client-side state.
+7. Have a customer message the connected number within the WhatsApp service window. The signed webhook stores a durable receipt; the worker creates/reuses the tenant customer and conversation, stores the inbound message, captures a lead, retrieves published tenant knowledge, validates a grounded response, and queues a single idempotent outbound send. View messages, delivery status and the associated lead in the merchant dashboard inbox. An owner/agent can take over; queued automation is fenced from sending after takeover.
+
+### Controlled operator pilot approval
+
+Pilot activation is deliberately separate from the merchant API. Apply the migration, create an individual, least-privilege PostgreSQL login named `kleva_pilot_operator_<operator>`, and grant only the activation function:
+
+```sql
+CREATE ROLE kleva_pilot_operator_alice LOGIN NOINHERIT PASSWORD 'managed-outside-source-control';
+```
+
+Set `PILOT_OPERATOR_DATABASE_USER` to that role while connected with the migration-owner credentials, then run:
 
 ```bash
-npm run start:dev
+npm run pilot:grant-operator
+```
+
+After release review and merchant consent, run the approval command from a secured operator shell with that operator role's credentials supplied as `PILOT_OPERATOR_DATABASE_USER` and `PILOT_OPERATOR_DATABASE_PASSWORD`:
+
+```bash
+npm run pilot:approve -- <pending-enrollment-uuid> <approval-ticket-reference>
+```
+
+The function activates only a pending enrollment whose business and exact WhatsApp connection are active and verified. It records PostgreSQL `session_user` and the evidence reference, and does not expose a public activation endpoint. Keep these operator credentials out of the API, dashboard and worker environments. An owner can revoke activation from the dashboard.
+
+## Background jobs and delivery
+
+The worker registers these durable operations: `whatsapp.receipt`, `whatsapp.ai_response`, WhatsApp response intents, `whatsapp.outbound`, and `merchant.email`. Job payloads contain database references, not customer content. PostgreSQL leases and idempotency keys recover dispatch after Redis loss or process restart. Handler failures retry with bounded attempts and safe error classifications; terminal operations are marked `FAILED`. External WhatsApp effects that time out are recorded as `UNCERTAIN` for reconciliation instead of being blindly resent. Delivery webhooks update message and outbound states monotonically.
+
+Configure `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT`; `JOBS_QUEUE_PREFIX` must be shared by worker replicas in one deployment and distinct across environments. `JOBS_CONCURRENCY` is per worker. Run migrations without requiring Redis.
+
+## Configuration
+
+Use [.env.example](.env.example) as the backend variable reference. It contains placeholders only. Important groups are:
+
+- PostgreSQL and restricted merchant/identity roles
+- Redis/BullMQ
+- Meta App ID/secret, Embedded Signup configuration ID, webhook verification token and Graph API version
+- encrypted WhatsApp credential keyring
+- `AI_RESPONSES_ENABLED` (false by default), AI model and worker-only provider key
+- Merchant OIDC or optional Mailjet email authentication
+- dashboard public origin and exact additional development origins
+- operator-only database credentials for the manual approval CLI (do not copy these into application runtime environments)
+
+Never commit real credentials. Set the dashboard's private backend URL only in `apps/merchant-dashboard/.env.local`; see its README for details. Production requires TLS for PostgreSQL, HTTPS dashboard/callback origins, a production Meta Graph origin, and provider/legal/security release approval.
+
+## Tests and verification
+
+```bash
 npm run build
 npm run lint:check
-npm test -- --runInBand
-npm run test:e2e
+npm test
 npm run test:integration
-npm run migration:run
+npm run test:e2e
+npm run dashboard:typecheck
+npm run dashboard:build
+npm run dashboard:test
+npm run dashboard:test:browser
 ```
 
-The HTTP test suite exercises `GET /` and the positive and negative WhatsApp subscription challenge using a stubbed WhatsApp service. CI also runs `npm run test:integration` against PostgreSQL 16 and Redis to verify migrations, repository behavior, TLS, health endpoints, outbox recovery, and merchant OIDC and RLS. See the [integration database setup](DATABASE_SETUP.md#postgresql-integration-tests) to run it locally.
+PostgreSQL integration tests require the dedicated disposable local `kleva_integration_control` database and `KLEVA_TEST_PG_*` settings; suites that exercise BullMQ additionally require `KLEVA_TEST_REDIS_URL` pointing to loopback Redis. They reject production and remote database hosts. The tests use mocked AI/Meta providers or local fixtures and do not require live external credentials. See [database test setup](DATABASE_SETUP.md#postgresql-integration-tests). Browser tests start a disposable API fixture and Next.js; they verify dashboard behavior, not a live Meta connection.
 
-## Health and logs
+The deterministic signed-webhook-to-grounded-reply integration is in `test/integration/ai-sales-conversation.spec.ts`. Existing integration suites cover duplicate webhook delivery, outbox/Redis recovery and retries, usage limits, tenant isolation, human takeover, outbound provider failures, and delivery reconciliation.
 
-- `GET /health/live` returns HTTP 200 with `{"status":"ok"}` when the HTTP process is serving.
-- `GET /health/ready` checks PostgreSQL within one second. It returns HTTP 200 with `{"status":"ok"}` when the probe succeeds and HTTP 503 with `{"status":"unavailable"}` otherwise.
-- Responses include `X-Request-Id`. The API keeps a supplied UUID or generates one. Request logs record the ID, method, status, and duration. They omit paths, query strings, headers, and payloads.
-- `DATABASE_LOGGING=true` emits database query events without SQL text or parameters. Database and provider failures log safe metadata without raw errors.
+## Health and operational safety
 
-## MVP boundary
-
-No web dashboard, payments, inventory, broadcasts, public CRM API, or OpenAI integration are included. Assistant CRM, follow-ups, sales, and multi-step command state are persisted in PostgreSQL.
+- `GET /health/live` checks that the API is serving; `GET /health/ready` checks PostgreSQL.
+- The worker writes a local heartbeat after Redis and PostgreSQL health checks. Monitor it alongside outbox age, failed operations, provider errors, AI handoffs, usage, and delivery states.
+- Keep `AI_RESPONSES_ENABLED=false` until a single pilot is approved and staged. The per-business approval, verified connection, active business, `AUTO` conversation mode and matching control version are checked before generation and again before outbound send.
+- Maintain staffed human escalation and use owner takeover or the global AI kill switch during incidents. Provider requests already in flight cannot be recalled.
+- Read [the merchant dashboard guide](apps/merchant-dashboard/README.md), [pilot readiness checklist](docs/kleva-mvp-30d/policy-001-pilot-readiness.md), [environment reference](docs/ops/environment.md), and [incident response guide](docs/ops/incident-response.md) before a live pilot.

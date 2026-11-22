@@ -59,6 +59,13 @@ export type MerchantPilotStatus = {
   consent_version?: string | null;
   status?: 'NOT_ENROLLED' | 'PENDING_REVIEW' | 'ACTIVE' | 'REVOKED';
   assistant_ready?: boolean;
+  prerequisites?: {
+    businessActive: boolean;
+    whatsappConnectedAndVerified: boolean;
+    pilotApproved: boolean;
+    approvalMatchesConnection: boolean;
+    aiResponsesEnabled: boolean;
+  };
 };
 
 export type InboxMode = 'AUTO' | 'HUMAN';

@@ -103,4 +103,34 @@ describe('merchant AI pilot activation', () => {
     expect(screen.getByText(/could not verify pilot approval/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Request pilot activation' })).toBeNull();
   });
+
+  it('identifies the missing readiness prerequisite from backend state', () => {
+    render(
+      <PilotActivation
+        businessId={businessId}
+        canManage
+        connection={connection}
+        pilot={{
+          status: 'ACTIVE',
+          assistant_ready: false,
+          prerequisites: {
+            businessActive: true,
+            whatsappConnectedAndVerified: true,
+            pilotApproved: true,
+            approvalMatchesConnection: true,
+            aiResponsesEnabled: false,
+          },
+        }}
+        pilotAvailable
+      />,
+    );
+
+    const checks = screen.getByRole('list', {
+      name: 'Pilot activation requirements',
+    });
+    expect(checks).toHaveTextContent('AI responses are enabled for this pilot');
+    expect(checks.querySelector('[data-complete="false"]')).toHaveTextContent(
+      'AI responses are enabled for this pilot',
+    );
+  });
 });

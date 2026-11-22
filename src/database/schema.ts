@@ -54,6 +54,7 @@ import { MerchantEmailAuthentication1760000000020 } from './migrations/176000000
 import { DurableMerchantEmail1760000000021 } from './migrations/1760000000021-DurableMerchantEmail';
 import { MerchantEmailDelivery } from './entities/merchant-email-delivery.entity';
 import { MerchantEmbeddedWhatsApp1760000000022 } from './migrations/1760000000022-MerchantEmbeddedWhatsApp';
+import { PilotOperatorActivation1760000000023 } from './migrations/1760000000023-PilotOperatorActivation';
 
 export const databaseEntities = [
   Business,
@@ -106,4 +107,5 @@ export const databaseMigrations = [
   MerchantEmailAuthentication1760000000020,
   DurableMerchantEmail1760000000021,
   MerchantEmbeddedWhatsApp1760000000022,
+  PilotOperatorActivation1760000000023,
 ];

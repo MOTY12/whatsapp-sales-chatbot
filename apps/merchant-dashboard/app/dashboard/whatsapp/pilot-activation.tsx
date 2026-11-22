@@ -37,6 +37,7 @@ export function PilotActivation({
     canManage &&
     (state === 'PENDING_REVIEW' || state === 'ACTIVE') &&
     Boolean(pilot?.enrollment_id);
+  const prerequisites = pilot?.prerequisites;
 
   return (
     <section className={styles.card} aria-labelledby="pilot-title">
@@ -45,8 +46,8 @@ export function PilotActivation({
         <h2 id="pilot-title">AI sales assistant pilot</h2>
         <p className={styles.description}>
           Customer replies stay off until Kleva approves the merchant pilot,
-          WhatsApp is verified, and AI responses are enabled. The assistant
-          uses published business knowledge and hands off when it lacks enough
+          WhatsApp is verified, and AI responses are enabled. The assistant uses
+          published business knowledge and hands off when it lacks enough
           evidence.
         </p>
 
@@ -91,6 +92,36 @@ export function PilotActivation({
           </p>
         ) : null}
 
+        {pilotAvailable && prerequisites && (
+          <ul
+            className={styles.checks}
+            aria-label="Pilot activation requirements"
+          >
+            {[
+              ['businessActive', 'Business is active'],
+              [
+                'whatsappConnectedAndVerified',
+                'WhatsApp number is connected and verified',
+              ],
+              ['pilotApproved', 'Kleva pilot approval is active'],
+              [
+                'approvalMatchesConnection',
+                'Approval covers the current WhatsApp number',
+              ],
+              ['aiResponsesEnabled', 'AI responses are enabled for this pilot'],
+            ].map(([key, label]) => {
+              const complete =
+                prerequisites[key as keyof typeof prerequisites] === true;
+              return (
+                <li key={key} data-complete={complete}>
+                  <span aria-hidden="true">{complete ? '✓' : '○'}</span>
+                  {label}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
         {result === 'requested' && (
           <p className={styles.success} role="status">
             Pilot request submitted. AI responses remain off while Kleva reviews
@@ -110,13 +141,12 @@ export function PilotActivation({
         )}
 
         {canEnroll && (
-          <form action={requestPilotReviewFromDashboard} className={styles.form}>
+          <form
+            action={requestPilotReviewFromDashboard}
+            className={styles.form}
+          >
             <input type="hidden" name="businessId" value={businessId} />
-            <input
-              type="hidden"
-              name="connectionId"
-              value={connection?.id}
-            />
+            <input type="hidden" name="connectionId" value={connection?.id} />
             <label>
               <input
                 type="checkbox"
@@ -127,12 +157,8 @@ export function PilotActivation({
               provider.
             </label>
             <label>
-              <input
-                type="checkbox"
-                name="humanEscalationAccepted"
-                required
-              />
-              I will provide a human escalation contact and review customer
+              <input type="checkbox" name="humanEscalationAccepted" required />I
+              will provide a human escalation contact and review customer
               conversations when required.
             </label>
             <button className="button button-primary" type="submit">
@@ -150,8 +176,8 @@ export function PilotActivation({
               value={pilot?.enrollment_id ?? ''}
             />
             <label>
-              <input type="checkbox" name="confirmRevocation" required />
-              I confirm I want to revoke AI pilot access for this business.
+              <input type="checkbox" name="confirmRevocation" required />I
+              confirm I want to revoke AI pilot access for this business.
             </label>
             <button className="button button-secondary" type="submit">
               {state === 'ACTIVE' ? 'Revoke pilot access' : 'Withdraw request'}

@@ -23,6 +23,8 @@
     "test:integration": "jest --config test/jest-integration.config.cjs --runInBand",
     "auth:grant": "npm run build && node dist/database/grant-merchant.js",
     "tenant:preflight": "npm run build && node dist/database/tenant-preflight.js",
+    "pilot:grant-operator": "npm run build && node dist/database/grant-pilot-operator.js",
+    "pilot:approve": "npm run build && node dist/database/approve-pilot.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:run:locked": "npm run build && node dist/database/migration-runner.js",
     "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js",

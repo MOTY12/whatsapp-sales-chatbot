@@ -275,7 +275,7 @@ export function workerConfig(env = process.env) {
 }
 
 export function aiConfig(env = process.env) {
-  const enabled = flag(env, 'AI_RESPONSES_ENABLED', false);
+  const enabled = aiResponsesEnabled(env);
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (enabled && (!apiKey || isPlaceholder(apiKey))) {
     throw new Error(
@@ -305,6 +305,11 @@ export function aiConfig(env = process.env) {
     timeoutMs,
     handoffMessage,
   };
+}
+
+/** Read the global AI kill-switch without requiring worker-only provider secrets. */
+export function aiResponsesEnabled(env = process.env) {
+  return flag(env, 'AI_RESPONSES_ENABLED', false);
 }
 
 function usageLimit(env: NodeJS.ProcessEnv, name: string, fallback: number) {

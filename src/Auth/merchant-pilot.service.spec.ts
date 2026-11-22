@@ -22,6 +22,9 @@ describe('MerchantPilotService.status', () => {
             },
           ];
         }
+        if (sql.includes('kleva_read_merchant_profile')) {
+          return [{ status: 'active' }];
+        }
         return [{ id: connectionId, status: 'active' }];
       }),
     };
@@ -43,6 +46,13 @@ describe('MerchantPilotService.status', () => {
     const status = await service.status(actor, businessId);
 
     expect(status.assistant_ready).toBe(true);
+    expect(status.prerequisites).toEqual({
+      businessActive: true,
+      whatsappConnectedAndVerified: true,
+      pilotApproved: true,
+      approvalMatchesConnection: true,
+      aiResponsesEnabled: true,
+    });
   });
 
   it('does not report ready after the approved WhatsApp connection changes', async () => {
