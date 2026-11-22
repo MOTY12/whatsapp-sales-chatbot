@@ -54,6 +54,9 @@ export type EmbeddedWhatsAppSignupCompletion = {
   registrationPin: string;
 };
 export type MerchantPilotStatus = {
+  enrollment_id?: string | null;
+  connection_id?: string | null;
+  consent_version?: string | null;
   status?: 'NOT_ENROLLED' | 'PENDING_REVIEW' | 'ACTIVE' | 'REVOKED';
   assistant_ready?: boolean;
 };
@@ -432,6 +435,11 @@ export const api = {
           humanEscalationAccepted,
         }),
       },
+    ),
+  revokePilot: (businessId: string, enrollmentId: string) =>
+    request<{ revoked: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/pilot/${encodeURIComponent(enrollmentId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({}) },
     ),
   conversations: (businessId: string, limit = 30, cursor?: string) => {
     const query = new URLSearchParams({ limit: String(limit) });

@@ -84,6 +84,51 @@ export async function requestAiPilotReview(form: FormData) {
   redirect('/onboarding');
 }
 
+function pilotPage(businessId: string, result: 'requested' | 'revoked' | 'error') {
+  const query = new URLSearchParams({
+    businessId,
+    pilot: result,
+  });
+  redirect(`/dashboard/whatsapp?${query.toString()}`);
+}
+
+export async function requestPilotReviewFromDashboard(form: FormData) {
+  const businessId = String(form.get('businessId') ?? '');
+  const connectionId = String(form.get('connectionId') ?? '');
+  if (
+    !/^[0-9a-f-]{36}$/i.test(businessId) ||
+    !/^[0-9a-f-]{36}$/i.test(connectionId) ||
+    form.get('aiProviderDisclosureAccepted') !== 'on' ||
+    form.get('humanEscalationAccepted') !== 'on'
+  ) {
+    pilotPage(businessId, 'error');
+  }
+  try {
+    await api.enrollPilot(businessId, connectionId, true, true);
+  } catch {
+    pilotPage(businessId, 'error');
+  }
+  pilotPage(businessId, 'requested');
+}
+
+export async function revokePilotFromDashboard(form: FormData) {
+  const businessId = String(form.get('businessId') ?? '');
+  const enrollmentId = String(form.get('enrollmentId') ?? '');
+  if (
+    !/^[0-9a-f-]{36}$/i.test(businessId) ||
+    !/^[0-9a-f-]{36}$/i.test(enrollmentId) ||
+    form.get('confirmRevocation') !== 'on'
+  ) {
+    pilotPage(businessId, 'error');
+  }
+  try {
+    await api.revokePilot(businessId, enrollmentId);
+  } catch {
+    pilotPage(businessId, 'error');
+  }
+  pilotPage(businessId, 'revoked');
+}
+
 export async function updateBusiness(
   _previous: ActionState,
   form: FormData,

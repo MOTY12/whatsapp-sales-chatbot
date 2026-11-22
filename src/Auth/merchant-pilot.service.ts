@@ -37,14 +37,15 @@ export class MerchantPilotService {
         const [row] = await manager.query<PilotStatus[]>(
           'SELECT * FROM public.kleva_pilot_status()',
         );
-        const [connection] = await manager.query<{ status: string }[]>(
-          'SELECT status FROM public.kleva_whatsapp_status()',
-        );
+        const [connection] = await manager.query<
+          { id: string; status: string }[]
+        >('SELECT id, status FROM public.kleva_whatsapp_status()');
         return {
           ...(row ?? { enrollment_id: null, status: 'NOT_ENROLLED' }),
           assistant_ready:
             row?.status === 'ACTIVE' &&
             connection?.status === 'active' &&
+            connection.id === row.connection_id &&
             aiConfig().enabled,
         };
       },

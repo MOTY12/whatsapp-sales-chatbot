@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ApiError, api } from '@/lib/api';
 import { WhatsAppExperience } from './whatsapp-experience';
+import { PilotActivation } from './pilot-activation';
 
 export default async function WhatsAppPage({
   searchParams,
 }: {
-  searchParams: Promise<{ businessId?: string }>;
+  searchParams: Promise<{ businessId?: string; pilot?: string }>;
 }) {
-  const { businessId } = await searchParams;
+  const { businessId, pilot: pilotResult } = await searchParams;
   const identity = await api.identity();
   if (
     businessId &&
@@ -35,6 +36,13 @@ export default async function WhatsAppPage({
     if (error instanceof ApiError && error.status === 401)
       redirect('/login?error=session');
     unavailable = true;
+  }
+  let pilot;
+  let pilotAvailable = true;
+  try {
+    pilot = await api.pilot(business.id);
+  } catch {
+    pilotAvailable = false;
   }
   return (
     <>
@@ -69,6 +77,14 @@ export default async function WhatsAppPage({
           canManage={membership.role === 'owner'}
         />
       )}
+      <PilotActivation
+        businessId={business.id}
+        canManage={membership.role === 'owner'}
+        connection={connection}
+        pilot={pilot}
+        pilotAvailable={pilotAvailable}
+        result={pilotResult}
+      />
       <Link className="back-link" href={`/dashboard?businessId=${business.id}`}>
         ← Back to overview
       </Link>

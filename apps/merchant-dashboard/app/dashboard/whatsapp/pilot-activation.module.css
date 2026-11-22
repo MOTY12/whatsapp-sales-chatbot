@@ -1,0 +1,104 @@
+.card {
+  max-width: 900px;
+  margin-top: 20px;
+  border: 1px solid #dfe8e4;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgb(23 53 43 / 5%);
+}
+
+.content {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+}
+
+.eyebrow {
+  color: #08745b;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+}
+
+.content h2 {
+  margin: 0;
+  color: #172b25;
+  font-size: 20px;
+}
+
+.description,
+.notice,
+.active span {
+  margin: 0;
+  color: #60716b;
+  line-height: 1.55;
+}
+
+.notice,
+.active,
+.success,
+.error {
+  border-radius: 8px;
+  padding: 12px 14px;
+  line-height: 1.5;
+}
+
+.notice {
+  background: #f5f8f6;
+}
+
+.active {
+  display: grid;
+  gap: 4px;
+  background: #e9f7f1;
+}
+
+.active strong {
+  color: #17634e;
+}
+
+.success {
+  color: #17634e;
+  background: #e9f7f1;
+}
+
+.error {
+  color: #8d252b;
+  background: #fff0f0;
+}
+
+.form,
+.revokeForm {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.form label,
+.revokeForm label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #354840;
+  line-height: 1.5;
+}
+
+.form input[type='checkbox'],
+.revokeForm input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  accent-color: #08745b;
+}
+
+.revokeForm {
+  margin-top: 6px;
+  border-top: 1px solid #edf1ef;
+}
+
+@media (max-width: 600px) {
+  .content {
+    padding: 18px;
+  }
+}
