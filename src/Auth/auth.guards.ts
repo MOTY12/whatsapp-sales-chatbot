@@ -57,10 +57,12 @@ export class MerchantCsrfGuard implements CanActivate {
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<MerchantRequest>();
     const token = request.get('x-csrf-token');
-    const redirectOrigin = this.auth.settings().csrfOrigin;
+    const { csrfOrigin, csrfOrigins } = this.auth.settings();
+    const origin = request.get('origin');
     if (
-      !redirectOrigin ||
-      request.get('origin') !== redirectOrigin ||
+      !(csrfOrigins ?? (csrfOrigin ? [csrfOrigin] : [])).includes(
+        origin ?? '',
+      ) ||
       !isOpaque(token) ||
       !(await this.auth.verifyCsrf(principal(request).sessionDigest, token))
     ) {

@@ -200,7 +200,12 @@ export function LoginForm() {
   }
   return (
     <>
-      <form className="auth-form" onSubmit={submit}>
+      <form
+        className="auth-form"
+        method="post"
+        action="/api/auth/login/password"
+        onSubmit={submit}
+      >
         <label className="auth-field" htmlFor="loginEmail">
           Email address
           <input

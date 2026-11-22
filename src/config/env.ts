@@ -486,13 +486,46 @@ export function merchantAuthConfig(env = process.env) {
       dashboardUrl.password ||
       dashboardUrl.pathname !== '/' ||
       dashboardUrl.search ||
-      dashboardUrl.hash)
+      dashboardUrl.hash ||
+      (dashboardUrl.protocol === 'http:' &&
+        !['localhost', '127.0.0.1', '[::1]'].includes(dashboardUrl.hostname)))
   ) {
     throw new Error(
       'DASHBOARD_PUBLIC_ORIGIN must be an origin without credentials, path, query or fragment.',
     );
   }
   const csrfOrigin = dashboardUrl?.origin;
+  const csrfOrigins = new Set<string>(csrfOrigin ? [csrfOrigin] : []);
+  const allowedOriginsValue = env.DASHBOARD_ALLOWED_ORIGINS?.trim();
+  const additionalDashboardOrigins = allowedOriginsValue
+    ? allowedOriginsValue.split(',').map((value) => value.trim())
+    : [];
+  if (additionalDashboardOrigins.some((origin) => !origin)) {
+    throw new Error(
+      'DASHBOARD_ALLOWED_ORIGINS must be a comma-separated list of exact origins.',
+    );
+  }
+  for (const origin of additionalDashboardOrigins) {
+    const parsed = validatedUrl(
+      origin,
+      'DASHBOARD_ALLOWED_ORIGINS',
+      production ? ['https:'] : ['http:', 'https:'],
+    );
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash ||
+      (parsed.protocol === 'http:' &&
+        !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))
+    ) {
+      throw new Error(
+        'DASHBOARD_ALLOWED_ORIGINS must contain exact HTTPS origins or local development HTTP origins.',
+      );
+    }
+    csrfOrigins.add(parsed.origin);
+  }
   if (
     !merchantRolePattern.test(databaseValues.MERCHANT_DATABASE_USER) ||
     databaseValues.MERCHANT_DATABASE_USER === env.DATABASE_USER?.trim()
@@ -514,9 +547,10 @@ export function merchantAuthConfig(env = process.env) {
     redirect,
     secureCookies:
       production ||
-      dashboardUrl?.protocol === 'https:' ||
+      [...csrfOrigins].some((origin) => origin.startsWith('https://')) ||
       redirect?.protocol === 'https:',
     csrfOrigin,
+    csrfOrigins: [...csrfOrigins],
     clientId,
     clientSecret,
     identityDatabase: databaseConfig({

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isAllowedDashboardOrigin } from '@/lib/dashboard-origins';
 import { ApiError, api } from '@/lib/api';
 type RouteContext = { params: Promise<{ path: string[] }> };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -71,16 +72,9 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       { error: { code: 'not_found', message: 'Not found.' } },
       { status: 404 },
     );
-  const expected = process.env.DASHBOARD_PUBLIC_ORIGIN,
-    origin = req.headers.get('origin'),
-    csrf = req.cookies.getAll().find((c) => /kleva_csrf$/i.test(c.name));
-  let same = false;
-  try {
-    same =
-      !!expected &&
-      !!origin &&
-      new URL(origin).origin === new URL(expected).origin;
-  } catch {}
+  const origin = req.headers.get('origin');
+  const csrf = req.cookies.getAll().find((c) => /kleva_csrf$/i.test(c.name));
+  const same = isAllowedDashboardOrigin(origin);
   if (!same || !csrf || req.headers.get('x-csrf-token') !== csrf.value)
     return NextResponse.json(
       {

@@ -202,6 +202,35 @@ describe('merchant OIDC route bridge', () => {
 });
 
 describe('merchant email/password same-origin bridge', () => {
+  it('allows localhost when it is explicitly listed alongside the HTTPS dashboard origin', async () => {
+    vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
+    vi.stubEnv('DASHBOARD_PUBLIC_ORIGIN', 'https://merchant-preview.ngrok-free.app');
+    vi.stubEnv(
+      'DASHBOARD_ALLOWED_ORIGINS',
+      'http://localhost:3001,https://merchant-preview.ngrok-free.app',
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ nextPath: '/dashboard' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await authPost(
+      new NextRequest('http://localhost:3001/api/auth/login/password', {
+        method: 'POST',
+        headers: {
+          origin: 'http://localhost:3001',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ email: 'merchant@example.test', password: 'secret' }),
+      }),
+      { params: Promise.resolve({ path: ['login', 'password'] }) },
+    );
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(new Headers(init.headers).get('origin')).toBe('http://localhost:3001');
+  });
+
   it.each([
     {
       label: 'localhost HTTP',
@@ -313,5 +342,51 @@ describe('merchant email/password same-origin bridge', () => {
 
     expect(response.status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('posts no-JavaScript login credentials in the body and redirects with session cookies', async () => {
+    vi.stubEnv('KLEVA_BACKEND_ORIGIN', 'http://localhost:3000');
+    vi.stubEnv('DASHBOARD_PUBLIC_ORIGIN', 'https://merchant-preview.ngrok-free.app');
+    const upstreamHeaders = new Headers();
+    upstreamHeaders.append(
+      'set-cookie',
+      'kleva_session=session-fixture; HttpOnly; Path=/; Secure; SameSite=Lax',
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ nextPath: '/dashboard' }), {
+        status: 200,
+        headers: upstreamHeaders,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await authPost(
+      new NextRequest(
+        'https://merchant-preview.ngrok-free.app/api/auth/login/password',
+        {
+          method: 'POST',
+          headers: {
+            origin: 'https://merchant-preview.ngrok-free.app',
+            'content-type': 'application/x-www-form-urlencoded',
+          },
+          body: 'email=merchant%40example.test&password=secret',
+        },
+      ),
+      { params: Promise.resolve({ path: ['login', 'password'] }) },
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(
+      'https://merchant-preview.ngrok-free.app/dashboard',
+    );
+    expect(response.headers.get('set-cookie')).toContain(
+      'kleva_session=session-fixture',
+    );
+    const [target, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(target.search).toBe('');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(
+      JSON.stringify({ email: 'merchant@example.test', password: 'secret' }),
+    );
   });
 });

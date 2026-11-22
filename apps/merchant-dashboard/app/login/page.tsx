@@ -1,7 +1,11 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { LoginForm } from '@/app/auth/password-forms';
 
 const errors: Record<string, string> = {
+  credentials_in_url:
+    'For your security, login details in a link are ignored. Enter them directly in the sign-in form.',
+  credentials: 'Email or password is incorrect. Please try again.',
   session: 'Your session has expired. Sign in again to continue.',
   callback: 'We could not complete sign-in. Please try again.',
   unavailable: 'Sign-in is temporarily unavailable. Please try again shortly.',
@@ -13,9 +17,16 @@ const errors: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    email?: string | string[];
+    password?: string | string[];
+  }>;
 }) {
-  const { error } = await searchParams;
+  const params = await searchParams;
+  if (params.email !== undefined || params.password !== undefined)
+    redirect('/login?error=credentials_in_url');
+  const { error } = params;
   return (
     <main className="login-page">
       <section className="login-card" aria-labelledby="login-title">

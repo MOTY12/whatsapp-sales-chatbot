@@ -199,6 +199,45 @@ describe('environment configuration', () => {
     ).toThrow('DASHBOARD_PUBLIC_ORIGIN');
   });
 
+  it('accepts only explicitly configured additional dashboard origins for CSRF', () => {
+    const config = merchantAuthConfig({
+      ...database,
+      MERCHANT_DATABASE_USER: 'kleva_merchant_test',
+      MERCHANT_DATABASE_PASSWORD: 'merchant-db-fixture',
+      IDENTITY_DATABASE_USER: 'kleva_identity_test',
+      IDENTITY_DATABASE_PASSWORD: 'identity-db-fixture',
+      OIDC_ISSUER: 'https://accounts.example.test',
+      OIDC_CLIENT_ID: 'fixture-client',
+      OIDC_CLIENT_SECRET: 'fixture-secret',
+      OIDC_REDIRECT_URI: 'http://localhost:3001/auth/callback',
+      DASHBOARD_PUBLIC_ORIGIN: 'https://merchant.example.test',
+      DASHBOARD_ALLOWED_ORIGINS:
+        'http://localhost:3001,https://preview.example.test',
+    });
+
+    expect(config?.csrfOrigins).toEqual([
+      'https://merchant.example.test',
+      'http://localhost:3001',
+      'https://preview.example.test',
+    ]);
+    expect(config?.secureCookies).toBe(true);
+    expect(() =>
+      merchantAuthConfig({
+        ...database,
+        MERCHANT_DATABASE_USER: 'kleva_merchant_test',
+        MERCHANT_DATABASE_PASSWORD: 'merchant-db-fixture',
+        IDENTITY_DATABASE_USER: 'kleva_identity_test',
+        IDENTITY_DATABASE_PASSWORD: 'identity-db-fixture',
+        OIDC_ISSUER: 'https://accounts.example.test',
+        OIDC_CLIENT_ID: 'fixture-client',
+        OIDC_CLIENT_SECRET: 'fixture-secret',
+        OIDC_REDIRECT_URI: 'http://localhost:3001/auth/callback',
+        DASHBOARD_PUBLIC_ORIGIN: 'https://merchant.example.test',
+        DASHBOARD_ALLOWED_ORIGINS: 'https://attacker.example.test/path',
+      }),
+    ).toThrow('DASHBOARD_ALLOWED_ORIGINS');
+  });
+
   it('validates Mailjet configuration without exposing values', () => {
     expect(merchantEmailAuthConfig({}).enabled).toBe(false);
     expect(() =>

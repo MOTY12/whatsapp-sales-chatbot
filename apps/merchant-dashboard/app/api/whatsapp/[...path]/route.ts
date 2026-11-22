@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isAllowedDashboardOrigin } from '@/lib/dashboard-origins';
 import {
   ApiError,
   api,
@@ -19,20 +20,10 @@ function validPath(path: string[]) {
 }
 
 function validMutation(request: NextRequest) {
-  const expectedOrigin = process.env.DASHBOARD_PUBLIC_ORIGIN;
   const csrfCookie = request.cookies
     .getAll()
     .find((cookie) => /kleva_csrf$/i.test(cookie.name));
-  let sameOrigin = false;
-  try {
-    sameOrigin =
-      !!expectedOrigin &&
-      !!request.headers.get('origin') &&
-      new URL(request.headers.get('origin')!).origin ===
-        new URL(expectedOrigin).origin;
-  } catch {
-    sameOrigin = false;
-  }
+  const sameOrigin = isAllowedDashboardOrigin(request.headers.get('origin'));
   return (
     sameOrigin &&
     !!csrfCookie &&

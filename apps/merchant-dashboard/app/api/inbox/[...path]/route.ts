@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isAllowedDashboardOrigin } from '@/lib/dashboard-origins';
 import { ApiError, api } from '@/lib/api';
 
 type RouteContext = { params: Promise<{ path: string[] }> };
@@ -42,11 +43,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!businessId || !idPattern.test(businessId) || collection !== 'conversations' || !conversationId || !idPattern.test(conversationId)) {
     return NextResponse.json({ error: { code: 'not_found', message: 'Not found.' } }, { status: 404 });
   }
-  const expectedOrigin = process.env.DASHBOARD_PUBLIC_ORIGIN;
   const csrfCookie = request.cookies.getAll().find((cookie) => /kleva_csrf$/i.test(cookie.name));
   const requestOrigin = request.headers.get('origin');
-  let sameOrigin = false;
-  try { sameOrigin = !!expectedOrigin && !!requestOrigin && new URL(requestOrigin).origin === new URL(expectedOrigin).origin; } catch { sameOrigin = false; }
+  const sameOrigin = isAllowedDashboardOrigin(requestOrigin);
   if (!sameOrigin || !csrfCookie || request.headers.get('x-csrf-token') !== csrfCookie.value) {
     return NextResponse.json({ error: { code: 'forbidden', message: 'Your session has expired. Sign in again.' } }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
   }
