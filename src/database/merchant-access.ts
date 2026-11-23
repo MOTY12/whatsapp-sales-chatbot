@@ -22,6 +22,10 @@ export const merchantPolicyTables = [
   'merchant_lead_events',
   'ai_response_runs',
   'whatsapp_signup_attempts',
+  'assistant_configurations',
+  'assistant_configuration_audit',
+  'ai_playground_rate_limits',
+  'ai_playground_usage',
 ];
 
 const identityFunctions = [
@@ -111,6 +115,12 @@ export const pilotFunctions = [
   'kleva_pilot_enroll(uuid,text,boolean,boolean)',
   'kleva_pilot_revoke(uuid)',
 ];
+export const assistantFunctions = [
+  'kleva_assistant_config_read()',
+  'kleva_assistant_config_save(integer,jsonb)',
+  'kleva_ai_playground_admit(uuid)',
+  'kleva_ai_playground_finish(uuid,text,integer,integer,integer)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -162,6 +172,9 @@ export async function grantMerchantAccess(
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${pilotFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+    );
+    await manager.query(
+      `GRANT EXECUTE ON FUNCTION ${assistantFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${[...identityFunctions, 'kleva_list_memberships(text)', ...registrationFunctions, ...emailAuthFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${identityRole}"`,

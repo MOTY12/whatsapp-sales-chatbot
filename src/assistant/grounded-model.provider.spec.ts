@@ -96,4 +96,73 @@ describe('OpenAiGroundedModel', () => {
     ).rejects.toMatchObject({ message: 'MODEL_UNAVAILABLE' });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('runs the playground while live responses remain disabled and sends only bounded preferences and history', async () => {
+    jest.replaceProperty(process, 'env', {
+      ...originalEnv,
+      AI_RESPONSES_ENABLED: 'false',
+      OPENAI_API_KEY: 'playground-fixture-secret',
+      OPENAI_MODEL: 'gpt-4o-mini',
+      AI_REQUEST_TIMEOUT_MS: '1000',
+    });
+    const fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply: 'I fit help you with that.',
+                  evidenceIds: ['faq-1'],
+                  canAnswer: true,
+                  needsHuman: false,
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 72, completion_tokens: 10 },
+        }),
+        { status: 200 },
+      ),
+    );
+    global.fetch = fetch;
+    await new OpenAiGroundedModel().generate({
+      playground: true,
+      message: 'Una dey deliver?',
+      history: [{ role: 'customer', content: 'I need a product.' }],
+      assistant: {
+        assistantName: 'Store Guide',
+        greeting: 'Welcome.',
+        tone: 'FRIENDLY',
+        language: 'NIGERIAN_PIDGIN',
+        responseLength: 'SHORT',
+        handoffBehavior: 'OFFER_HUMAN',
+        fallbackResponse: 'A teammate can help.',
+      },
+      evidence: [
+        {
+          id: 'faq-1',
+          revisionId: 'revision-1',
+          type: 'FAQ',
+          title: 'Delivery',
+          content: 'We deliver in Ikeja.',
+        },
+      ],
+    });
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    const request = JSON.parse(init.body as string) as {
+      max_tokens: number;
+      messages: Array<{ content: string }>;
+    };
+    const payload = JSON.parse(request.messages[1].content) as {
+      assistantPreferences: { language: string };
+      conversationHistory: unknown[];
+    };
+    expect(request.max_tokens).toBe(120);
+    expect(payload.assistantPreferences.language).toBe('NIGERIAN_PIDGIN');
+    expect(payload.conversationHistory).toHaveLength(1);
+    expect(init.headers).toMatchObject({
+      authorization: 'Bearer playground-fixture-secret',
+    });
+  });
 });

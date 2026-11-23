@@ -21,6 +21,10 @@ import {
   type GroundedModel,
 } from './grounded-model.provider';
 import { validateGroundedResponse } from './grounded-response.validator';
+import {
+  defaultAssistantPreferences,
+  type AssistantPreferences,
+} from './assistant-preferences';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 const inputBudget = 3600;
@@ -128,7 +132,11 @@ export class AiResponseService {
     }
 
     let evidence: EvidenceItem[] = [];
-    const fallbackMessage = aiConfig().handoffMessage;
+    const configuredAssistant = await this.loadAssistantPreferences(
+      row.business_id,
+    );
+    const fallbackMessage =
+      configuredAssistant.fallbackResponse || aiConfig().handoffMessage;
     let reply = row.reply;
     let status: 'GENERATED' | 'HANDOFF_REQUIRED' =
       row.status === 'GENERATED' && row.error_category
@@ -192,6 +200,7 @@ export class AiResponseService {
         try {
           const generated = await this.model.generate({
             message: row.customer_message,
+            assistant: configuredAssistant,
             evidence: evidence.map((item) => ({
               id: item.sourceId,
               revisionId: item.revisionId,
@@ -320,6 +329,38 @@ export class AiResponseService {
     );
     if (!row) return null;
     return row;
+  }
+
+  private async loadAssistantPreferences(
+    businessId: string,
+  ): Promise<AssistantPreferences> {
+    const [row] = await this.database.query<
+      Array<{
+        assistant_name: string;
+        greeting: string;
+        tone: AssistantPreferences['tone'];
+        language: AssistantPreferences['language'];
+        response_length: AssistantPreferences['responseLength'];
+        handoff_behavior: AssistantPreferences['handoffBehavior'];
+        fallback_response: string;
+      }>
+    >('SELECT * FROM public.kleva_assistant_config_for_runtime($1)', [
+      businessId,
+    ]);
+    if (!row)
+      return {
+        ...defaultAssistantPreferences,
+        fallbackResponse: aiConfig().handoffMessage,
+      };
+    return {
+      assistantName: row.assistant_name,
+      greeting: row.greeting,
+      tone: row.tone,
+      language: row.language,
+      responseLength: row.response_length,
+      handoffBehavior: row.handoff_behavior,
+      fallbackResponse: row.fallback_response,
+    };
   }
 
   private isAuthorized(row: RunRow | null): boolean {

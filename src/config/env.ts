@@ -301,6 +301,9 @@ export function aiConfig(env = process.env) {
   return {
     enabled,
     apiKey: enabled ? apiKey : undefined,
+    // The merchant playground is explicitly separate from live-response
+    // activation. This value is consumed only inside the server-side model adapter.
+    playgroundApiKey: apiKey && !isPlaceholder(apiKey) ? apiKey : undefined,
     model,
     timeoutMs,
     handoffMessage,

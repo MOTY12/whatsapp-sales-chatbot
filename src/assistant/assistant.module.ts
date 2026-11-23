@@ -25,6 +25,11 @@ import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
     OpenAiGroundedModel,
     { provide: GROUNDED_MODEL, useExisting: OpenAiGroundedModel },
   ],
-  exports: [AssistantService, AssistantCommandParserService, AiResponseService],
+  exports: [
+    AssistantService,
+    AssistantCommandParserService,
+    AiResponseService,
+    GROUNDED_MODEL,
+  ],
 })
 export class AssistantModule {}

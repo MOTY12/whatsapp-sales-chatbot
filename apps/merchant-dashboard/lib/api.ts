@@ -171,6 +171,42 @@ export type MerchantLead = {
   updated_at: string;
 };
 
+export type AssistantConfiguration = {
+  businessId: string;
+  revision: number;
+  assistantName: string;
+  greeting: string;
+  tone: 'PROFESSIONAL' | 'FRIENDLY' | 'CASUAL';
+  language: 'ENGLISH' | 'NIGERIAN_PIDGIN';
+  responseLength: 'SHORT' | 'BALANCED' | 'DETAILED';
+  handoffBehavior: 'OFFER_HUMAN' | 'PRIORITIZE_HUMAN';
+  fallbackResponse: string;
+  updatedAt: string | null;
+};
+export type PlaygroundResult = {
+  reply: string;
+  outcome:
+    | 'ANSWERED'
+    | 'CLARIFICATION'
+    | 'HANDOFF'
+    | 'INSUFFICIENT_EVIDENCE'
+    | 'PROVIDER_FAILURE';
+  sources: {
+    id: string;
+    revisionId: string;
+    type: 'FAQ' | 'PRODUCT';
+    title: string;
+    excerpt: string;
+  }[];
+  tokenUsage: { input: number; output: number; kind: 'ACTUAL' | 'ESTIMATED' };
+  durationMs: number;
+  handoffRecommended: boolean;
+};
+export type PlaygroundTurn = {
+  role: 'customer' | 'assistant';
+  content: string;
+};
+
 export type ApiErrorCode =
   | 'unauthorized'
   | 'forbidden'
@@ -180,6 +216,7 @@ export type ApiErrorCode =
   | 'whatsapp_disconnected'
   | 'service_window_closed'
   | 'control_required'
+  | 'rate_limited'
   | 'validation'
   | 'unavailable';
 
@@ -311,11 +348,14 @@ async function request<T>(
         'conflict',
       );
     if (response.status === 429)
-      throw new ApiError(
-        429,
-        'Your WhatsApp message allowance has been reached. Try again after your allowance resets.',
-        'quota_exceeded',
-      );
+      if (backendMessage?.startsWith('Playground limit reached'))
+        throw new ApiError(429, backendMessage, 'rate_limited');
+      else
+        throw new ApiError(
+          429,
+          'Your WhatsApp message allowance has been reached. Try again after your allowance resets.',
+          'quota_exceeded',
+        );
     if (
       response.status === 400 &&
       backendMessage === 'Verified WhatsApp connection is unavailable.'
@@ -668,6 +708,40 @@ export const api = {
     request<MerchantProduct>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/products/${encodeURIComponent(productId)}/unpublish`,
       { method: 'POST' },
+    ),
+  assistantConfiguration: (businessId: string) =>
+    request<AssistantConfiguration>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/assistant/configuration`,
+    ),
+  updateAssistantConfiguration: (
+    businessId: string,
+    configuration: AssistantConfiguration,
+  ) =>
+    request<AssistantConfiguration>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/assistant/configuration`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          revision: configuration.revision,
+          assistantName: configuration.assistantName,
+          greeting: configuration.greeting,
+          tone: configuration.tone,
+          language: configuration.language,
+          responseLength: configuration.responseLength,
+          handoffBehavior: configuration.handoffBehavior,
+          fallbackResponse: configuration.fallbackResponse,
+        }),
+      },
+    ),
+  testAssistantMessage: (
+    businessId: string,
+    message: string,
+    history: PlaygroundTurn[],
+  ) =>
+    request<PlaygroundResult>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/assistant/playground`,
+      { method: 'POST', body: JSON.stringify({ message, history }) },
+      35000,
     ),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
 };

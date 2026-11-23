@@ -26,9 +26,21 @@ import { MerchantPilotController } from './merchant-pilot.controller';
 import { MerchantPilotService } from './merchant-pilot.service';
 import { MerchantPasswordAuthService } from './merchant-password-auth.service';
 import { EmailModule } from '../Email/email.module';
+import { AssistantModule } from '../assistant/assistant.module';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { UsageModule } from '../metering/usage.module';
+import { MerchantAssistantController } from './merchant-assistant.controller';
+import { MerchantAssistantService } from './merchant-assistant.service';
 
 @Module({
-  imports: [CredentialCipherModule, OutboundModule, EmailModule],
+  imports: [
+    CredentialCipherModule,
+    OutboundModule,
+    EmailModule,
+    AssistantModule,
+    KnowledgeModule,
+    UsageModule,
+  ],
   controllers: [
     MerchantAuthController,
     MerchantBusinessController,
@@ -38,6 +50,7 @@ import { EmailModule } from '../Email/email.module';
     ProductController,
     MerchantLeadsController,
     MerchantPilotController,
+    MerchantAssistantController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -53,6 +66,7 @@ import { EmailModule } from '../Email/email.module';
     ProductService,
     MerchantLeadsService,
     MerchantPilotService,
+    MerchantAssistantService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

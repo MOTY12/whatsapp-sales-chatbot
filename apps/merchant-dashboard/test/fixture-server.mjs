@@ -52,6 +52,8 @@ let productKeys = new Map();
 let productCreateRequests = 0;
 let onboardingStep = 'business_profile';
 let onboardingCompletedSteps = [];
+let assistantConfig = {};
+let assistantPlaygroundRequests = 0;
 let internalNotes = [];
 let assignedAccountId = null;
 let conversationStatus = 'open';
@@ -80,6 +82,20 @@ function reset(search = new URLSearchParams()) {
   productCreateRequests = 0;
   onboardingStep = 'business_profile';
   onboardingCompletedSteps = [];
+  assistantConfig = {
+    businessId: BUSINESS_ID,
+    revision: 0,
+    assistantName: 'Kleva Assistant',
+    greeting: 'Hello! How can I help you today?',
+    tone: 'FRIENDLY',
+    language: 'ENGLISH',
+    responseLength: 'BALANCED',
+    handoffBehavior: 'OFFER_HUMAN',
+    fallbackResponse:
+      'I don’t have enough published information to answer confidently. A team member can help.',
+    updatedAt: null,
+  };
+  assistantPlaygroundRequests = 0;
   internalNotes = [];
   assignedAccountId = null;
   conversationStatus = 'open';
@@ -157,7 +173,11 @@ function detail(conversationId, businessId) {
     conversationId !== CONVERSATION_ID
   )
     return null;
-  return { ...listItems(businessId)[0], status: conversationStatus, control_changed_at: changedAt };
+  return {
+    ...listItems(businessId)[0],
+    status: conversationStatus,
+    control_changed_at: changedAt,
+  };
 }
 
 const server = createServer(async (req, res) => {
@@ -192,6 +212,8 @@ const server = createServer(async (req, res) => {
     return json(200, { count: repliesRequests });
   if (url.pathname === '/test/faqs')
     return json(200, { count: faqCreateRequests });
+  if (url.pathname === '/test/assistant')
+    return json(200, { requests: assistantPlaygroundRequests });
   if (url.pathname === '/test/products')
     return json(200, { count: productCreateRequests });
   if (url.pathname === '/test/leads' && req.method === 'POST') {
@@ -247,8 +269,7 @@ const server = createServer(async (req, res) => {
     });
   }
   if (url.pathname === '/auth/onboarding' && req.method === 'POST') {
-    if (!hasSession || !validCsrf)
-      return json(403, { message: 'Forbidden' });
+    if (!hasSession || !validCsrf) return json(403, { message: 'Forbidden' });
     let body = '';
     for await (const chunk of req) body += chunk;
     const input = JSON.parse(body);
@@ -321,6 +342,115 @@ const server = createServer(async (req, res) => {
       return json(503, { error: 'temporary fixture outage' });
     }
     return json(200, { status: 'pending' });
+  }
+
+  const assistantMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/assistant\/(configuration|playground)$/i,
+  );
+  if (assistantMatch) {
+    const [, businessId, action] = assistantMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    if (req.method === 'GET' && action === 'configuration')
+      return json(
+        200,
+        businessId === BUSINESS_ID
+          ? assistantConfig
+          : { ...assistantConfig, businessId: SECOND_BUSINESS_ID, revision: 0 },
+      );
+    if (
+      req.method !== 'GET' &&
+      (!validCsrf || !['owner', 'editor'].includes(fixtureRole))
+    )
+      return json(403, { message: 'Forbidden' });
+    let rawBody = '';
+    for await (const chunk of req) rawBody += chunk;
+    const input = JSON.parse(rawBody || '{}');
+    if (req.method === 'PATCH' && action === 'configuration') {
+      if (input.revision !== assistantConfig.revision)
+        return json(409, {
+          message: 'Assistant settings changed. Refresh and try again.',
+        });
+      assistantConfig = {
+        ...assistantConfig,
+        ...input,
+        revision: assistantConfig.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      return json(200, assistantConfig);
+    }
+    if (req.method === 'POST' && action === 'playground') {
+      assistantPlaygroundRequests += 1;
+      if (input.message.toLowerCase().includes('discount'))
+        return json(200, {
+          reply: assistantConfig.fallbackResponse,
+          outcome: 'INSUFFICIENT_EVIDENCE',
+          sources: [],
+          tokenUsage: { input: 0, output: 0, kind: 'ACTUAL' },
+          durationMs: 7,
+          handoffRecommended: true,
+        });
+      const asksPrice = /how much|price|cost/i.test(input.message);
+      const publishedProduct = asksPrice
+        ? products.find((item) => item.status === 'PUBLISHED')
+        : null;
+      const publishedFaq = publishedProduct
+        ? null
+        : faqs.find((faq) => faq.status === 'PUBLISHED');
+      const productPrice = publishedProduct
+        ? Number(publishedProduct.price).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        : null;
+      const sources = publishedProduct
+        ? [
+            {
+              id: publishedProduct.id,
+              revisionId: `revision-${publishedProduct.revision}`,
+              type: 'PRODUCT',
+              title: publishedProduct.name,
+              excerpt: `${publishedProduct.description} Price: ${publishedProduct.currency} ${productPrice}.`,
+            },
+          ]
+        : publishedFaq
+          ? [
+              {
+                id: publishedFaq.id,
+                revisionId: `revision-${publishedFaq.revision}`,
+                type: 'FAQ',
+                title: publishedFaq.question,
+                excerpt: publishedFaq.answer,
+              },
+            ]
+          : [];
+      const pidginDelivery =
+        assistantConfig.language === 'NIGERIAN_PIDGIN' &&
+        publishedFaq?.answer.toLowerCase().includes('ikeja');
+      const reply = publishedProduct
+        ? `${publishedProduct.name} costs ${publishedProduct.currency} ${productPrice}.`
+        : pidginDelivery
+          ? 'Yes o, we dey deliver reach Ikeja within one business day.'
+          : (publishedFaq?.answer ?? assistantConfig.fallbackResponse);
+      return json(200, {
+        reply,
+        outcome:
+          publishedProduct || publishedFaq
+            ? 'ANSWERED'
+            : 'INSUFFICIENT_EVIDENCE',
+        sources,
+        tokenUsage: { input: 75, output: 12, kind: 'ACTUAL' },
+        durationMs: 21,
+        handoffRecommended: !publishedProduct && !publishedFaq,
+      });
+    }
+    return json(404, { message: 'Not found.' });
   }
 
   const faqMatch = url.pathname.match(
@@ -624,10 +754,24 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && !conversationId) {
       let items = listItems(businessId);
       const requestedStatus = url.searchParams.get('status') ?? 'all';
-      const search = (url.searchParams.get('search') ?? '').trim().toLowerCase();
-      if (requestedStatus === 'open') items = items.filter((item) => !['closed', 'resolved'].includes(String(item.status).toLowerCase()));
-      if (requestedStatus === 'closed') items = items.filter((item) => ['closed', 'resolved'].includes(String(item.status).toLowerCase()));
-      if (search) items = items.filter((item) => `${item.customer_name} ${item.customer_whatsapp_id} ${item.preview ?? ''}`.toLowerCase().includes(search));
+      const search = (url.searchParams.get('search') ?? '')
+        .trim()
+        .toLowerCase();
+      if (requestedStatus === 'open')
+        items = items.filter(
+          (item) =>
+            !['closed', 'resolved'].includes(String(item.status).toLowerCase()),
+        );
+      if (requestedStatus === 'closed')
+        items = items.filter((item) =>
+          ['closed', 'resolved'].includes(String(item.status).toLowerCase()),
+        );
+      if (search)
+        items = items.filter((item) =>
+          `${item.customer_name} ${item.customer_whatsapp_id} ${item.preview ?? ''}`
+            .toLowerCase()
+            .includes(search),
+        );
       const pageSize = Number(url.searchParams.get('limit') ?? 30);
       const cursor = url.searchParams.get('cursor');
       return json(200, {
@@ -658,35 +802,48 @@ const server = createServer(async (req, res) => {
       return json(200, { items, nextCursor });
     }
     if (req.method === 'GET' && conversationId && resource === 'notes') {
-      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      if (!detail(conversationId, businessId))
+        return json(404, { message: 'Not found.' });
       return json(200, internalNotes);
     }
     if (req.method === 'POST' && conversationId && resource && !validCsrf)
       return json(403, { message: 'Forbidden' });
     if (req.method === 'POST' && conversationId && resource === 'read') {
-      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      if (!detail(conversationId, businessId))
+        return json(404, { message: 'Not found.' });
       unreadCount = 0;
       return json(200, { last_read_at: new Date().toISOString() });
     }
     if (req.method === 'POST' && conversationId && resource === 'assignee') {
-      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      if (!detail(conversationId, businessId))
+        return json(404, { message: 'Not found.' });
       let body = '';
       for await (const chunk of req) body += chunk;
       const input = JSON.parse(body);
       assignedAccountId = input.accountId ?? null;
-      return json(200, { assigned_to_account_id: assignedAccountId, changed: true });
+      return json(200, {
+        assigned_to_account_id: assignedAccountId,
+        changed: true,
+      });
     }
     if (req.method === 'POST' && conversationId && resource === 'notes') {
-      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      if (!detail(conversationId, businessId))
+        return json(404, { message: 'Not found.' });
       let body = '';
       for await (const chunk of req) body += chunk;
       const input = JSON.parse(body);
-      const note = { id: `note-${internalNotes.length + 1}`, body: input.text, actor_account_id: 'fixture-account', created_at: new Date().toISOString() };
+      const note = {
+        id: `note-${internalNotes.length + 1}`,
+        body: input.text,
+        actor_account_id: 'fixture-account',
+        created_at: new Date().toISOString(),
+      };
       internalNotes = [...internalNotes, note];
       return json(201, note);
     }
     if (req.method === 'POST' && conversationId && resource === 'status') {
-      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      if (!detail(conversationId, businessId))
+        return json(404, { message: 'Not found.' });
       let body = '';
       for await (const chunk of req) body += chunk;
       const input = JSON.parse(body);

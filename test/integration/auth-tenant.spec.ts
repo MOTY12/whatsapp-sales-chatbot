@@ -1,4 +1,8 @@
 import { ChannelConnectionService } from '../../src/channels/channel-connection.service';
+import { MerchantAssistantService } from '../../src/Auth/merchant-assistant.service';
+import type { GroundedModel } from '../../src/assistant/grounded-model.provider';
+import { UnifiedKnowledgeRetrievalService } from '../../src/knowledge/unified-knowledge-retrieval.service';
+import { UsageService } from '../../src/metering/usage.service';
 import { CredentialCipher } from '../../src/channels/secure-whatsapp/credential-cipher';
 import { WhatsAppCloudApiService } from '../../src/whatsapp/whatsapp-cloud-api.service';
 import { BusinessRepository } from '../../src/database/repositories/business.repository';
@@ -1550,7 +1554,8 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
-      // Migrations 0020-0024 sit after the 0019 onboarding rollback guard.
+      // Migrations 0020-0025 sit after the 0019 onboarding rollback guard.
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
@@ -1823,8 +1828,8 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
-      // Unwind migrations 0024–0015 before exercising catalog migration 0014.
-      for (let i = 0; i < 10; i += 1) await admin.undoLastMigration();
+      // Unwind migrations 0025–0015 before exercising catalog migration 0014.
+      for (let i = 0; i < 11; i += 1) await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -1856,6 +1861,224 @@ describe('merchant OIDC and tenant isolation', () => {
       await database.grantRuntimeAccess(admin);
     } finally {
       await runtime.destroy();
+    }
+  });
+
+  it('persists authorized versioned AI settings and tests published knowledge without live customer effects', async () => {
+    const owner = await login('assistant-playground-owner');
+    const editor = await login('assistant-playground-editor');
+    const agent = await login('assistant-playground-agent');
+    const foreignOwner = await login('assistant-playground-foreign-owner');
+    await admin.getRepository(BusinessMember).insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: editor.accountId,
+        role: 'editor',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+      {
+        businessId: second.business.id,
+        accountId: foreignOwner.accountId,
+        role: 'owner',
+      },
+    ]);
+    await database.grantRuntimeAccess(admin);
+
+    let runtime: DataSource | undefined;
+    try {
+      const base = `/merchant/businesses/${first.business.id}/assistant/configuration`;
+      const defaultConfig = await request(server)
+        .get(base)
+        .set('Cookie', owner.session)
+        .expect(200);
+      expect(defaultConfig.body).toMatchObject({
+        revision: 0,
+        assistantName: 'Kleva Assistant',
+        language: 'ENGLISH',
+      });
+      const saved = await request(server)
+        .patch(base)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .send({
+          revision: 0,
+          assistantName: 'Store Guide',
+          greeting: 'Welcome to our shop.',
+          tone: 'FRIENDLY',
+          language: 'ENGLISH',
+          responseLength: 'BALANCED',
+          handoffBehavior: 'OFFER_HUMAN',
+          fallbackResponse: 'A teammate can confirm that for you.',
+        })
+        .expect(200);
+      expect(saved.body).toMatchObject({
+        revision: 1,
+        assistantName: 'Store Guide',
+      });
+      await request(server)
+        .patch(base)
+        .set('Cookie', editor.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', editor.csrf)
+        .send({
+          revision: 0,
+          assistantName: 'Store Guide',
+          greeting: 'Welcome to our shop.',
+          tone: 'FRIENDLY',
+          language: 'ENGLISH',
+          responseLength: 'BALANCED',
+          handoffBehavior: 'OFFER_HUMAN',
+          fallbackResponse: 'A teammate can confirm that for you.',
+        })
+        .expect(409);
+      await request(server).get(base).set('Cookie', agent.session).expect(403);
+      await request(server)
+        .get(
+          `/merchant/businesses/${second.business.id}/assistant/configuration`,
+        )
+        .set('Cookie', owner.session)
+        .expect(404);
+      await request(server)
+        .patch(base)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .send({ ...saved.body, revision: 1, allowUnpublishedKnowledge: true })
+        .expect(400);
+
+      const faqBase = `/merchant/businesses/${first.business.id}/faqs`;
+      const created = await request(server)
+        .post(faqBase)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          question: 'What time do you open?',
+          answer: 'We open daily at 9 AM.',
+        })
+        .expect(201);
+      const faqId = (created.body as { id: string }).id;
+      await request(server)
+        .post(`${faqBase}/${faqId}/publish`)
+        .set('Cookie', owner.session)
+        .set('Origin', origin)
+        .set('X-CSRF-Token', owner.csrf)
+        .expect(201);
+
+      runtime = await database.runtime();
+      const beforeEffects = await admin.query<
+        {
+          messages: string;
+          customers: string;
+          leads: string;
+          outbound: string;
+        }[]
+      >(
+        `SELECT (SELECT count(*)::text FROM public.messages WHERE "businessId"=$1) AS messages,
+        (SELECT count(*)::text FROM public.customers WHERE "businessId"=$1) AS customers,
+        (SELECT count(*)::text FROM public.merchant_leads WHERE business_id=$1) AS leads,
+        (SELECT count(*)::text FROM public.whatsapp_outbound_messages WHERE business_id=$1) AS outbound`,
+        [first.business.id],
+      );
+      const model: GroundedModel = {
+        generate: jest.fn(async (input) => ({
+          reply: 'We open daily at 9 AM.',
+          evidenceIds: [input.evidence[0].id],
+          canAnswer: true,
+          needsHuman: false,
+          inputTokens: 64,
+          outputTokens: 9,
+        })),
+      };
+      const service = new MerchantAssistantService(
+        new MerchantAccess(merchantDatabase),
+        new UnifiedKnowledgeRetrievalService(runtime),
+        new UsageService(runtime),
+        model,
+      );
+      const result = await service.testMessage(
+        { accountId: owner.accountId, sessionDigest: owner.digest },
+        first.business.id,
+        { message: 'What time do you open?' },
+      );
+      expect(result).toMatchObject({
+        outcome: 'ANSWERED',
+        reply: 'We open daily at 9 AM.',
+        tokenUsage: { input: 64, output: 9, kind: 'ACTUAL' },
+      });
+      expect(result.sources).toHaveLength(1);
+      expect(result.sources[0]).toMatchObject({
+        id: faqId,
+        type: 'FAQ',
+        title: 'What time do you open?',
+      });
+      const usageRows = await admin.query<
+        { outcome: string; input_tokens: number; output_tokens: number }[]
+      >(
+        `SELECT outcome,input_tokens,output_tokens FROM public.ai_playground_usage WHERE business_id=$1 AND account_id=$2`,
+        [first.business.id, owner.accountId],
+      );
+      expect(usageRows).toEqual([
+        { outcome: 'ANSWERED', input_tokens: 64, output_tokens: 9 },
+      ]);
+      await expect(
+        merchantDatabase
+          .connection()
+          .query('SELECT * FROM public.assistant_configurations'),
+      ).rejects.toMatchObject({ driverError: { code: '42501' } });
+      const afterEffects = await admin.query(
+        `SELECT (SELECT count(*)::text FROM public.messages WHERE "businessId"=$1) AS messages,
+          (SELECT count(*)::text FROM public.customers WHERE "businessId"=$1) AS customers,
+          (SELECT count(*)::text FROM public.merchant_leads WHERE business_id=$1) AS leads,
+          (SELECT count(*)::text FROM public.whatsapp_outbound_messages WHERE business_id=$1) AS outbound`,
+        [first.business.id],
+      );
+      expect(afterEffects).toEqual(beforeEffects);
+    } finally {
+      await runtime?.destroy();
+      await admin.query(
+        'DELETE FROM public.ai_playground_usage WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.ai_playground_rate_limits WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.assistant_configuration_audit WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.assistant_configurations WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.knowledge_faq_events WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'UPDATE public.knowledge_faqs SET draft_revision_id=NULL,published_revision_id=NULL WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.knowledge_faq_revisions WHERE business_id=$1',
+        [first.business.id],
+      );
+      await admin.query(
+        'DELETE FROM public.knowledge_faqs WHERE business_id=$1',
+        [first.business.id],
+      );
     }
   });
 
@@ -2207,6 +2430,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       // Migrations 0022-0024 add WhatsApp signup, operator activation and inbox state.

@@ -14,6 +14,7 @@ type Permission =
   | 'whatsapp.manage'
   | 'team.manage'
   | 'knowledge.manage'
+  | 'assistant.manage'
   | 'inbox.operate';
 const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
   owner: [
@@ -22,9 +23,10 @@ const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
     'whatsapp.manage',
     'team.manage',
     'knowledge.manage',
+    'assistant.manage',
     'inbox.operate',
   ],
-  editor: ['business.read', 'knowledge.manage'],
+  editor: ['business.read', 'knowledge.manage', 'assistant.manage'],
   agent: ['business.read', 'inbox.operate'],
   staff: [],
 };
