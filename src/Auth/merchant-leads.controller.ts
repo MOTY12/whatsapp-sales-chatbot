@@ -3,8 +3,10 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -46,5 +48,50 @@ export class MerchantLeadsController {
     @Body() body: unknown,
   ) {
     return this.leads.update(principal(req), businessId, leadId, body);
+  }
+
+  @Get(':leadId/qualification')
+  @Header('Cache-Control', 'no-store')
+  qualification(
+    @Req() req: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('leadId') leadId: string,
+  ) {
+    return this.leads.qualification(principal(req), businessId, leadId);
+  }
+
+  @Patch(':leadId/qualification')
+  @UseGuards(MerchantCsrfGuard)
+  @Header('Cache-Control', 'no-store')
+  saveQualification(
+    @Req() req: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('leadId') leadId: string,
+    @Body() body: unknown,
+  ) {
+    return this.leads.saveQualification(
+      principal(req),
+      businessId,
+      leadId,
+      body,
+    );
+  }
+
+  @Post(':leadId/convert')
+  @UseGuards(MerchantCsrfGuard)
+  @Header('Cache-Control', 'no-store')
+  convert(
+    @Req() req: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('leadId') leadId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ) {
+    return this.leads.convert(
+      principal(req),
+      businessId,
+      leadId,
+      body && typeof body === 'object' ? { ...body, idempotencyKey } : body,
+    );
   }
 }

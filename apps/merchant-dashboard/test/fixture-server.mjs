@@ -48,6 +48,9 @@ let faqKeys = new Map();
 let faqCreateRequests = 0;
 let products = [];
 let leads = [];
+let salesPolicy = null;
+let leadQualifications = new Map();
+let leadConversions = new Map();
 let productKeys = new Map();
 let productCreateRequests = 0;
 let onboardingStep = 'business_profile';
@@ -78,6 +81,35 @@ function reset(search = new URLSearchParams()) {
   faqCreateRequests = 0;
   products = [];
   leads = [];
+  salesPolicy = {
+    version: 1,
+    fields: [
+      {
+        id: 'product_interest',
+        label: 'Product of interest',
+        type: 'TEXT',
+        required: true,
+        validation: { maxLength: 240 },
+        order: 10,
+        purpose: 'Product the customer is considering.',
+        consentRequired: false,
+      },
+      {
+        id: 'quantity',
+        label: 'Quantity',
+        type: 'NUMBER',
+        required: false,
+        validation: { min: 1, max: 10000 },
+        order: 20,
+        purpose: 'Quantity requested.',
+        consentRequired: false,
+      },
+    ],
+    changed_by: 'fixture-owner',
+    updated_at: new Date().toISOString(),
+  };
+  leadQualifications = new Map();
+  leadConversions = new Map();
   productKeys = new Map();
   productCreateRequests = 0;
   onboardingStep = 'business_profile';
@@ -560,18 +592,77 @@ const server = createServer(async (req, res) => {
     if (faqId && action && !found) return json(404, { message: 'Not found.' });
   }
 
-  const leadMatch = url.pathname.match(
-    /^\/merchant\/businesses\/([0-9a-f-]+)\/leads(?:\/([0-9a-f-]+))?$/i,
+  const policyMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/sales-policy$/i,
   );
-  if (leadMatch) {
-    const [, businessId, leadId] = leadMatch;
+  if (policyMatch) {
+    const [, businessId] = policyMatch;
     if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
     if (
       businessId !== BUSINESS_ID &&
       !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
     )
       return json(404, { message: 'Not found.' });
-    if (!['owner', 'agent'].includes(fixtureRole))
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    if (req.method === 'GET')
+      return json(200, {
+        policy: salesPolicy,
+        history: [{ ...salesPolicy, created_at: salesPolicy.updated_at }],
+        templates: {
+          retail: salesPolicy.fields,
+          service: [
+            {
+              id: 'service_required',
+              label: 'Service required',
+              type: 'TEXT',
+              required: true,
+              validation: { maxLength: 240 },
+              order: 10,
+              purpose: 'Service the customer requested.',
+              consentRequired: false,
+            },
+            {
+              id: 'preferred_date',
+              label: 'Preferred appointment date',
+              type: 'DATE',
+              required: false,
+              validation: {},
+              order: 20,
+              purpose: 'A preferred date is not a booking confirmation.',
+              consentRequired: false,
+            },
+          ],
+        },
+      });
+    if (req.method === 'PATCH') {
+      if (!validCsrf) return json(403, { message: 'Forbidden' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      if (input.expectedVersion !== salesPolicy.version)
+        return json(409, { message: 'Policy changed.' });
+      salesPolicy = {
+        version: salesPolicy.version + 1,
+        fields: input.fields,
+        changed_by: 'fixture-owner',
+        updated_at: new Date().toISOString(),
+      };
+      return json(200, salesPolicy);
+    }
+  }
+  const leadMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/leads(?:\/([0-9a-f-]+)(?:\/(qualification|convert))?)?$/i,
+  );
+  if (leadMatch) {
+    const [, businessId, leadId, action] = leadMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'agent', 'editor'].includes(fixtureRole))
       return json(403, { message: 'Forbidden' });
     if (req.method === 'GET' && !leadId) {
       const items = businessId === BUSINESS_ID ? leads : [];
@@ -590,6 +681,125 @@ const server = createServer(async (req, res) => {
       businessId === BUSINESS_ID
         ? leads.find((item) => item.id === leadId)
         : null;
+    if (req.method === 'GET' && action === 'qualification' && leadId) {
+      const history = leadQualifications.get(leadId) ?? [];
+      return json(200, {
+        record: history.at(-1) ?? null,
+        history,
+        conversions: leadConversions.get(leadId) ?? [],
+      });
+    }
+    if (req.method === 'PATCH' && action === 'qualification' && leadId) {
+      if (!validCsrf) return json(403, { message: 'Forbidden' });
+      if (!found) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      if (
+        input.policyVersion !== salesPolicy.version ||
+        input.expectedLeadVersion !== found.version
+      )
+        return json(409, { message: 'Lead or policy changed.' });
+      const missing = salesPolicy.fields.find(
+        (field) =>
+          field.required &&
+          (input.fieldValues[field.id] === undefined ||
+            input.fieldValues[field.id] === null ||
+            input.fieldValues[field.id] === ''),
+      );
+      if (input.markQualified && missing)
+        return json(400, {
+          message: `${missing.label} is required before qualifying this lead.`,
+        });
+      if (
+        input.markQualified &&
+        found.status !== 'CONTACTED' &&
+        found.status !== 'QUALIFIED'
+      )
+        return json(409, { message: 'Contact the lead before qualifying.' });
+      found.version += 1;
+      if (input.markQualified) found.status = 'QUALIFIED';
+      found.updated_at = new Date().toISOString();
+      const record = {
+        id: `qualification-${found.version}`,
+        lead_id: found.id,
+        revision: (leadQualifications.get(leadId) ?? []).length + 1,
+        policy_version: salesPolicy.version,
+        field_values: input.fieldValues,
+        consent_evidence: input.consentEvidence,
+        qualification_status: input.markQualified ? 'QUALIFIED' : 'IN_PROGRESS',
+        qualified_by: input.markQualified ? 'fixture-owner' : null,
+        qualified_at: input.markQualified ? new Date().toISOString() : null,
+        created_at: new Date().toISOString(),
+      };
+      leadQualifications.set(leadId, [
+        ...(leadQualifications.get(leadId) ?? []),
+        record,
+      ]);
+      return json(200, {
+        ...record,
+        lead_status: found.status,
+        lead_version: found.version,
+      });
+    }
+    if (req.method === 'POST' && action === 'convert' && leadId) {
+      if (!validCsrf) return json(403, { message: 'Forbidden' });
+      if (!found) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      const conversions = leadConversions.get(leadId) ?? [];
+      const prior = conversions.find(
+        (entry) => entry.idempotency_key === req.headers['idempotency-key'],
+      );
+      if (prior)
+        return json(201, {
+          lead_id: leadId,
+          outcome: prior.outcome,
+          lead_version: found.version,
+          conversion_id: prior.id,
+          created_at: prior.created_at,
+          changed: false,
+        });
+      if (
+        conversions.length ||
+        found.status === 'WON' ||
+        found.status === 'LOST'
+      )
+        return json(409, { message: 'Already converted.' });
+      if (
+        input.expectedLeadVersion !== found.version ||
+        (input.outcome === 'WON' && found.status !== 'QUALIFIED')
+      )
+        return json(409, { message: 'Lead changed or is not eligible.' });
+      found.status = input.outcome;
+      found.version += 1;
+      found.updated_at = new Date().toISOString();
+      const event = {
+        id: `conversion-${found.version}`,
+        idempotency_key: req.headers['idempotency-key'],
+        outcome: input.outcome,
+        reference: input.details.reference ?? null,
+        conversion_value: input.details.value ?? null,
+        currency: input.details.currency ?? null,
+        conversion_date:
+          input.outcome === 'WON'
+            ? new Date().toISOString().slice(0, 10)
+            : null,
+        loss_reason: input.details.lossReason ?? null,
+        converted_by: 'fixture-owner',
+        created_at: new Date().toISOString(),
+      };
+      leadConversions.set(leadId, [...conversions, event]);
+      return json(201, {
+        lead_id: leadId,
+        outcome: input.outcome,
+        lead_version: found.version,
+        conversion_id: event.id,
+        created_at: event.created_at,
+        changed: true,
+      });
+    }
     if (req.method === 'GET' && leadId)
       return found ? json(200, found) : json(404, { message: 'Not found.' });
     if (req.method === 'PATCH' && leadId) {
@@ -598,11 +808,7 @@ const server = createServer(async (req, res) => {
       let body = '';
       for await (const chunk of req) body += chunk;
       const update = JSON.parse(body);
-      if (
-        !['NEW', 'CONTACTED', 'QUALIFIED', 'WON', 'LOST'].includes(
-          update.status,
-        )
-      )
+      if (!['NEW', 'CONTACTED'].includes(update.status))
         return json(400, { message: 'Invalid lead status.' });
       if (
         found.status !== update.status &&

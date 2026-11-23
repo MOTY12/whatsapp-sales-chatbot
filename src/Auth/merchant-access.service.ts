@@ -15,7 +15,9 @@ type Permission =
   | 'team.manage'
   | 'knowledge.manage'
   | 'assistant.manage'
-  | 'inbox.operate';
+  | 'inbox.operate'
+  | 'sales.manage';
+
 const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
   owner: [
     'business.read',
@@ -25,8 +27,14 @@ const permissions: Record<BusinessMemberRole, readonly Permission[]> = {
     'knowledge.manage',
     'assistant.manage',
     'inbox.operate',
+    'sales.manage',
   ],
-  editor: ['business.read', 'knowledge.manage', 'assistant.manage'],
+  editor: [
+    'business.read',
+    'knowledge.manage',
+    'assistant.manage',
+    'sales.manage',
+  ],
   agent: ['business.read', 'inbox.operate'],
   staff: [],
 };

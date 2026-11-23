@@ -15,3 +15,6 @@ export { KnowledgeFaq } from './knowledge-faq.entity';
 export { KnowledgeFaqRevision } from './knowledge-faq-revision.entity';
 export { MerchantProduct } from './merchant-product.entity';
 export { MerchantProductRevision } from './merchant-product-revision.entity';
+export { SalesQualificationPolicy } from './sales-qualification-policy.entity';
+export { MerchantLeadQualification } from './merchant-lead-qualification.entity';
+export { MerchantLeadConversion } from './merchant-lead-conversion.entity';

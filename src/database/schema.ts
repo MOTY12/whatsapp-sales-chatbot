@@ -57,6 +57,10 @@ import { MerchantEmbeddedWhatsApp1760000000022 } from './migrations/176000000002
 import { PilotOperatorActivation1760000000023 } from './migrations/1760000000023-PilotOperatorActivation';
 import { SharedInboxOperations1760000000024 } from './migrations/1760000000024-SharedInboxOperations';
 import { MerchantAiPlayground1760000000025 } from './migrations/1760000000025-MerchantAiPlayground';
+import { LeadQualification1760000000026 } from './migrations/1760000000026-LeadQualification';
+import { SalesQualificationPolicy } from './entities/sales-qualification-policy.entity';
+import { MerchantLeadQualification } from './entities/merchant-lead-qualification.entity';
+import { MerchantLeadConversion } from './entities/merchant-lead-conversion.entity';
 
 export const databaseEntities = [
   Business,
@@ -81,6 +85,9 @@ export const databaseEntities = [
   MerchantProduct,
   MerchantProductRevision,
   MerchantLead,
+  SalesQualificationPolicy,
+  MerchantLeadQualification,
+  MerchantLeadConversion,
   MerchantEmailDelivery,
 ];
 
@@ -112,4 +119,5 @@ export const databaseMigrations = [
   PilotOperatorActivation1760000000023,
   SharedInboxOperations1760000000024,
   MerchantAiPlayground1760000000025,
+  LeadQualification1760000000026,
 ];

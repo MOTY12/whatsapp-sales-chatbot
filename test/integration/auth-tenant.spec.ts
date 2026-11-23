@@ -18,13 +18,13 @@ import { MerchantAccess } from '../../src/Auth/merchant-access.service';
 import { MerchantDatabase } from '../../src/Auth/merchant-database';
 import { merchantAuthConfig } from '../../src/config/env';
 import { Account } from '../../src/database/entities/account.entity';
-import { Business, User } from '../../src/database/entities';
+import { Business, Conversation, User } from '../../src/database/entities';
 import { BusinessMember } from '../../src/database/entities/business-member.entity';
 import {
   grantMerchantAccess,
   merchantPolicyTables,
 } from '../../src/database/merchant-access';
-import { seedTenant } from './fixtures';
+import { repositories, seedTenant } from './fixtures';
 import { clientId, clientSecret, startIdentityProvider } from './oidc-fixture';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
@@ -1296,24 +1296,23 @@ describe('merchant OIDC and tenant isolation', () => {
       changed: false,
       updatedAt: expect.any(String),
     });
-    const races = await Promise.all([
-      request(server)
-        .patch(`${path}/${lead.id}`)
-        .set(headers)
-        .send({ status: 'QUALIFIED', expectedVersion: 2 }),
-      request(server)
-        .patch(`${path}/${lead.id}`)
-        .set(headers)
-        .send({ status: 'LOST', expectedVersion: 2 }),
-    ]);
-    expect(races.map(({ status }) => status).sort()).toEqual([200, 409]);
+    await request(server)
+      .patch(`${path}/${lead.id}`)
+      .set(headers)
+      .send({ status: 'QUALIFIED', expectedVersion: 2 })
+      .expect(400);
+    await request(server)
+      .patch(`${path}/${lead.id}`)
+      .set(headers)
+      .send({ status: 'WON', expectedVersion: 2 })
+      .expect(400);
     expect(
       await admin.query<{ count: string }[]>(
         `SELECT count(*)::text AS count FROM public.merchant_lead_events
          WHERE business_id=$1 AND lead_id=$2 AND event_type='STATUS_CHANGED'`,
         [first.business.id, lead.id],
       ),
-    ).toEqual([{ count: '2' }]);
+    ).toEqual([{ count: '1' }]);
     await admin.query(
       'DELETE FROM public.merchant_lead_events WHERE business_id=$1 AND lead_id=$2',
       [first.business.id, lead.id],
@@ -1321,6 +1320,294 @@ describe('merchant OIDC and tenant isolation', () => {
     await admin.query(
       'DELETE FROM public.merchant_leads WHERE business_id=$1 AND id=$2',
       [first.business.id, lead.id],
+    );
+  });
+
+  it('versions sales policy, requires complete qualification and consent, and records manual conversions once', async () => {
+    const owner = await login('sales-qualification-owner');
+    const agent = await login('sales-qualification-agent');
+    await admin.getRepository(BusinessMember).insert({
+      businessId: first.business.id,
+      accountId: owner.accountId,
+      role: 'owner',
+    });
+    await admin.getRepository(BusinessMember).insert({
+      businessId: first.business.id,
+      accountId: agent.accountId,
+      role: 'agent',
+    });
+    const [lead] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.merchant_leads
+       (business_id, customer_id, conversation_id, source, status, first_contact_at, last_activity_at)
+       VALUES ($1,$2,$3,'WHATSAPP','NEW',now(),now()) RETURNING id`,
+      [first.business.id, first.customer.id, first.conversation.id],
+    );
+    const base = `/merchant/businesses/${first.business.id}`;
+    const headers = {
+      Cookie: owner.session,
+      Origin: origin,
+      'X-CSRF-Token': owner.csrf,
+    };
+    const initial = await request(server)
+      .get(`${base}/sales-policy`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    const initialBody = initial.body as {
+      policy: { version: number; fields: unknown[] };
+      templates: Record<string, unknown>;
+    };
+    expect(initialBody.policy).toMatchObject({ version: 0, fields: [] });
+    expect(initialBody.templates).toHaveProperty('retail');
+    expect(initialBody.templates).toHaveProperty('service');
+    await request(server)
+      .get(`${base}/sales-policy`)
+      .set('Cookie', agent.session)
+      .expect(403);
+    const fields = [
+      {
+        id: 'service_required',
+        label: 'Service required',
+        type: 'TEXT',
+        required: true,
+        validation: { maxLength: 100 },
+        order: 10,
+        purpose: 'Service the customer asked for.',
+        consentRequired: false,
+      },
+      {
+        id: 'contact_ok',
+        label: 'Contact permission',
+        type: 'BOOLEAN',
+        required: false,
+        validation: {},
+        order: 20,
+        purpose: 'Customer agreed to follow-up.',
+        consentRequired: true,
+      },
+    ];
+    await request(server)
+      .patch(`${base}/sales-policy`)
+      .set(headers)
+      .send({
+        expectedVersion: 0,
+        fields: [{ ...fields[0], type: 'ARBITRARY_CODE' }],
+      })
+      .expect(400);
+    const savedPolicy = await request(server)
+      .patch(`${base}/sales-policy`)
+      .set(headers)
+      .send({ expectedVersion: 0, fields })
+      .expect(200);
+    expect(savedPolicy.body).toMatchObject({ version: 1, fields });
+    await request(server)
+      .patch(`${base}/sales-policy`)
+      .set(headers)
+      .send({ expectedVersion: 0, fields })
+      .expect(409);
+    const leadPath = `${base}/leads/${lead.id}`;
+    await request(server)
+      .patch(leadPath)
+      .set(headers)
+      .send({ status: 'CONTACTED', expectedVersion: 1 })
+      .expect(200);
+    const invalid = {
+      expectedLeadVersion: 2,
+      policyVersion: 1,
+      fieldValues: { contact_ok: true },
+      consentEvidence: {},
+      markQualified: true,
+    };
+    await request(server)
+      .patch(`${leadPath}/qualification`)
+      .set(headers)
+      .send(invalid)
+      .expect(400);
+    await request(server)
+      .patch(`${leadPath}/qualification`)
+      .set(headers)
+      .send({
+        ...invalid,
+        fieldValues: { service_required: 'Repair', contact_ok: true },
+        consentEvidence: {
+          contact_ok: {
+            consented: false,
+            recordedAt: new Date().toISOString(),
+            source: 'MERCHANT_RECORDED',
+          },
+        },
+      })
+      .expect(400);
+    const qualified = await request(server)
+      .patch(`${leadPath}/qualification`)
+      .set(headers)
+      .send({
+        ...invalid,
+        fieldValues: { service_required: 'Repair', contact_ok: true },
+        consentEvidence: {
+          contact_ok: {
+            consented: true,
+            recordedAt: new Date().toISOString(),
+            source: 'CUSTOMER_CONFIRMED',
+          },
+        },
+      })
+      .expect(200);
+    expect(qualified.body).toMatchObject({
+      qualification_status: 'QUALIFIED',
+      lead_status: 'QUALIFIED',
+      lead_version: 3,
+      policy_version: 1,
+    });
+    const nextFields = fields.map((field) =>
+      field.id === 'service_required'
+        ? { ...field, purpose: 'Customer stated service requested.' }
+        : field,
+    );
+    await request(server)
+      .patch(`${base}/sales-policy`)
+      .set(headers)
+      .send({ expectedVersion: 1, fields: nextFields })
+      .expect(200);
+    const details = await request(server)
+      .get(`${leadPath}/qualification`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    const detailsBody = details.body as {
+      record: { policy_version: number; field_values: Record<string, unknown> };
+      history: unknown[];
+      conversions: Array<Record<string, unknown>>;
+    };
+    expect(detailsBody.record).toMatchObject({
+      policy_version: 1,
+      field_values: { service_required: 'Repair', contact_ok: true },
+    });
+    expect(detailsBody.history).toHaveLength(1);
+    await request(server)
+      .get(
+        `/merchant/businesses/${second.business.id}/leads/${lead.id}/qualification`,
+      )
+      .set('Cookie', owner.session)
+      .expect(404);
+    const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const won = await request(server)
+      .post(`${leadPath}/convert`)
+      .set({ ...headers, 'Idempotency-Key': key })
+      .send({
+        expectedLeadVersion: 3,
+        outcome: 'WON',
+        details: {
+          reference: 'merchant-record-12',
+          value: 27500,
+          currency: 'NGN',
+        },
+      })
+      .expect(201);
+    expect(won.body).toMatchObject({
+      outcome: 'WON',
+      lead_version: 4,
+      changed: true,
+    });
+    const replay = await request(server)
+      .post(`${leadPath}/convert`)
+      .set({ ...headers, 'Idempotency-Key': key })
+      .send({
+        expectedLeadVersion: 3,
+        outcome: 'WON',
+        details: {
+          reference: 'merchant-record-12',
+          value: 27500,
+          currency: 'NGN',
+        },
+      })
+      .expect(201);
+    expect(replay.body).toMatchObject({
+      outcome: 'WON',
+      lead_version: 4,
+      changed: false,
+    });
+    await request(server)
+      .post(`${leadPath}/convert`)
+      .set({
+        ...headers,
+        'Idempotency-Key': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      })
+      .send({ expectedLeadVersion: 4, outcome: 'WON', details: {} })
+      .expect(409);
+    const history = await request(server)
+      .get(`${leadPath}/qualification`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    const historyBody = history.body as {
+      conversions: Array<Record<string, unknown>>;
+    };
+    expect(historyBody.conversions).toHaveLength(1);
+    expect(historyBody.conversions[0]).toMatchObject({
+      outcome: 'WON',
+      reference: 'merchant-record-12',
+      currency: 'NGN',
+    });
+    const serviceConversation = await repositories(admin).conversations.create({
+      businessId: first.business.id,
+      customerId: first.customer.id,
+      status: 'open',
+    });
+    const [lostLead] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.merchant_leads
+       (business_id, customer_id, conversation_id, source, status, first_contact_at, last_activity_at)
+       VALUES ($1,$2,$3,'WHATSAPP','NEW',now(),now()) RETURNING id`,
+      [first.business.id, first.customer.id, serviceConversation.id],
+    );
+    const lostPath = `${base}/leads/${lostLead.id}/convert`;
+    const lost = await request(server)
+      .post(lostPath)
+      .set({
+        ...headers,
+        'Idempotency-Key': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      })
+      .send({
+        expectedLeadVersion: 1,
+        outcome: 'LOST',
+        details: { lossReason: 'Customer postponed service.' },
+      })
+      .expect(201);
+    expect(lost.body as Record<string, unknown>).toMatchObject({
+      outcome: 'LOST',
+      lead_version: 2,
+      changed: true,
+    });
+    const lostHistory = await request(server)
+      .get(`${base}/leads/${lostLead.id}/qualification`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(
+      (lostHistory.body as { conversions: Array<Record<string, unknown>> })
+        .conversions[0],
+    ).toMatchObject({
+      outcome: 'LOST',
+      loss_reason: 'Customer postponed service.',
+    });
+    await admin.query(
+      'DELETE FROM public.merchant_lead_events WHERE business_id=$1 AND lead_id=$2',
+      [first.business.id, lead.id],
+    );
+    await admin.query(
+      'DELETE FROM public.merchant_leads WHERE business_id=$1 AND id=$2',
+      [first.business.id, lead.id],
+    );
+    await admin.query(
+      'DELETE FROM public.merchant_lead_events WHERE business_id=$1 AND lead_id=$2',
+      [first.business.id, lostLead.id],
+    );
+    await admin.query(
+      'DELETE FROM public.merchant_leads WHERE business_id=$1 AND id=$2',
+      [first.business.id, lostLead.id],
+    );
+    await admin
+      .getRepository(Conversation)
+      .delete({ id: serviceConversation.id });
+    await admin.query(
+      'DELETE FROM public.sales_qualification_policies WHERE business_id=$1',
+      [first.business.id],
     );
   });
 
@@ -1828,8 +2115,8 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
-      // Unwind migrations 0025–0015 before exercising catalog migration 0014.
-      for (let i = 0; i < 11; i += 1) await admin.undoLastMigration();
+      // Unwind migrations 0026–0015 before exercising catalog migration 0014.
+      for (let i = 0; i < 12; i += 1) await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -2430,6 +2717,7 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();

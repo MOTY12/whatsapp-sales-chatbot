@@ -22,6 +22,7 @@ import { ProductController } from '../catalog/product.controller';
 import { ProductService } from '../catalog/product.service';
 import { MerchantLeadsController } from './merchant-leads.controller';
 import { MerchantLeadsService } from './merchant-leads.service';
+import { MerchantSalesPolicyController } from './merchant-sales-policy.controller';
 import { MerchantPilotController } from './merchant-pilot.controller';
 import { MerchantPilotService } from './merchant-pilot.service';
 import { MerchantPasswordAuthService } from './merchant-password-auth.service';
@@ -49,6 +50,7 @@ import { MerchantAssistantService } from './merchant-assistant.service';
     KnowledgeController,
     ProductController,
     MerchantLeadsController,
+    MerchantSalesPolicyController,
     MerchantPilotController,
     MerchantAssistantController,
   ],

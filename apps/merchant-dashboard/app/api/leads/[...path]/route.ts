@@ -28,14 +28,19 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   if (
     !businessId ||
     !uuid.test(businessId) ||
-    collection !== 'leads' ||
-    (leadId && !uuid.test(leadId))
+    !['leads', 'sales-policy'].includes(collection) ||
+    (collection === 'leads' && leadId && !uuid.test(leadId)) ||
+    (collection === 'sales-policy' && path.length !== 2)
   )
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Not found.' } },
       { status: 404 },
     );
   try {
+    if (collection === 'sales-policy' && path.length === 2)
+      return NextResponse.json(await api.salesPolicy(businessId), {
+        headers: { 'Cache-Control': 'no-store' },
+      });
     if (path.length === 2)
       return NextResponse.json(
         await api.leads(
@@ -50,6 +55,11 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json(await api.lead(businessId, leadId), {
         headers: { 'Cache-Control': 'no-store' },
       });
+    if (path.length === 4 && path[3] === 'qualification')
+      return NextResponse.json(
+        await api.leadQualification(businessId, leadId),
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Not found.' } },
       { status: 404 },
@@ -58,24 +68,32 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     return fail(error);
   }
 }
+async function csrfDenied(req: NextRequest) {
+  const origin = req.headers.get('origin');
+  const csrf = req.cookies.getAll().find((c) => /kleva_csrf$/i.test(c.name));
+  return (
+    !isAllowedDashboardOrigin(origin) ||
+    !csrf ||
+    req.headers.get('x-csrf-token') !== csrf.value
+  );
+}
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const { path } = await ctx.params;
   const [businessId, collection, leadId] = path;
   if (
     !businessId ||
     !uuid.test(businessId) ||
-    collection !== 'leads' ||
-    !leadId ||
-    !uuid.test(leadId)
+    !['leads', 'sales-policy'].includes(collection) ||
+    (collection === 'leads' && (!leadId || !uuid.test(leadId))) ||
+    (collection === 'sales-policy' && path.length !== 2) ||
+    (collection === 'leads' && ![3, 4].includes(path.length)) ||
+    (collection === 'leads' && path.length === 4 && path[3] !== 'qualification')
   )
     return NextResponse.json(
       { error: { code: 'not_found', message: 'Not found.' } },
       { status: 404 },
     );
-  const origin = req.headers.get('origin');
-  const csrf = req.cookies.getAll().find((c) => /kleva_csrf$/i.test(c.name));
-  const same = isAllowedDashboardOrigin(origin);
-  if (!same || !csrf || req.headers.get('x-csrf-token') !== csrf.value)
+  if (await csrfDenied(req))
     return NextResponse.json(
       {
         error: {
@@ -86,8 +104,68 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       { status: 403, headers: { 'Cache-Control': 'no-store' } },
     );
   try {
+    const body = await req.json();
+    if (collection === 'sales-policy')
+      return NextResponse.json(
+        await api.saveSalesPolicy(
+          businessId,
+          Number(body.expectedVersion),
+          body.fields,
+        ),
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    if (path.length === 4)
+      return NextResponse.json(
+        await api.saveLeadQualification(businessId, leadId, body),
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    return NextResponse.json(await api.updateLead(businessId, leadId, body), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    return fail(error);
+  }
+}
+export async function POST(req: NextRequest, ctx: RouteContext) {
+  const { path } = await ctx.params;
+  const [businessId, collection, leadId, action] = path;
+  if (
+    !businessId ||
+    !uuid.test(businessId) ||
+    collection !== 'leads' ||
+    !leadId ||
+    !uuid.test(leadId) ||
+    action !== 'convert' ||
+    path.length !== 4
+  )
     return NextResponse.json(
-      await api.updateLead(businessId, leadId, await req.json()),
+      { error: { code: 'not_found', message: 'Not found.' } },
+      { status: 404 },
+    );
+  if (await csrfDenied(req))
+    return NextResponse.json(
+      {
+        error: {
+          code: 'forbidden',
+          message: 'Your session has expired. Sign in again.',
+        },
+      },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } },
+    );
+  try {
+    const key = req.headers.get('idempotency-key');
+    if (!key)
+      return NextResponse.json(
+        {
+          error: {
+            code: 'bad_request',
+            message: 'An idempotency key is required.',
+          },
+        },
+        { status: 400 },
+      );
+    return NextResponse.json(
+      await api.convertLead(businessId, leadId, key, await req.json()),
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

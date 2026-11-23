@@ -169,6 +169,10 @@
   min-width: 0;
   padding: 27px 31px;
 }
+.policyPanel {
+  min-width: 0;
+  padding: 27px 31px;
+}
 .editorHeading {
   display: flex;
   align-items: center;
@@ -370,6 +374,10 @@
   }
   .editorPanel {
     display: none;
+    padding: 18px 16px;
+  }
+  .policyPanel {
+    display: block;
     padding: 18px 16px;
   }
   .mobileHidden {

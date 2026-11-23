@@ -170,6 +170,49 @@ export type MerchantLead = {
   version: number;
   updated_at: string;
 };
+export type SalesQualificationField = {
+  id: string;
+  label: string;
+  type:
+    'TEXT' | 'NUMBER' | 'SINGLE_SELECT' | 'MULTI_SELECT' | 'BOOLEAN' | 'DATE';
+  required: boolean;
+  validation: Record<string, unknown>;
+  order: number;
+  purpose: string;
+  consentRequired: boolean;
+};
+export type SalesPolicy = {
+  version: number;
+  fields: SalesQualificationField[];
+  changed_by: string | null;
+  updated_at: string | null;
+};
+export type LeadQualification = {
+  record: null | {
+    id: string;
+    lead_id: string;
+    revision: number;
+    policy_version: number;
+    field_values: Record<string, unknown>;
+    consent_evidence: Record<string, unknown>;
+    qualification_status: 'IN_PROGRESS' | 'QUALIFIED';
+    qualified_by: string | null;
+    qualified_at: string | null;
+    created_at: string;
+  };
+  history: Array<Record<string, unknown>>;
+  conversions: Array<{
+    id: string;
+    outcome: 'WON' | 'LOST';
+    reference: string | null;
+    conversion_value: string | null;
+    currency: string | null;
+    conversion_date: string | null;
+    loss_reason: string | null;
+    converted_by: string;
+    created_at: string;
+  }>;
+};
 
 export type AssistantConfiguration = {
   businessId: string;
@@ -668,6 +711,67 @@ export const api = {
     }>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}`,
       { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+  salesPolicy: (businessId: string) =>
+    request<{
+      policy: SalesPolicy;
+      history: Array<Record<string, unknown>>;
+      templates: {
+        retail: SalesQualificationField[];
+        service: SalesQualificationField[];
+      };
+    }>(`/merchant/businesses/${encodeURIComponent(businessId)}/sales-policy`),
+  saveSalesPolicy: (
+    businessId: string,
+    expectedVersion: number,
+    fields: SalesQualificationField[],
+  ) =>
+    request<SalesPolicy>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/sales-policy`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ expectedVersion, fields }),
+      },
+    ),
+  leadQualification: (businessId: string, leadId: string) =>
+    request<LeadQualification>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}/qualification`,
+    ),
+  saveLeadQualification: (
+    businessId: string,
+    leadId: string,
+    body: {
+      expectedLeadVersion: number;
+      policyVersion: number;
+      fieldValues: Record<string, unknown>;
+      consentEvidence: Record<string, unknown>;
+      markQualified: boolean;
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}/qualification`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      },
+    ),
+  convertLead: (
+    businessId: string,
+    leadId: string,
+    idempotencyKey: string,
+    body: {
+      expectedLeadVersion: number;
+      outcome: 'WON' | 'LOST';
+      details: Record<string, unknown>;
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/leads/${encodeURIComponent(leadId)}/convert`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(body),
+      },
     ),
   product: (businessId: string, productId: string) =>
     request<MerchantProduct>(
