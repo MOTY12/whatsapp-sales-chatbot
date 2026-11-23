@@ -7,16 +7,18 @@ test.beforeEach(async ({ request }) => {
 test('merchant signs in, creates a business, sees setup, and edits profile', async ({ page }) => {
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/login\?error=session/);
-  await page.getByRole('link', { name: /continue with secure sign-in/i }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('heading', { name: 'Set up your business' })).toBeVisible();
+  await page.getByRole('link', { name: /continue with google/i }).click();
+  await expect(page).toHaveURL(/\/onboarding$/);
+  await expect(page.getByRole('heading', { name: 'Set up your merchant workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Add your business profile' })).toBeVisible();
   await page.getByLabel(/business name/i).fill('The Good Store');
   await page.getByLabel(/industry/i).fill('Retail');
   await page.getByLabel(/business phone/i).fill('+234 801 234 5678');
   await page.getByRole('button', { name: /create business/i }).click();
-  await expect(page.getByText('Your business is ready.')).toBeVisible();
+  await expect(page.getByText(/your owner membership is active/i)).toBeVisible();
+  await page.getByRole('link', { name: 'Open dashboard' }).click();
+  await expect(page.getByRole('heading', { name: 'Good to see you' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'The Good Store' })).toBeVisible();
-  await expect(page.getByText('Not connected')).toBeVisible();
   await page.getByRole('link', { name: /edit business/i }).click();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await page.getByLabel(/business name/i).fill('The Better Store');
@@ -24,7 +26,7 @@ test('merchant signs in, creates a business, sees setup, and edits profile', asy
   await expect(page.getByRole('status')).toContainText('Business profile saved.');
   await page.goto('/dashboard/whatsapp?businessId=11111111-1111-4111-8111-111111111111');
   await expect(page.getByRole('heading', { name: 'WhatsApp connection' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Connect with help from our team' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /connect whatsapp/i })).toBeVisible();
   await page.goto('/dashboard/settings?businessId=another-business');
   await expect(page).toHaveURL(/\/dashboard$/);
 });
@@ -32,12 +34,15 @@ test('merchant signs in, creates a business, sees setup, and edits profile', asy
 test('mobile navigation opens, closes, and navigates accessibly', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/login');
-  await page.getByRole('link', { name: /continue with secure sign-in/i }).click();
-  await expect(page.getByRole('heading', { name: 'Set up your business' })).toBeVisible();
+  await page.getByRole('link', { name: /continue with google/i }).click();
+  await expect(page.getByRole('heading', { name: 'Set up your merchant workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Add your business profile' })).toBeVisible();
   await page.getByLabel(/business name/i).fill('Mobile Shop');
   await page.getByLabel(/industry/i).fill('Retail');
   await page.getByLabel(/business phone/i).fill('+234 801 234 5678');
   await page.getByRole('button', { name: /create business/i }).click();
+  await expect(page.getByText(/your owner membership is active/i)).toBeVisible();
+  await page.getByRole('link', { name: 'Open dashboard' }).click();
   await expect(page.getByRole('heading', { name: 'Good to see you' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
   const openButton = page.getByRole('button', { name: 'Open navigation' });

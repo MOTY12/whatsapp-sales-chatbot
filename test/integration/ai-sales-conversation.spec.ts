@@ -4,7 +4,6 @@ import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { ChannelConnection } from '../../src/database/entities/channel-connection.entity';
-import { OutboxOperation } from '../../src/database/entities/outbox-operation.entity';
 import {
   AiResponseService,
   whatsappAiResponseOperation,
@@ -15,7 +14,7 @@ import { UsageService } from '../../src/metering/usage.service';
 import { WhatsAppChannelAdapter } from '../../src/channels/adapters/whatsapp/whatsapp.adapter';
 import { ChannelConnectionService } from '../../src/channels/channel-connection.service';
 import { OutboxProcessor } from '../../src/jobs/outbox.processor';
-import { OutboxStore } from '../../src/jobs/outbox.store';
+import { OutboxStore, type OutboxHandler } from '../../src/jobs/outbox.store';
 import {
   whatsappOutboundOperation,
   OutboundMessageService,
@@ -253,7 +252,7 @@ describe('first complete grounded WhatsApp sales conversation', () => {
     );
     processor = new OutboxProcessor(
       new OutboxStore(runtime),
-      new Map([
+      new Map<string, OutboxHandler>([
         [whatsappReceiptOperation, handoffWhatsAppReceipt],
         [
           whatsappAiResponseOperation,

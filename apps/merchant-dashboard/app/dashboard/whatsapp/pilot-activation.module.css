@@ -74,6 +74,16 @@
   padding-top: 8px;
 }
 
+.consent {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid #08745b;
+  border-radius: 4px;
+  background: #f5f8f6;
+  color: #354840;
+  line-height: 1.6;
+}
+
 .checks {
   display: grid;
   gap: 8px;

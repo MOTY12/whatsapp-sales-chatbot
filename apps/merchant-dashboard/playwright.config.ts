@@ -8,6 +8,6 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:3101', trace: 'retain-on-failure', ...devices['Desktop Chrome'] },
   webServer: [
     { command: 'node test/fixture-server.mjs', url: 'http://localhost:3100/health', reuseExistingServer: false, env: { PORT: '3100' }, timeout: 10_000 },
-    { command: 'npm run dev -- --hostname localhost --port 3101', url: 'http://localhost:3101/login', reuseExistingServer: false, env: { NODE_ENV: 'development', KLEVA_NEXT_DIST_DIR: playwrightDistDir, KLEVA_BACKEND_ORIGIN: 'http://localhost:3100', DASHBOARD_PUBLIC_ORIGIN: 'http://localhost:3101' }, timeout: 60_000 },
+    { command: 'npm run dev -- --hostname localhost --port 3101', url: 'http://localhost:3101/login', reuseExistingServer: false, env: { NODE_ENV: 'development', KLEVA_NEXT_DIST_DIR: playwrightDistDir, KLEVA_BACKEND_ORIGIN: 'http://127.0.0.1:3100', DASHBOARD_PUBLIC_ORIGIN: 'http://localhost:3101' }, timeout: 60_000 },
   ],
 });

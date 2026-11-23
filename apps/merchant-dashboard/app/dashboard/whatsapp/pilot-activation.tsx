@@ -7,6 +7,7 @@ import styles from './pilot-activation.module.css';
 
 type Props = {
   businessId: string;
+  businessName?: string;
   canManage: boolean;
   connection: WhatsAppStatus | undefined;
   pilot: MerchantPilotStatus | undefined;
@@ -16,6 +17,7 @@ type Props = {
 
 export function PilotActivation({
   businessId,
+  businessName = 'this business',
   canManage,
   connection,
   pilot,
@@ -147,6 +149,21 @@ export function PilotActivation({
           >
             <input type="hidden" name="businessId" value={businessId} />
             <input type="hidden" name="connectionId" value={connection?.id} />
+            <p className={styles.consent}>
+              I authorize Kleva to run the WhatsApp sales and support pilot for{' '}
+              <strong>{businessName}</strong>
+              {connection?.displayPhoneNumber && (
+                <>
+                  {' '}
+                  using <strong>{connection.displayPhoneNumber}</strong>
+                </>
+              )}
+              . Customer messages and relevant business information may be
+              processed by Kleva and its third-party AI provider to prepare
+              automated replies. I will provide appropriate customer notices and
+              permissions, honor opt-outs, and ensure a human can respond when
+              required. I can revoke this pilot at any time.
+            </p>
             <label>
               <input
                 type="checkbox"

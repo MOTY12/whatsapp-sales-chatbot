@@ -3,6 +3,7 @@ import type { EntityManager } from 'typeorm';
 
 jest.mock('../config/env', () => ({
   aiConfig: jest.fn(() => ({ enabled: true })),
+  aiResponsesEnabled: jest.fn(() => true),
 }));
 
 describe('MerchantPilotService.status', () => {

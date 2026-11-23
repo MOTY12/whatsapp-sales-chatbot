@@ -50,6 +50,8 @@ let products = [];
 let leads = [];
 let productKeys = new Map();
 let productCreateRequests = 0;
+let onboardingStep = 'business_profile';
+let onboardingCompletedSteps = [];
 
 function reset(search = new URLSearchParams()) {
   created = false;
@@ -72,6 +74,8 @@ function reset(search = new URLSearchParams()) {
   leads = [];
   productKeys = new Map();
   productCreateRequests = 0;
+  onboardingStep = 'business_profile';
+  onboardingCompletedSteps = [];
   const now = Date.now();
   messages = Array.from({ length: 31 }, (_, index) => {
     const inbound = index % 2 === 0;
@@ -224,6 +228,37 @@ const server = createServer(async (req, res) => {
       accountId: 'fixture-account',
       memberships: membershipList(),
     });
+  if (url.pathname === '/auth/onboarding' && req.method === 'GET') {
+    if (!hasSession) return json(401, { message: 'Unauthorized' });
+    return json(200, {
+      current_step: onboardingStep,
+      completed_steps: onboardingCompletedSteps,
+      updated_at: changedAt,
+    });
+  }
+  if (url.pathname === '/auth/onboarding' && req.method === 'POST') {
+    if (!hasSession || !validCsrf)
+      return json(403, { message: 'Forbidden' });
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const input = JSON.parse(body);
+    const validSteps = [
+      'business_profile',
+      'whatsapp',
+      'products_faq',
+      'ai_assistant',
+      'dashboard',
+    ];
+    if (!validSteps.includes(input.currentStep))
+      return json(400, { message: 'Choose a valid onboarding step.' });
+    onboardingStep = input.currentStep;
+    changedAt = new Date().toISOString();
+    return json(200, {
+      current_step: onboardingStep,
+      completed_steps: onboardingCompletedSteps,
+      updated_at: changedAt,
+    });
+  }
   if (url.pathname === '/auth/logout' && req.method === 'POST') {
     if (!validCsrf || !hasSession) return json(403, { error: 'csrf' });
     res.writeHead(204, {

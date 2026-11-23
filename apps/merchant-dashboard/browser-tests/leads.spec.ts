@@ -3,15 +3,17 @@ const businessId = '11111111-1111-4111-8111-111111111111';
 async function signInAndCreateBusiness(page: Page) {
   await page.goto('/login');
   await page
-    .getByRole('link', { name: /continue with secure sign-in/i })
+    .getByRole('link', { name: /continue with google/i })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'Set up your business' }),
+    page.getByRole('heading', { name: 'Add your business profile' }),
   ).toBeVisible();
   await page.getByLabel(/business name/i).fill('The Good Store');
   await page.getByLabel(/industry/i).fill('Retail');
   await page.getByLabel(/business phone/i).fill('+234 801 234 5678');
   await page.getByRole('button', { name: /create business/i }).click();
+  await expect(page.getByText(/your owner membership is active/i)).toBeVisible();
+  await page.getByRole('link', { name: 'Open dashboard' }).click();
   await expect(
     page.getByRole('heading', { name: 'Good to see you' }),
   ).toBeVisible();

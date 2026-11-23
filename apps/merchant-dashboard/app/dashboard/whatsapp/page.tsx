@@ -79,6 +79,7 @@ export default async function WhatsAppPage({
       )}
       <PilotActivation
         businessId={business.id}
+        businessName={business.name}
         canManage={membership.role === 'owner'}
         connection={connection}
         pilot={pilot}

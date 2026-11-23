@@ -35,9 +35,7 @@ describe('merchant AI pilot activation', () => {
     expect(
       screen.getByLabelText(/customer conversations may be processed/i),
     ).toBeRequired();
-    expect(
-      screen.getByLabelText(/human escalation contact/i),
-    ).toBeRequired();
+    expect(screen.getByLabelText(/human escalation contact/i)).toBeRequired();
     expect(
       screen.getByRole('button', { name: 'Request pilot activation' }),
     ).toBeTruthy();
@@ -53,8 +51,12 @@ describe('merchant AI pilot activation', () => {
         pilotAvailable
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Request pilot activation' })).toBeNull();
-    expect(screen.getByText(/business owner manages pilot approval/i)).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Request pilot activation' }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/business owner manages pilot approval/i),
+    ).toBeTruthy();
 
     rerender(
       <PilotActivation
@@ -65,7 +67,9 @@ describe('merchant AI pilot activation', () => {
         pilotAvailable
       />,
     );
-    expect(screen.queryByRole('button', { name: 'Request pilot activation' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request pilot activation' }),
+    ).toBeNull();
   });
 
   it('keeps AI unavailable while review is pending and offers a revocation control', () => {
@@ -84,8 +88,12 @@ describe('merchant AI pilot activation', () => {
     );
 
     expect(screen.getByText(/awaiting Kleva review/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Request pilot activation' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Withdraw request' })).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Request pilot activation' }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Withdraw request' }),
+    ).toBeTruthy();
     expect(screen.getByLabelText(/confirm I want to revoke/i)).toBeRequired();
   });
 
@@ -101,7 +109,9 @@ describe('merchant AI pilot activation', () => {
     );
 
     expect(screen.getByText(/could not verify pilot approval/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Request pilot activation' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Request pilot activation' }),
+    ).toBeNull();
   });
 
   it('identifies the missing readiness prerequisite from backend state', () => {
