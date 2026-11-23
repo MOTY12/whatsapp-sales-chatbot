@@ -427,6 +427,7 @@ const server = createServer(async (req, res) => {
           tokenUsage: { input: 0, output: 0, kind: 'ACTUAL' },
           durationMs: 7,
           handoffRecommended: true,
+          toolExecutions: [],
         });
       const asksPrice = /how much|price|cost/i.test(input.message);
       const publishedProduct = asksPrice
@@ -480,6 +481,7 @@ const server = createServer(async (req, res) => {
         tokenUsage: { input: 75, output: 12, kind: 'ACTUAL' },
         durationMs: 21,
         handoffRecommended: !publishedProduct && !publishedFaq,
+        toolExecutions: [],
       });
     }
     return json(404, { message: 'Not found.' });

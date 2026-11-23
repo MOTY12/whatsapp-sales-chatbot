@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { EntityManager } from 'typeorm';
@@ -38,6 +39,8 @@ import {
   type PlaygroundResult,
   type PlaygroundSource,
 } from '../assistant/assistant-preferences';
+import { AgentToolExecutor } from '../agent-tools/agent-tool-executor.service';
+import { agentToolRegistry } from '../agent-tools/tool-registry';
 
 type ConfigurationRow = {
   business_id: string;
@@ -232,6 +235,7 @@ export class MerchantAssistantService {
     private readonly retrieval: UnifiedKnowledgeRetrievalService,
     private readonly usage: UsageService,
     @Inject(GROUNDED_MODEL) private readonly model: GroundedModel,
+    @Optional() private readonly tools?: AgentToolExecutor,
   ) {}
 
   getConfiguration(actor: MerchantPrincipal, businessId: string) {
@@ -291,12 +295,19 @@ export class MerchantAssistantService {
       'assistant.manage',
       async (manager) => {
         const configuration = await readConfiguration(manager);
+        const [policy] = await safeQuery<
+          Array<{ fields: Array<Record<string, unknown>> }>
+        >(manager, 'SELECT * FROM public.kleva_sales_policy_read()');
         const [result] = await safeQuery<{ admitted: boolean }[]>(
           manager,
           'SELECT public.kleva_ai_playground_admit($1) AS admitted',
           [requestId],
         );
-        return { configuration, admitted: result?.admitted === true };
+        return {
+          configuration,
+          qualificationFields: policy?.fields ?? [],
+          admitted: result?.admitted === true,
+        };
       },
     );
     if (!admitted.admitted)
@@ -317,6 +328,7 @@ export class MerchantAssistantService {
     let outcome: PlaygroundOutcome = 'PROVIDER_FAILURE';
     let reply = admitted.configuration.fallbackResponse;
     let sources: PlaygroundSource[] = [];
+    const toolExecutions: PlaygroundResult['toolExecutions'] = [];
     let handoffRecommended = true;
     try {
       const retrieval = await this.retrieval.retrieve({
@@ -359,6 +371,15 @@ export class MerchantAssistantService {
           message: input.message,
           history: input.history,
           assistant: admitted.configuration,
+          approvedTools: agentToolRegistry.map(
+            ({ name, version, description, input: toolInput }) => ({
+              name,
+              version,
+              description,
+              input: toolInput,
+            }),
+          ),
+          qualificationFields: admitted.qualificationFields,
           evidence: retrieval.evidence.map((item) => ({
             id: item.sourceId,
             revisionId: item.revisionId,
@@ -374,6 +395,23 @@ export class MerchantAssistantService {
           tokens = { ...reservationEstimate, kind: 'ESTIMATED' };
           outcome = 'PROVIDER_FAILURE';
         } else {
+          if (generated.toolCall !== undefined) {
+            toolExecutions.push(
+              this.tools
+                ? this.tools.simulate(generated.toolCall, {
+                    businessId,
+                    message: input.message,
+                    evidence: retrieval.evidence,
+                    fields: admitted.qualificationFields,
+                  })
+                : {
+                    requestedTool: 'unknown',
+                    validation: 'REJECTED',
+                    simulatedOutcome: 'SIMULATOR_UNAVAILABLE',
+                    sideEffects: false,
+                  },
+            );
+          }
           await this.usage.commitAiTokens(
             businessId,
             requestKey,
@@ -472,6 +510,7 @@ export class MerchantAssistantService {
       tokenUsage: tokens,
       durationMs,
       handoffRecommended,
+      toolExecutions,
     };
   }
 }

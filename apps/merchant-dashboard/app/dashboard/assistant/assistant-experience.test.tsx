@@ -55,6 +55,7 @@ describe('AssistantExperience', () => {
       tokenUsage: { input: 45, output: 11, kind: 'ACTUAL' },
       durationMs: 31,
       handoffRecommended: false,
+      toolExecutions: [],
     };
     const fetchMock = vi
       .fn()
@@ -102,6 +103,14 @@ describe('AssistantExperience', () => {
       tokenUsage: { input: 0, output: 0, kind: 'ACTUAL' },
       durationMs: 8,
       handoffRecommended: true,
+      toolExecutions: [
+        {
+          requestedTool: 'request_human_handoff',
+          validation: 'VALID',
+          simulatedOutcome: 'WOULD_HAND_OFF',
+          sideEffects: false,
+        },
+      ],
     };
     const fetchMock = vi
       .fn()
@@ -124,6 +133,10 @@ describe('AssistantExperience', () => {
     ).toBeTruthy();
     expect(
       screen.getByText('A human handoff would be recommended'),
+    ).toBeTruthy();
+    expect(screen.getByText('Tool simulation (no live changes)')).toBeTruthy();
+    expect(
+      screen.getByText(/Simulated: WOULD_HAND_OFF · no side effects/),
     ).toBeTruthy();
     expect(screen.queryByText('Published sources used')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reset test' }));

@@ -23,6 +23,8 @@ export const merchantPolicyTables = [
   'sales_qualification_policies',
   'merchant_lead_qualifications',
   'merchant_lead_conversions',
+  'agent_tool_executions',
+  'agent_tool_handoff_events',
   'ai_response_runs',
   'whatsapp_signup_attempts',
   'assistant_configurations',

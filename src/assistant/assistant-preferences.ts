@@ -50,6 +50,15 @@ export type PlaygroundSource = {
   excerpt: string;
 };
 
+export type PlaygroundToolExecution = {
+  requestedTool: string;
+  validation: string;
+  simulatedOutcome: string;
+  reason?: string;
+  sideEffects?: boolean;
+  [key: string]: unknown;
+};
+
 export type PlaygroundResult = {
   reply: string;
   outcome: PlaygroundOutcome;
@@ -57,4 +66,5 @@ export type PlaygroundResult = {
   tokenUsage: { input: number; output: number; kind: 'ACTUAL' | 'ESTIMATED' };
   durationMs: number;
   handoffRecommended: boolean;
+  toolExecutions: PlaygroundToolExecution[];
 };

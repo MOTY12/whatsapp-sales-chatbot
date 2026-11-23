@@ -61,6 +61,9 @@ import { LeadQualification1760000000026 } from './migrations/1760000000026-LeadQ
 import { SalesQualificationPolicy } from './entities/sales-qualification-policy.entity';
 import { MerchantLeadQualification } from './entities/merchant-lead-qualification.entity';
 import { MerchantLeadConversion } from './entities/merchant-lead-conversion.entity';
+import { AgentToolExecution } from './entities/agent-tool-execution.entity';
+import { AgentToolHandoffEvent } from './entities/agent-tool-handoff-event.entity';
+import { AgentToolExecution1760000000027 } from './migrations/1760000000027-AgentToolExecution';
 
 export const databaseEntities = [
   Business,
@@ -88,6 +91,8 @@ export const databaseEntities = [
   SalesQualificationPolicy,
   MerchantLeadQualification,
   MerchantLeadConversion,
+  AgentToolExecution,
+  AgentToolHandoffEvent,
   MerchantEmailDelivery,
 ];
 
@@ -120,4 +125,5 @@ export const databaseMigrations = [
   SharedInboxOperations1760000000024,
   MerchantAiPlayground1760000000025,
   LeadQualification1760000000026,
+  AgentToolExecution1760000000027,
 ];

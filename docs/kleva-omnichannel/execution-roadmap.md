@@ -397,6 +397,7 @@ V1 mapping and adaptation. Grounded generation and read-only playground. The pil
 
 ### TOOLS-001 · Enforce typed pilot sales tools · Medium
 
+- **Status.** Verified locally on 2026-11-23. See the TOOLS-001 implementation and verification notes in the [AI agent architecture](ai-agent-architecture.md).
 - **Objective.** Allow approved catalog lookup, lead writes and human escalation in live turns.
 - **Reuse and likely changes.** Reuse grounded agent interfaces and catalog/sales/inbox services → src/agent-tools.
 - **Implementation.** Allow approved catalog lookup, lead writes and human escalation in live turns.
@@ -404,7 +405,7 @@ V1 mapping and adaptation. Grounded generation and read-only playground. The pil
 - **Dependencies.** RAG-002, SALES-002, CATALOG-001, INBOX-001. **External services.** Model fixture.
 - **Security.** No direct SQL/URL execution. Scope and permission per call. No money or booking tools.
 - **Acceptance and required tests.** Grounded offer lookup, denied discounts, idempotent lead write and handoff work. Replay, authorization and injection fixtures pass.
-- **Verify.** npm run test:integration -- pilot-tools, plus lint/build and applicable dashboard or provider contract checks.
+- **Verify.** `npm run test:integration -- --runTestsByPath test/integration/pilot-tools.spec.ts test/integration/baseline-migrations.spec.ts` (8 PostgreSQL tests), backend unit tests (104), dashboard tests, 24 browser tests, lint, typecheck and builds passed locally.
 - **Done.** Live agent can invoke only the approved pilot registry and each effect has replay-safe audit evidence.
 
 ### AGENT-001 · Enable grounded WhatsApp answers with bounded memory · Large

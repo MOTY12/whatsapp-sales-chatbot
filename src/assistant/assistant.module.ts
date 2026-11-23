@@ -11,9 +11,16 @@ import { UsageModule } from '../metering/usage.module';
 import { OutboundModule } from '../whatsapp/outbound.module';
 import { AiResponseService } from './ai-response.service';
 import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
+import { AgentToolsModule } from '../agent-tools/agent-tools.module';
 
 @Module({
-  imports: [DatabaseModule, KnowledgeModule, UsageModule, OutboundModule],
+  imports: [
+    DatabaseModule,
+    KnowledgeModule,
+    UsageModule,
+    OutboundModule,
+    AgentToolsModule,
+  ],
   providers: [
     AssistantService,
     AssistantCommandParserService,

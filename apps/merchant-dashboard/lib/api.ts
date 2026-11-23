@@ -244,6 +244,14 @@ export type PlaygroundResult = {
   tokenUsage: { input: number; output: number; kind: 'ACTUAL' | 'ESTIMATED' };
   durationMs: number;
   handoffRecommended: boolean;
+  toolExecutions: Array<{
+    requestedTool: string;
+    validation: string;
+    simulatedOutcome: string;
+    reason?: string;
+    sideEffects?: false;
+    [key: string]: unknown;
+  }>;
 };
 export type PlaygroundTurn = {
   role: 'customer' | 'assistant';

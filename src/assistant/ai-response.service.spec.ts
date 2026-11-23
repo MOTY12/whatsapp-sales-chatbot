@@ -53,9 +53,14 @@ describe('AiResponseService', () => {
       takeoverAfterGeneration?: boolean;
       sufficient?: boolean;
       modelFailure?: boolean;
+      customerMessage?: string;
+      toolCall?: unknown;
+      tools?: { qualificationFields: jest.Mock; execute: jest.Mock };
     } = {},
   ) {
     const state = initial();
+    if (options.customerMessage)
+      state.customer_message = options.customerMessage;
     if (options.takeoverBeforeModel) {
       state.control_mode = 'HUMAN';
       state.control_version = '2';
@@ -127,31 +132,45 @@ describe('AiResponseService', () => {
             .fn()
             .mockRejectedValue(new Error('provider unavailable')),
         }
-      : options.takeoverDuringGeneration
+      : options.toolCall !== undefined
         ? {
-            generate: jest.fn().mockImplementation(async () => {
-              state.control_mode = 'HUMAN';
-              state.control_version = '2';
-              return {
-                reply:
-                  'The standing fan costs NGN 25,000 and includes remote control.',
-                evidenceIds: [evidence.sourceId],
-                canAnswer: true,
-                needsHuman: false,
-                inputTokens: 140,
-                outputTokens: 18,
-              };
+            generate: jest.fn().mockResolvedValue({
+              reply:
+                'The standing fan costs NGN 25,000 and includes remote control.',
+              evidenceIds: [evidence.sourceId],
+              canAnswer: true,
+              needsHuman: false,
+              inputTokens: 140,
+              outputTokens: 18,
+              toolCall: options.toolCall,
             }),
           }
-        : model;
+        : options.takeoverDuringGeneration
+          ? {
+              generate: jest.fn().mockImplementation(async () => {
+                state.control_mode = 'HUMAN';
+                state.control_version = '2';
+                return {
+                  reply:
+                    'The standing fan costs NGN 25,000 and includes remote control.',
+                  evidenceIds: [evidence.sourceId],
+                  canAnswer: true,
+                  needsHuman: false,
+                  inputTokens: 140,
+                  outputTokens: 18,
+                };
+              }),
+            }
+          : model;
     const service = new AiResponseService(
       database,
       retrieval as never,
       usage as never,
       outbound as never,
       modelAdapter,
+      options.tools as never,
     );
-    return { service, usage, outbound, state };
+    return { service, usage, outbound, state, modelAdapter };
   }
 
   const operation = (): OutboxOperation =>
@@ -190,6 +209,40 @@ describe('AiResponseService', () => {
     );
   });
 
+  it('executes a registered handoff proposal and does not send an AI reply afterward', async () => {
+    const tools = {
+      qualificationFields: jest.fn().mockResolvedValue([]),
+      execute: jest.fn().mockResolvedValue({
+        toolName: 'request_human_handoff',
+        classification: 'HANDOFF',
+        result: { reasonCode: 'CUSTOMER_REQUEST', controlVersion: 2 },
+      }),
+    };
+    const { service, outbound } = fixture({
+      toolCall: {
+        name: 'request_human_handoff',
+        version: 1,
+        arguments: { reasonCode: 'CUSTOMER_REQUEST' },
+      },
+      tools,
+    });
+    await service.execute(operation());
+    expect(tools.execute).toHaveBeenCalledWith(
+      {
+        name: 'request_human_handoff',
+        version: 1,
+        arguments: { reasonCode: 'CUSTOMER_REQUEST' },
+      },
+      expect.objectContaining({
+        businessId: initial().business_id,
+        conversationId: initial().conversation_id,
+        aiRunId: initial().id,
+        leadId: initial().lead_id,
+      }),
+    );
+    expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
+  });
+
   it('suppresses the response if a merchant takes over during model generation', async () => {
     const { service, outbound } = fixture({ takeoverDuringGeneration: true });
     await service.execute(operation());
@@ -209,8 +262,11 @@ describe('AiResponseService', () => {
     expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
   });
 
-  it('uses the fallback for missing evidence and does not call the model', async () => {
-    const { service, outbound, usage } = fixture({ sufficient: false });
+  it('uses the fallback for missing policy evidence and does not call the model', async () => {
+    const { service, outbound, usage } = fixture({
+      sufficient: false,
+      customerMessage: 'What are your delivery zones?',
+    });
     await service.execute(operation());
     expect(usage.reserveAiTokens).not.toHaveBeenCalled();
     expect(outbound.enqueueTextMessage).toHaveBeenCalledWith(

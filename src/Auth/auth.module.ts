@@ -32,6 +32,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { UsageModule } from '../metering/usage.module';
 import { MerchantAssistantController } from './merchant-assistant.controller';
 import { MerchantAssistantService } from './merchant-assistant.service';
+import { AgentToolsModule } from '../agent-tools/agent-tools.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { MerchantAssistantService } from './merchant-assistant.service';
     AssistantModule,
     KnowledgeModule,
     UsageModule,
+    AgentToolsModule,
   ],
   controllers: [
     MerchantAuthController,

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { aiConfig } from '../config/env';
@@ -25,6 +25,8 @@ import {
   defaultAssistantPreferences,
   type AssistantPreferences,
 } from './assistant-preferences';
+import { AgentToolExecutor } from '../agent-tools/agent-tool-executor.service';
+import { agentToolRegistry } from '../agent-tools/tool-registry';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 const inputBudget = 3600;
@@ -60,6 +62,7 @@ export class AiResponseService {
     private readonly usage: UsageService,
     private readonly outbound: OutboundMessageService,
     @Inject(GROUNDED_MODEL) private readonly model: GroundedModel,
+    @Optional() private readonly tools?: AgentToolExecutor,
   ) {}
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
@@ -157,7 +160,11 @@ export class AiResponseService {
         row,
         retrieval.reason,
       );
-      if (!retrieval.sufficientEvidence) {
+      const possibleOfferSearch =
+        /\b(price|cost|product|service|offer|stock|available|how much|do you sell|buy)\b/i.test(
+          row.customer_message,
+        );
+      if (!retrieval.sufficientEvidence && !possibleOfferSearch) {
         status = 'HANDOFF_REQUIRED';
         errorCategory = retrieval.reason ?? 'INSUFFICIENT_EVIDENCE';
         reply = fallbackMessage;
@@ -198,9 +205,23 @@ export class AiResponseService {
         }
         this.log('AI_GENERATION_STARTED', row);
         try {
+          const qualificationFields =
+            row.lead_id && this.tools
+              ? await this.tools.qualificationFields(runId)
+              : [];
           const generated = await this.model.generate({
             message: row.customer_message,
             assistant: configuredAssistant,
+            approvedTools: agentToolRegistry.map(
+              ({ name, version, description, input }) => ({
+                name,
+                version,
+                description,
+                input,
+              }),
+            ),
+            qualificationFields,
+            maxOutputTokens: outputBudget,
             evidence: evidence.map((item) => ({
               id: item.sourceId,
               revisionId: item.revisionId,
@@ -216,13 +237,125 @@ export class AiResponseService {
             generated.inputTokens,
             generated.outputTokens,
           );
-          const validation = validateGroundedResponse(generated, evidence);
-          if (validation.valid) reply = generated.reply.trim();
-          else {
-            status = 'HANDOFF_REQUIRED';
-            errorCategory = validation.reason;
-            reply = fallbackMessage;
-            this.log('AI_RESPONSE_REJECTED', row, validation.reason);
+          let toolResult: Awaited<
+            ReturnType<AgentToolExecutor['execute']>
+          > | null = null;
+          if (generated.toolCall !== undefined) {
+            try {
+              if (!this.tools) throw new Error('Agent tools are unavailable.');
+              toolResult = await this.tools.execute(generated.toolCall, {
+                businessId: row.business_id,
+                conversationId: row.conversation_id,
+                aiRunId: row.id,
+                leadId: row.lead_id,
+                customerMessage: row.customer_message,
+              });
+            } catch {
+              toolResult = {
+                toolName: 'search_published_offers',
+                classification: 'UNAVAILABLE',
+                result: {
+                  reason: 'The requested tool could not be completed.',
+                },
+              };
+            }
+            if (
+              toolResult.toolName === 'request_human_handoff' &&
+              ['HANDOFF', 'ALREADY_HUMAN'].includes(toolResult.classification)
+            ) {
+              this.log('AI_TOOL_HANDOFF', row, toolResult.classification);
+              return;
+            }
+            if (
+              [
+                'UNKNOWN_TOOL',
+                'INVALID_ARGUMENTS',
+                'REJECTED',
+                'CONFLICT',
+                'UNAVAILABLE',
+              ].includes(toolResult.classification)
+            ) {
+              status = 'HANDOFF_REQUIRED';
+              errorCategory = `TOOL_${toolResult.classification}`;
+              reply = fallbackMessage;
+            } else if (toolResult.toolName === 'record_lead_qualification') {
+              if (
+                ['REJECTED', 'CONFLICT', 'UNAVAILABLE'].includes(
+                  toolResult.classification,
+                )
+              ) {
+                status = 'HANDOFF_REQUIRED';
+                errorCategory = `TOOL_${toolResult.classification}`;
+                reply = fallbackMessage;
+              } else if (toolResult.classification === 'CONSENT_REQUIRED') {
+                status = 'HANDOFF_REQUIRED';
+                errorCategory = 'TOOL_CONSENT_REQUIRED';
+                reply = fallbackMessage;
+              } else {
+                const ids = Array.isArray(toolResult.result.missingFieldIds)
+                  ? toolResult.result.missingFieldIds.map(String)
+                  : [];
+                const requiredLabels = qualificationFields
+                  .filter((field) => ids.includes(String(field.id)))
+                  .map((field) => String(field.label));
+                status = 'GENERATED';
+                reply = requiredLabels.length
+                  ? `Thanks. To help with that, could you share ${requiredLabels.join(' and ')}?`
+                  : 'Thanks, I’ve noted those details for the team. Is there anything else you would like to know?';
+                errorCategory = null;
+              }
+            } else {
+              const sources = toolResult.evidence ?? [];
+              evidence = [
+                ...evidence.filter(
+                  (item) =>
+                    !sources.some((source) => source.id === item.sourceId),
+                ),
+                ...sources.map((item) => ({
+                  sourceType: 'PRODUCT' as const,
+                  sourceId: item.id,
+                  revisionId: item.revisionId,
+                  relevanceScore: 1,
+                  title: item.title,
+                  content: item.content,
+                  facts: {
+                    ...item.facts,
+                    availability: item.facts.availability as
+                      'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN',
+                  },
+                })),
+              ];
+              if (
+                ['REJECTED', 'CONFLICT', 'UNAVAILABLE'].includes(
+                  toolResult.classification,
+                )
+              ) {
+                status = 'HANDOFF_REQUIRED';
+                errorCategory = `TOOL_${toolResult.classification}`;
+                reply = fallbackMessage;
+              } else {
+                const validation = validateGroundedResponse(
+                  generated,
+                  evidence,
+                );
+                if (validation.valid) reply = generated.reply.trim();
+                else {
+                  status = 'HANDOFF_REQUIRED';
+                  errorCategory = validation.reason;
+                  reply = fallbackMessage;
+                  this.log('AI_RESPONSE_REJECTED', row, validation.reason);
+                }
+              }
+            }
+          } else {
+            const validation = validateGroundedResponse(generated, evidence);
+            if (validation.valid) reply = generated.reply.trim();
+            else {
+              status = 'HANDOFF_REQUIRED';
+              errorCategory = validation.reason;
+              reply = fallbackMessage;
+              this.log('AI_RESPONSE_REJECTED', row, validation.reason);
+            }
           }
         } catch (error) {
           // Provider timeouts have uncertain usage; conservatively consume the reservation.

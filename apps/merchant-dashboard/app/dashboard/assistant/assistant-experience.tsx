@@ -438,6 +438,28 @@ export function AssistantExperience({
                       ))}
                     </div>
                   )}
+                  {entry.result.toolExecutions.length > 0 && (
+                    <div className={styles.sources}>
+                      <strong>Tool simulation (no live changes)</strong>
+                      {entry.result.toolExecutions.map((tool, index) => (
+                        <div
+                          key={`${tool.requestedTool}:${index}`}
+                          className={styles.source}
+                        >
+                          <span>
+                            {tool.requestedTool} · {tool.validation}
+                          </span>
+                          <small>
+                            Simulated: {tool.simulatedOutcome}
+                            {tool.reason ? ` · ${tool.reason}` : ''}
+                            {tool.sideEffects === false
+                              ? ' · no side effects'
+                              : ''}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </article>

@@ -19,7 +19,11 @@ export class MerchantLeadQualification {
   @Column('integer') revision!: number;
   @Column('integer') policy_version!: number;
   @Column('jsonb') field_values!: Record<string, unknown>;
+  @Column('jsonb') field_sources!: Record<string, unknown>;
   @Column('jsonb') consent_evidence!: Record<string, unknown>;
+  @Column({ type: 'varchar', length: 12 }) source_kind!: 'MERCHANT' | 'AI';
+  @Column('uuid', { nullable: true }) source_run_id!: string | null;
+  @Column('uuid', { nullable: true }) source_message_id!: string | null;
   @Column({ type: 'varchar', length: 16 })
   qualification_status!: 'IN_PROGRESS' | 'QUALIFIED';
   @Column('uuid', { nullable: true }) qualified_by!: string | null;

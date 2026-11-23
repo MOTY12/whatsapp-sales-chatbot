@@ -18,3 +18,5 @@ export { MerchantProductRevision } from './merchant-product-revision.entity';
 export { SalesQualificationPolicy } from './sales-qualification-policy.entity';
 export { MerchantLeadQualification } from './merchant-lead-qualification.entity';
 export { MerchantLeadConversion } from './merchant-lead-conversion.entity';
+export { AgentToolExecution } from './agent-tool-execution.entity';
+export { AgentToolHandoffEvent } from './agent-tool-handoff-event.entity';
