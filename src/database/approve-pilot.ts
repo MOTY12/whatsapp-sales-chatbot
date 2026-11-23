@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { errorCode } from '../config/logging';
+import { usageConfig } from '../config/env';
 import { databaseOptions } from './options';
 
 const uuid =
@@ -36,6 +37,7 @@ async function approve() {
   });
   try {
     await source.initialize();
+    const limits = usageConfig();
     const rows = await source.query<
       {
         enrollment_id: string;
@@ -46,9 +48,13 @@ async function approve() {
         activated_by: string;
         activation_reference: string;
       }[]
-    >('SELECT * FROM public.kleva_pilot_activate($1,$2)', [
+    >('SELECT * FROM public.kleva_pilot_activate($1,$2,$3,$4,$5,$6)', [
       enrollmentId,
       evidenceReference,
+      limits.monthlyAiInputTokens,
+      limits.monthlyAiOutputTokens,
+      limits.monthlyWhatsAppMessages,
+      limits.aiTokensPerRequest,
     ]);
     if (rows.length !== 1) {
       console.error(

@@ -29,7 +29,14 @@ type OutboundRow = {
   control_version: number | string | null;
 };
 
-export class OutboundPolicyError extends Error {}
+export class OutboundPolicyError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: 'NEWER_CUSTOMER_TURN',
+  ) {
+    super(message);
+  }
+}
 
 export interface OutboundAuthorization {
   conversationId?: string;
@@ -176,6 +183,26 @@ export class OutboundMessageService {
                 ? 'AI response was suppressed by conversation takeover.'
                 : 'Reopen and take over this conversation before replying.',
             );
+          }
+          if (authorization.kind === 'AI') {
+            const [stale] = await manager.query<{ superseded: boolean }[]>(
+              `SELECT EXISTS (
+                SELECT 1 FROM public.ai_response_runs a
+                JOIN public.messages source ON source.id=a.inbound_message_id
+                  AND source."businessId"=a.business_id AND source."conversationId"=a.conversation_id
+                WHERE a.id=$1 AND a.business_id=$2 AND a.conversation_id=$3
+                  AND EXISTS (SELECT 1 FROM public.messages newer
+                    WHERE newer."businessId"=a.business_id AND newer."conversationId"=a.conversation_id
+                      AND newer.direction='inbound'
+                      AND (newer."createdAt",newer.id)>(source."createdAt",source.id))
+              ) AS superseded`,
+              [idempotencyKey, businessId, authorization.conversationId],
+            );
+            if (stale?.superseded)
+              throw new OutboundPolicyError(
+                'AI response was suppressed by a newer customer message.',
+                'NEWER_CUSTOMER_TURN',
+              );
           }
         }
         await this.outbox.write(manager, {
@@ -579,6 +606,76 @@ export class OutboundMessageService {
           await manager.query(
             `UPDATE public.whatsapp_response_intents SET status = 'SUPPRESSED', updated_at = now()
               WHERE id = $1 AND business_id = $2`,
+            [row.response_intent_id, row.business_id],
+          );
+          return 'suppressed';
+        }
+        const [staleRun] = await manager.query<{ superseded: boolean }[]>(
+          `SELECT EXISTS (
+            SELECT 1 FROM public.ai_response_runs a
+            JOIN public.messages source ON source.id=a.inbound_message_id
+              AND source."businessId"=a.business_id AND source."conversationId"=a.conversation_id
+            WHERE a.id=$1 AND a.business_id=$2 AND a.conversation_id=$3
+              AND EXISTS (SELECT 1 FROM public.messages newer
+                WHERE newer."businessId"=a.business_id AND newer."conversationId"=a.conversation_id
+                  AND newer.direction='inbound'
+                  AND (newer."createdAt",newer.id)>(source."createdAt",source.id))
+          ) AS superseded`,
+          [row.idempotency_key, row.business_id, row.conversation_id],
+        );
+        if (staleRun?.superseded) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status='SUPPRESSED',
+              last_error='NEWER_CUSTOMER_TURN',updated_at=now()
+              WHERE id=$1 AND business_id=$2 AND status='RESERVED'`,
+            [row.id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.messages SET status='suppressed' WHERE id=$1 AND "businessId"=$2`,
+            [row.message_id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.whatsapp_response_intents SET status='SUPPRESSED',updated_at=now()
+              WHERE id=$1 AND business_id=$2`,
+            [row.response_intent_id, row.business_id],
+          );
+          return 'suppressed';
+        }
+        const [staleEvidence] = await manager.query<{ stale: boolean }[]>(
+          `SELECT EXISTS (
+            SELECT 1 FROM public.ai_response_runs a,
+              LATERAL jsonb_array_elements(a.evidence) evidence_item
+            WHERE a.id=$1 AND a.business_id=$2 AND EXISTS (
+              SELECT 1 WHERE NOT (
+                (evidence_item->>'sourceType'='FAQ' AND EXISTS (
+                  SELECT 1 FROM public.knowledge_faqs f
+                  WHERE f.business_id=a.business_id AND f.id=(evidence_item->>'sourceId')::uuid
+                    AND f.published_revision_id=(evidence_item->>'revisionId')::uuid
+                )) OR
+                (evidence_item->>'sourceType'='PRODUCT' AND EXISTS (
+                  SELECT 1 FROM public.merchant_products p
+                  WHERE p.business_id=a.business_id AND p.id=(evidence_item->>'sourceId')::uuid
+                    AND p.published_revision_id=(evidence_item->>'revisionId')::uuid
+                ))
+              )
+            )
+          ) AS stale`,
+          [row.idempotency_key, row.business_id],
+        );
+        if (staleEvidence?.stale) {
+          await manager.query(
+            `UPDATE public.whatsapp_outbound_messages SET status='SUPPRESSED',
+              last_error='PUBLISHED_EVIDENCE_CHANGED',updated_at=now()
+              WHERE id=$1 AND business_id=$2 AND status='RESERVED'`,
+            [row.id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.messages SET status='suppressed' WHERE id=$1 AND "businessId"=$2`,
+            [row.message_id, row.business_id],
+          );
+          await manager.query(
+            `UPDATE public.whatsapp_response_intents SET status='SUPPRESSED',updated_at=now()
+              WHERE id=$1 AND business_id=$2`,
             [row.response_intent_id, row.business_id],
           );
           return 'suppressed';

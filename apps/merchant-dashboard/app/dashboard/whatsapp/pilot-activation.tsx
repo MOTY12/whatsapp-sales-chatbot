@@ -25,6 +25,7 @@ export function PilotActivation({
   result,
 }: Props) {
   const state = pilot?.status ?? 'NOT_ENROLLED';
+  const automationStatus = pilot?.automation_status ?? 'OFF';
   const verifiedConnection =
     connection?.status === 'active' &&
     connection.connectionState === 'connected' &&
@@ -33,6 +34,7 @@ export function PilotActivation({
     pilotAvailable &&
     canManage &&
     verifiedConnection &&
+    pilot?.activation_ready === true &&
     (state === 'NOT_ENROLLED' || state === 'REVOKED');
   const canRevoke =
     pilotAvailable &&
@@ -46,6 +48,16 @@ export function PilotActivation({
       <div className={styles.content}>
         <div className={styles.eyebrow}>AUTOMATION</div>
         <h2 id="pilot-title">AI sales assistant pilot</h2>
+        <p className={styles.status} role="status">
+          Automation status: <strong>{automationStatus}</strong>
+        </p>
+        {pilotAvailable && (
+          <p className={styles.status}>
+            Human takeover conversations: {pilot?.human_takeover_count ?? 0}. AI
+            pauses in those conversations until an authorized inbox user resumes
+            automation.
+          </p>
+        )}
         <p className={styles.description}>
           Customer replies stay off until Kleva approves the merchant pilot,
           WhatsApp is verified, and AI responses are enabled. The assistant uses
@@ -87,9 +99,19 @@ export function PilotActivation({
             Pilot access was revoked. Submit a new request if you want Kleva to
             review activation again.
           </p>
+        ) : automationStatus === 'READY' ? (
+          <p className={styles.notice} role="status">
+            Setup is ready. Request Kleva review to activate customer-facing
+            automation.
+          </p>
         ) : !verifiedConnection ? (
           <p className={styles.notice} role="status">
             Connect and verify WhatsApp above before requesting AI pilot
+            activation.
+          </p>
+        ) : automationStatus === 'OFF' ? (
+          <p className={styles.notice} role="status">
+            Automation is off. Complete the requirements below before requesting
             activation.
           </p>
         ) : null}
@@ -105,12 +127,18 @@ export function PilotActivation({
                 'whatsappConnectedAndVerified',
                 'WhatsApp number is connected and verified',
               ],
+              [
+                'publishedKnowledge',
+                'Published FAQs or products are available',
+              ],
+              ['assistantConfigured', 'Assistant settings have been saved'],
               ['pilotApproved', 'Kleva pilot approval is active'],
               [
                 'approvalMatchesConnection',
                 'Approval covers the current WhatsApp number',
               ],
               ['aiResponsesEnabled', 'AI responses are enabled for this pilot'],
+              ['usageQuotaReady', 'AI and WhatsApp usage quota is available'],
             ].map(([key, label]) => {
               const complete =
                 prerequisites[key as keyof typeof prerequisites] === true;
@@ -142,7 +170,7 @@ export function PilotActivation({
           </p>
         )}
 
-        {canEnroll && (
+        {canEnroll && automationStatus === 'READY' && (
           <form
             action={requestPilotReviewFromDashboard}
             className={styles.form}

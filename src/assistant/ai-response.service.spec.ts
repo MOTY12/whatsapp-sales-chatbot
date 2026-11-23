@@ -31,6 +31,9 @@ const initial = () => ({
   connection_status: 'active',
   verified_at: new Date(),
   pilot_approved: true,
+  has_newer_inbound: false,
+  published_knowledge_ready: true,
+  assistant_configured: true,
 });
 
 describe('AiResponseService', () => {
@@ -56,6 +59,7 @@ describe('AiResponseService', () => {
       customerMessage?: string;
       toolCall?: unknown;
       tools?: { qualificationFields: jest.Mock; execute: jest.Mock };
+      memory?: { prepare: jest.Mock };
     } = {},
   ) {
     const state = initial();
@@ -88,6 +92,10 @@ describe('AiResponseService', () => {
             },
           ];
         }
+        if (sql.includes('FROM public.knowledge_faqs'))
+          return [{ current: true }];
+        if (sql.includes('FROM public.merchant_products'))
+          return [{ current: true }];
         return [];
       },
       createQueryRunner() {
@@ -169,6 +177,7 @@ describe('AiResponseService', () => {
       outbound as never,
       modelAdapter,
       options.tools as never,
+      options.memory as never,
     );
     return { service, usage, outbound, state, modelAdapter };
   }
@@ -241,6 +250,29 @@ describe('AiResponseService', () => {
       }),
     );
     expect(outbound.enqueueTextMessage).not.toHaveBeenCalled();
+  });
+
+  it('passes bounded conversation context for multi-turn reference resolution', async () => {
+    const history = [
+      { role: 'customer', content: 'How much is the Samsung A15?' },
+      { role: 'assistant', content: 'The published price is NGN 180,000.' },
+    ];
+    const memory = {
+      prepare: jest.fn().mockResolvedValue({
+        history,
+        summary: 'Customer asked about Samsung A15 price.',
+        conversationVersion: '1',
+      }),
+    };
+    const { service, modelAdapter } = fixture({ memory });
+    const generate = jest.spyOn(modelAdapter, 'generate');
+    await service.execute(operation());
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        history,
+        conversationSummary: 'Customer asked about Samsung A15 price.',
+      }),
+    );
   });
 
   it('suppresses the response if a merchant takes over during model generation', async () => {

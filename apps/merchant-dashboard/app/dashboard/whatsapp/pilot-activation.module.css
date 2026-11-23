@@ -28,10 +28,15 @@
 
 .description,
 .notice,
-.active span {
+.active span,
+.status {
   margin: 0;
   color: #60716b;
   line-height: 1.55;
+}
+
+.status {
+  margin: 0;
 }
 
 .notice,

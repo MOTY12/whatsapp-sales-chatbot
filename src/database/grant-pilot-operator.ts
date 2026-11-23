@@ -18,7 +18,7 @@ async function grant() {
     await source.initialize();
     await source.query(`GRANT USAGE ON SCHEMA public TO "${role}"`);
     await source.query(
-      `GRANT EXECUTE ON FUNCTION public.kleva_pilot_activate(uuid,text) TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION public.kleva_pilot_activate(uuid,text,integer,integer,integer,integer) TO "${role}"`,
     );
     console.log('Pilot operator may execute the scoped activation function.');
   } catch {

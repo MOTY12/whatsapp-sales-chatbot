@@ -125,6 +125,7 @@ export const leadFunctions = [
 ];
 export const pilotFunctions = [
   'kleva_pilot_status()',
+  'kleva_pilot_readiness()',
   'kleva_pilot_enroll(uuid,text,boolean,boolean)',
   'kleva_pilot_revoke(uuid)',
 ];

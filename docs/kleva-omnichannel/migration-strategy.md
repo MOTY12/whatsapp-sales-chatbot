@@ -26,3 +26,7 @@ CHANNEL-001 adds no public route and does not switch existing traffic. Confirm p
 ## TENANT-004 credential cutover
 
 Run supervised re-verification per business and retain legacy records during staging checks. Once a secure binding exists, routing and sending enforce the secure lifecycle and never fall back to that business's plaintext token. See the [deployment and rollback procedure](../kleva-mvp-30d/whatsapp-connection-api.md#deployment).
+
+## AGENT-001 conversation memory and readiness
+
+Migration `AgentActivationAndMemory1760000000028` adds `conversation_summaries` with forced RLS, composite tenant foreign keys, a 900-character summary cap, timestamp/message watermark and positive revision. Runtime access is limited to SELECT/INSERT/UPDATE; merchant and identity roles receive no grants. It also adds the role-checked `kleva_pilot_readiness()` function, tightens operator activation to current business/WhatsApp/knowledge/configuration/quota prerequisites, and fences tool execution against stale AI runs and newer customer turns. The migration is additive and does not edit earlier migrations. Apply to staging after a production backup and migration-role preflight. Rollback is intentionally refused if durable summary rows exist; preserve the forward schema or archive summaries through an approved retention procedure before rollback. See [pilot API](../kleva-mvp-30d/merchant-pilot-api.md).

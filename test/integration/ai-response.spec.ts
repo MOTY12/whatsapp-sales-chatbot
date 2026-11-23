@@ -68,6 +68,14 @@ describe('grounded WhatsApp AI response processing', () => {
        VALUES ($1,$2,$3,'pilot-merchant-v1',now(),now(),'ACTIVE',now(),'integration-fixture','evidence:fixture')`,
       [tenant.business.id, connection.id, pilotAccount.id],
     );
+    await admin.query(
+      `INSERT INTO public.assistant_configurations
+        (business_id,version,assistant_name,greeting,tone,language,response_length,
+         handoff_behavior,fallback_response,updated_by)
+       VALUES ($1,1,'Kleva Assistant','Hello!','FRIENDLY','ENGLISH','BALANCED',
+         'OFFER_HUMAN','I can connect you with the team.', $2)`,
+      [tenant.business.id, pilotAccount.id],
+    );
     const usage = new UsageService(runtime);
     await usage.setBusinessLimits(tenant.business.id, {
       monthlyWhatsAppMessages: 5,
@@ -76,7 +84,9 @@ describe('grounded WhatsApp AI response processing', () => {
       aiTokensPerRequest: 4000,
     });
     const cloud = {
-      sendTextMessage: jest.fn().mockResolvedValue(`wamid.${randomUUID()}`),
+      sendTextMessage: jest
+        .fn()
+        .mockImplementation(async () => `wamid.${randomUUID()}`),
     };
     const outbound = new OutboundMessageService(
       runtime,
@@ -222,6 +232,83 @@ describe('grounded WhatsApp AI response processing', () => {
       },
     });
 
+    const staleRunId = randomUUID();
+    const [staleMessage] = await admin.query<{ id: string }[]>(
+      `INSERT INTO public.messages
+        ("businessId","conversationId",direction,content,status,"whatsappMessageId",metadata)
+       VALUES ($1,$2,'inbound','Can you tell me about the fan?','delivered',$3,'{}') RETURNING id`,
+      [tenant.business.id, tenant.conversation.id, randomUUID()],
+    );
+    const [staleLead] = await admin.query<{ id: string }[]>(
+      `SELECT id FROM public.merchant_leads WHERE business_id=$1 AND conversation_id=$2`,
+      [tenant.business.id, tenant.conversation.id],
+    );
+    await admin.query(
+      `INSERT INTO public.ai_response_runs(id,business_id,inbound_message_id,conversation_id,lead_id,authorized_control_version)
+       VALUES ($1,$2,$3,$4,$5,1)`,
+      [
+        staleRunId,
+        tenant.business.id,
+        staleMessage.id,
+        tenant.conversation.id,
+        staleLead.id,
+      ],
+    );
+    const staleOperation = {
+      id: staleRunId,
+      businessId: tenant.business.id,
+      operation: 'whatsapp.ai_response',
+      metadata: { aiResponseRunId: staleRunId },
+    } as unknown as OutboxOperation;
+    await service.execute(staleOperation);
+    const [staleRun] = await admin.query<{ outbound_message_id: string }[]>(
+      'SELECT outbound_message_id FROM public.ai_response_runs WHERE id=$1',
+      [staleRunId],
+    );
+    expect(staleRun.outbound_message_id).toBeTruthy();
+    // Keep this dispatch-fence scenario deterministic even when the retrieval
+    // fixture chooses a handoff for this follow-up turn.
+    await admin.query(
+      'UPDATE public.ai_response_runs SET evidence=$2 WHERE id=$1 AND business_id=$3',
+      [
+        staleRunId,
+        JSON.stringify([
+          {
+            sourceId: productId,
+            revisionId,
+            sourceType: 'PRODUCT',
+          },
+        ]),
+        tenant.business.id,
+      ],
+    );
+    const replacementRevisionId = randomUUID();
+    await admin.query(
+      `INSERT INTO public.merchant_product_revisions
+         (id,business_id,product_id,revision,name,description,sku,price,currency,availability)
+       VALUES ($1,$2,$3,2,'Quiet standing fan','Quiet standing fan with remote control. The price is 25,000 NGN.','FAN-01',25000,'NGN','IN_STOCK')`,
+      [replacementRevisionId, tenant.business.id, productId],
+    );
+    await admin.query(
+      'UPDATE public.merchant_products SET draft_revision_id=$3,published_revision_id=$3,published_at=now() WHERE id=$1 AND business_id=$2',
+      [productId, tenant.business.id, replacementRevisionId],
+    );
+    const [staleOutboundOperation] = await runtime
+      .getRepository(OutboxOperation)
+      .findBy({ id: staleRun.outbound_message_id });
+    await outbound.execute(staleOutboundOperation);
+    const [suppressed] = await admin.query<
+      { status: string; last_error: string }[]
+    >(
+      'SELECT status,last_error FROM public.whatsapp_outbound_messages WHERE id=$1 AND business_id=$2',
+      [staleRun.outbound_message_id, tenant.business.id],
+    );
+    expect(suppressed).toEqual({
+      status: 'SUPPRESSED',
+      last_error: 'PUBLISHED_EVIDENCE_CHANGED',
+    });
+    expect(cloud.sendTextMessage).toHaveBeenCalledTimes(1);
+
     const fallbackRunId = randomUUID();
     const [fallbackMessage] = await admin.query<{ id: string }[]>(
       `INSERT INTO public.messages
@@ -229,7 +316,7 @@ describe('grounded WhatsApp AI response processing', () => {
        VALUES ($1,$2,'inbound','Can you deliver this tomorrow?','delivered',$3,'{}') RETURNING id`,
       [tenant.business.id, tenant.conversation.id, randomUUID()],
     );
-    const [lead] = await admin.query<{ id: string }[]>(
+    const [fallbackLead] = await admin.query<{ id: string }[]>(
       `SELECT id FROM public.merchant_leads WHERE business_id=$1 AND conversation_id=$2`,
       [tenant.business.id, tenant.conversation.id],
     );
@@ -241,7 +328,7 @@ describe('grounded WhatsApp AI response processing', () => {
         tenant.business.id,
         fallbackMessage.id,
         tenant.conversation.id,
-        lead.id,
+        fallbackLead.id,
       ],
     );
     await admin.query(

@@ -12,6 +12,7 @@ import { OutboundModule } from '../whatsapp/outbound.module';
 import { AiResponseService } from './ai-response.service';
 import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
+import { SupportAgentModule } from '../support-agent/support-agent.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AgentToolsModule } from '../agent-tools/agent-tools.module';
     UsageModule,
     OutboundModule,
     AgentToolsModule,
+    SupportAgentModule,
   ],
   providers: [
     AssistantService,

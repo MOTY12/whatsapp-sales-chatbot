@@ -410,17 +410,12 @@ V1 mapping and adaptation. Grounded generation and read-only playground. The pil
 
 ### AGENT-001 · Enable grounded WhatsApp answers with bounded memory · Large
 
-V1 mapping and adaptation. Provider-neutral orchestrator processes WhatsApp first. Integrate grounded catalog recommendations and opt-in qualification via bounded tools.
+**Status: Verified locally; staging remains blocked.** Provider-neutral WhatsApp AI now combines at most eight prior public messages (1,800 characters) with a durable extractive summary (900 characters and message/time watermark), retrieves only current published tenant evidence, and asks for clarification when context is ambiguous. It rechecks active business, verified connection, operator-approved pilot, saved assistant configuration, global AI enablement, usage allowance, current source revision, control version and newer customer turns before tools and outbound work. The existing strict typed tool registry remains the only model-proposed effect boundary. Owners submit explicit pilot consent and can revoke; Kleva operator approval remains required before automation.
 
-- **Objective.** Send customer answers and hand off when evidence is weak. Missing.
-- **Reuse and likely changes.** Inbound worker, support-agent, inbox and src/database/repositories/message.repository.ts → customer orchestrator, conversation summary job and send checks.
-- **Implementation.** Use latest public turns and summary watermark, run RAG, disclose AI identity, handle clarification and fallback, create handoff on request or repeated failure, check source freshness and mode/sequence before send, and reserve tenant budget atomically. Default automation off. Owner opt-in requires published knowledge and inbox readiness.
-- **Database and API.** **DB.** ConversationSummary, AI run/reply key and coverage watermark. **API.** Activation and safe run metadata.
-- **Dependencies.** RAG-002, INBOX-002, TOOLS-001. **External services.** Approved model provider and staged WhatsApp assets.
-- **Security.** Never include private notes or another tenant’s data. Model output has no direct write/send authority.
-- **Acceptance and required tests.** Two-turn English/Pidgin reply, grounded citations, unsupported handoff, provider outage and late stale reply cancellation.
-- **Verify.** npm run test:integration -- whatsapp-support and npm test -- support-agent.
-- **Done.** Staging opt-in delivers grounded answers with bounded usage and reversible human control.
+- **Database and API.** Additive `AgentActivationAndMemory1760000000028` migration; forced-RLS `conversation_summaries`; `GET /merchant/businesses/:businessId/pilot`, owner-only enrollment and revoke routes. See [pilot API](../kleva-mvp-30d/merchant-pilot-api.md).
+- **Security.** Memory contains public conversation messages only; it excludes internal notes and other tenants. Model output has no direct write/send authority. Stale tool starts/completions, stale replies and superseded inbound turns are rejected.
+- **Local verification.** 108 backend unit tests, 13 focused disposable PostgreSQL memory/tool/migration/AI-pipeline tests, 33 dashboard tests, 24 Playwright journeys, backend build/lint, dashboard typecheck/lint/build. A broad integration run hit HTTP 503 responses from the auth tenant OIDC fixture; Redis-dependent tests require a separate loopback service. Live model and Meta provider behavior were not exercised.
+- **Remaining release gates.** Run owner/operator activation and revocation drills in staging; evaluate live provider responses and delivery; confirm customer opt-out, retention/deletion, legal and Meta AI-use approvals; size performance under an agreed pilot load. Not production-ready on local fixtures alone.
 
 ### LEARNING-001 · Capture feedback and group redacted gaps · Medium
 

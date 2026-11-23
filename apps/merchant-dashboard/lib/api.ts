@@ -58,13 +58,19 @@ export type MerchantPilotStatus = {
   connection_id?: string | null;
   consent_version?: string | null;
   status?: 'NOT_ENROLLED' | 'PENDING_REVIEW' | 'ACTIVE' | 'REVOKED';
+  automation_status?: 'OFF' | 'PENDING_APPROVAL' | 'READY' | 'ACTIVE';
+  activation_ready?: boolean;
+  human_takeover_count?: number;
   assistant_ready?: boolean;
   prerequisites?: {
     businessActive: boolean;
     whatsappConnectedAndVerified: boolean;
+    publishedKnowledge: boolean;
+    assistantConfigured: boolean;
     pilotApproved: boolean;
     approvalMatchesConnection: boolean;
     aiResponsesEnabled: boolean;
+    usageQuotaReady: boolean;
   };
 };
 

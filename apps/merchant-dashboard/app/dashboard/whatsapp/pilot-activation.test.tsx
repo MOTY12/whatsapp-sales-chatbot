@@ -16,6 +16,22 @@ const connection: WhatsAppStatus = {
   status: 'active',
   connectionState: 'connected',
 };
+const readyPilot = {
+  status: 'NOT_ENROLLED' as const,
+  automation_status: 'READY' as const,
+  activation_ready: true,
+  human_takeover_count: 0,
+  prerequisites: {
+    businessActive: true,
+    whatsappConnectedAndVerified: true,
+    publishedKnowledge: true,
+    assistantConfigured: true,
+    pilotApproved: false,
+    approvalMatchesConnection: false,
+    aiResponsesEnabled: true,
+    usageQuotaReady: true,
+  },
+};
 
 describe('merchant AI pilot activation', () => {
   it('lets the owner acknowledge disclosures after backend verification', () => {
@@ -24,7 +40,7 @@ describe('merchant AI pilot activation', () => {
         businessId={businessId}
         canManage
         connection={connection}
-        pilot={{ status: 'NOT_ENROLLED' }}
+        pilot={readyPilot}
         pilotAvailable
       />,
     );
@@ -122,13 +138,18 @@ describe('merchant AI pilot activation', () => {
         connection={connection}
         pilot={{
           status: 'ACTIVE',
+          automation_status: 'OFF',
           assistant_ready: false,
+          human_takeover_count: 2,
           prerequisites: {
             businessActive: true,
             whatsappConnectedAndVerified: true,
+            publishedKnowledge: true,
+            assistantConfigured: true,
             pilotApproved: true,
             approvalMatchesConnection: true,
             aiResponsesEnabled: false,
+            usageQuotaReady: true,
           },
         }}
         pilotAvailable
@@ -142,5 +163,32 @@ describe('merchant AI pilot activation', () => {
     expect(checks.querySelector('[data-complete="false"]')).toHaveTextContent(
       'AI responses are enabled for this pilot',
     );
+    expect(screen.getByText('OFF')).toBeTruthy();
+    expect(screen.getByText(/Human takeover conversations: 2/)).toBeTruthy();
+  });
+
+  it('shows READY only from backend state before review and keeps activation off when quota is missing', () => {
+    const pilot = {
+      ...readyPilot,
+      automation_status: 'OFF' as const,
+      activation_ready: false,
+      prerequisites: { ...readyPilot.prerequisites, usageQuotaReady: false },
+    };
+    render(
+      <PilotActivation
+        businessId={businessId}
+        canManage
+        connection={connection}
+        pilot={pilot}
+        pilotAvailable
+      />,
+    );
+    expect(screen.getByText('OFF')).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Request pilot activation' }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/AI and WhatsApp usage quota is available/),
+    ).toBeTruthy();
   });
 });

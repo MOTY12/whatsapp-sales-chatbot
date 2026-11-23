@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { aiResponsesEnabled } from '../config/env';
+import { UsageService } from '../metering/usage.service';
 import type { MerchantPrincipal } from './auth.service';
 import { MerchantAccess } from './merchant-access.service';
 
@@ -26,44 +27,93 @@ type PilotEnrollment = {
 
 @Injectable()
 export class MerchantPilotService {
-  constructor(private readonly access: MerchantAccess) {}
+  constructor(
+    private readonly access: MerchantAccess,
+    private readonly usage: UsageService,
+  ) {}
 
   status(actor: MerchantPrincipal, businessId: string) {
-    return this.access.withBusiness(
-      actor,
-      businessId,
-      'business.read',
-      async (manager) => {
+    return this.access
+      .withBusiness(actor, businessId, 'business.read', async (manager) => {
         const [row] = await manager.query<PilotStatus[]>(
           'SELECT * FROM public.kleva_pilot_status()',
         );
-        const [connection] = await manager.query<
-          { id: string; status: string }[]
-        >('SELECT id, status FROM public.kleva_whatsapp_status()');
-        const [business] = await manager.query<{ status: string }[]>(
-          'SELECT status FROM public.kleva_read_merchant_profile()',
-        );
-        const connectionActive = connection?.status === 'active';
-        const pilotApproved = row?.status === 'ACTIVE';
-        const approvalMatchesConnection =
-          pilotApproved && connection?.id === row.connection_id;
-        const prerequisites = {
-          businessActive: business?.status === 'active',
-          whatsappConnectedAndVerified: connectionActive,
-          pilotApproved,
-          approvalMatchesConnection,
-          aiResponsesEnabled: aiResponsesEnabled(),
-        };
+        const [readiness] = await manager.query<
+          {
+            business_active: boolean;
+            connection_id: string | null;
+            whatsapp_verified: boolean;
+            published_knowledge: boolean;
+            assistant_configured: boolean;
+            pilot_approved: boolean;
+            approval_matches_connection: boolean;
+            human_takeover_count: number | string;
+          }[]
+        >('SELECT * FROM public.kleva_pilot_readiness()');
         return {
           ...(row ?? { enrollment_id: null, status: 'NOT_ENROLLED' }),
-          prerequisites,
-          assistant_ready: Object.values(prerequisites).every(Boolean),
+          connection_id: readiness?.connection_id ?? null,
+          human_takeover_count: Number(readiness?.human_takeover_count ?? 0),
+          prerequisites: {
+            businessActive: readiness?.business_active === true,
+            whatsappConnectedAndVerified: readiness?.whatsapp_verified === true,
+            publishedKnowledge: readiness?.published_knowledge === true,
+            assistantConfigured: readiness?.assistant_configured === true,
+            pilotApproved: readiness?.pilot_approved === true,
+            approvalMatchesConnection:
+              readiness?.approval_matches_connection === true,
+            aiResponsesEnabled: aiResponsesEnabled(),
+            usageQuotaReady: false,
+          },
         };
-      },
-    );
+      })
+      .then(async (result) => {
+        const usage = await this.usage.getUsageSummary(businessId);
+        const aiRequestAllowance =
+          await this.usage.hasAiRequestAllowance(businessId);
+        const usageQuotaReady =
+          aiRequestAllowance &&
+          usage.categories.ai_input_tokens.remaining > 0 &&
+          usage.categories.ai_output_tokens.remaining > 0 &&
+          usage.categories.whatsapp_outbound.remaining > 0;
+        const prerequisites = {
+          ...result.prerequisites,
+          usageQuotaReady,
+        };
+        const activationReady =
+          prerequisites.businessActive &&
+          prerequisites.whatsappConnectedAndVerified &&
+          prerequisites.publishedKnowledge &&
+          prerequisites.assistantConfigured &&
+          prerequisites.aiResponsesEnabled &&
+          prerequisites.usageQuotaReady;
+        const assistantReady =
+          activationReady &&
+          prerequisites.pilotApproved &&
+          prerequisites.approvalMatchesConnection;
+        const approvalMismatch =
+          prerequisites.pilotApproved &&
+          !prerequisites.approvalMatchesConnection;
+        const automationStatus = assistantReady
+          ? 'ACTIVE'
+          : approvalMismatch
+            ? 'OFF'
+            : result.status === 'PENDING_REVIEW'
+              ? 'PENDING_APPROVAL'
+              : activationReady
+                ? 'READY'
+                : 'OFF';
+        return {
+          ...result,
+          prerequisites,
+          activation_ready: activationReady,
+          assistant_ready: assistantReady,
+          automation_status: automationStatus,
+        };
+      });
   }
 
-  enroll(actor: MerchantPrincipal, businessId: string, body: unknown) {
+  async enroll(actor: MerchantPrincipal, businessId: string, body: unknown) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new BadRequestException('Invalid pilot enrollment.');
     }
@@ -88,6 +138,11 @@ export class MerchantPilotService {
         'Complete all required pilot acknowledgments.',
       );
     }
+    const readiness = await this.status(actor, businessId);
+    if (!readiness.activation_ready)
+      throw new BadRequestException(
+        'Complete all AI activation requirements before requesting pilot approval.',
+      );
     return this.access.withBusiness(
       actor,
       businessId,

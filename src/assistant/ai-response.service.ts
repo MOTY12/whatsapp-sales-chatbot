@@ -27,6 +27,7 @@ import {
 } from './assistant-preferences';
 import { AgentToolExecutor } from '../agent-tools/agent-tool-executor.service';
 import { agentToolRegistry } from '../agent-tools/tool-registry';
+import { ConversationMemoryService } from '../support-agent/conversation-memory.service';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 const inputBudget = 3600;
@@ -51,6 +52,9 @@ type RunRow = {
   connection_status: string;
   verified_at: Date | null;
   pilot_approved: boolean;
+  has_newer_inbound: boolean;
+  published_knowledge_ready: boolean;
+  assistant_configured: boolean;
 };
 
 @Injectable()
@@ -63,6 +67,7 @@ export class AiResponseService {
     private readonly outbound: OutboundMessageService,
     @Inject(GROUNDED_MODEL) private readonly model: GroundedModel,
     @Optional() private readonly tools?: AgentToolExecutor,
+    @Optional() private readonly memory?: ConversationMemoryService,
   ) {}
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
@@ -120,15 +125,21 @@ export class AiResponseService {
       const humanTakeover = row.control_mode === 'HUMAN';
       await this.finish(
         row,
-        humanTakeover ? 'SKIPPED' : 'HANDOFF_REQUIRED',
+        humanTakeover || row.has_newer_inbound ? 'SKIPPED' : 'HANDOFF_REQUIRED',
         humanTakeover
           ? 'HUMAN_TAKEOVER'
-          : !row.pilot_approved
-            ? 'PILOT_APPROVAL_REQUIRED'
-            : 'BUSINESS_OR_CONNECTION_INACTIVE',
+          : row.has_newer_inbound
+            ? 'NEWER_CUSTOMER_TURN'
+            : !row.pilot_approved
+              ? 'PILOT_APPROVAL_REQUIRED'
+              : !row.published_knowledge_ready || !row.assistant_configured
+                ? 'AI_SETUP_INCOMPLETE'
+                : 'BUSINESS_OR_CONNECTION_INACTIVE',
       );
       this.log(
-        humanTakeover ? 'AI_SKIPPED_HUMAN_TAKEOVER' : 'AI_HANDOFF_REQUIRED',
+        humanTakeover || row.has_newer_inbound
+          ? 'AI_RESPONSE_SUPPRESSED'
+          : 'AI_HANDOFF_REQUIRED',
         row,
       );
       return;
@@ -147,9 +158,23 @@ export class AiResponseService {
         : 'GENERATED';
     let errorCategory: string | null = row.error_category;
     if (row.status !== 'GENERATED') {
+      let memory: Awaited<ReturnType<ConversationMemoryService['prepare']>>;
+      try {
+        memory = this.memory
+          ? await this.memory.prepare(runId)
+          : {
+              history: [],
+              conversationVersion: String(row.control_version),
+            };
+      } catch {
+        await this.finish(row, 'SKIPPED', 'NEWER_CUSTOMER_TURN');
+        this.log('AI_RESPONSE_SUPPRESSED', row, 'NEWER_CUSTOMER_TURN');
+        return;
+      }
+      const retrievalQuery = this.retrievalQuery(row.customer_message, memory);
       const retrieval = await this.retrieval.retrieve({
         businessId: row.business_id,
-        query: row.customer_message.slice(0, 256),
+        query: retrievalQuery,
         limit: 5,
       });
       evidence = retrieval.evidence;
@@ -169,8 +194,8 @@ export class AiResponseService {
         errorCategory = retrieval.reason ?? 'INSUFFICIENT_EVIDENCE';
         reply = fallbackMessage;
       } else if (!this.isAuthorized(await this.load(runId, row.business_id))) {
-        await this.finish(row, 'SKIPPED', 'HUMAN_TAKEOVER');
-        this.log('AI_SKIPPED_HUMAN_TAKEOVER', row);
+        await this.finish(row, 'SKIPPED', 'STALE_CONVERSATION');
+        this.log('AI_RESPONSE_SUPPRESSED', row, 'STALE_CONVERSATION');
         return;
       } else {
         const estimateInput = Math.min(
@@ -183,6 +208,11 @@ export class AiResponseService {
                   (sum, item) => sum + item.content.length + item.title.length,
                   0,
                 ) +
+                memory.history.reduce(
+                  (sum, turn) => sum + turn.content.length,
+                  0,
+                ) +
+                (memory.summary?.length ?? 0) +
                 1400) /
                 3,
             ),
@@ -211,6 +241,8 @@ export class AiResponseService {
               : [];
           const generated = await this.model.generate({
             message: row.customer_message,
+            history: memory.history,
+            conversationSummary: memory.summary,
             assistant: configuredAssistant,
             approvedTools: agentToolRegistry.map(
               ({ name, version, description, input }) => ({
@@ -357,6 +389,15 @@ export class AiResponseService {
               this.log('AI_RESPONSE_REJECTED', row, validation.reason);
             }
           }
+          if (
+            status === 'GENERATED' &&
+            evidence.length > 0 &&
+            !(await this.evidenceIsCurrent(row.business_id, evidence))
+          ) {
+            status = 'HANDOFF_REQUIRED';
+            errorCategory = 'PUBLISHED_EVIDENCE_CHANGED';
+            reply = fallbackMessage;
+          }
         } catch (error) {
           // Provider timeouts have uncertain usage; conservatively consume the reservation.
           await this.usage.commitAiTokens(row.business_id, row.id);
@@ -428,6 +469,18 @@ export class AiResponseService {
         errorCategory,
       );
     } catch (error) {
+      if (
+        error instanceof OutboundPolicyError &&
+        error.reason === 'NEWER_CUSTOMER_TURN'
+      ) {
+        await this.database.query(
+          `UPDATE public.ai_response_runs SET status='SKIPPED',error_category='NEWER_CUSTOMER_TURN',
+            updated_at=now(),completed_at=now() WHERE id=$1 AND business_id=$2 AND status='GENERATED'`,
+          [runId, row.business_id],
+        );
+        this.log('AI_RESPONSE_SUPPRESSED', row, 'NEWER_CUSTOMER_TURN');
+        return;
+      }
       const category =
         error instanceof UsageLimitExceededError
           ? 'WHATSAPP_MESSAGE_QUOTA'
@@ -450,7 +503,15 @@ export class AiResponseService {
         c."whatsappId" AS recipient,v.control_mode,v.control_version,b.status AS business_status,
         ch.status AS connection_status,ch."verifiedAt" AS verified_at,
         EXISTS (SELECT 1 FROM public.business_pilot_enrollments p
-          WHERE p.business_id=a.business_id AND p.connection_id=ch.id AND p.status='ACTIVE') AS pilot_approved
+          WHERE p.business_id=a.business_id AND p.connection_id=ch.id AND p.status='ACTIVE') AS pilot_approved,
+        EXISTS (SELECT 1 FROM public.messages newer
+          WHERE newer."businessId"=a.business_id AND newer."conversationId"=a.conversation_id
+            AND newer.direction='inbound' AND (newer."createdAt",newer.id)>(m."createdAt",m.id)) AS has_newer_inbound,
+        (EXISTS (SELECT 1 FROM public.knowledge_faqs f
+          WHERE f.business_id=a.business_id AND f.published_revision_id IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM public.merchant_products p
+          WHERE p.business_id=a.business_id AND p.published_revision_id IS NOT NULL)) AS published_knowledge_ready,
+        EXISTS (SELECT 1 FROM public.assistant_configurations ac WHERE ac.business_id=a.business_id) AS assistant_configured
        FROM public.ai_response_runs a JOIN public.messages m ON m.id=a.inbound_message_id AND m."businessId"=a.business_id
        JOIN public.conversations v ON v.id=a.conversation_id AND v."businessId"=a.business_id
        JOIN public.customers c ON c.id=v."customerId" AND c."businessId"=a.business_id
@@ -503,9 +564,46 @@ export class AiResponseService {
       row.connection_status === 'active' &&
       row.verified_at &&
       row.pilot_approved === true &&
+      row.has_newer_inbound !== true &&
+      row.published_knowledge_ready === true &&
+      row.assistant_configured === true &&
       row.control_mode === 'AUTO' &&
       String(row.control_version) === String(row.authorized_control_version),
     );
+  }
+
+  private retrievalQuery(
+    currentMessage: string,
+    memory: Awaited<ReturnType<ConversationMemoryService['prepare']>>,
+  ) {
+    return [
+      ...(memory.summary ? [memory.summary] : []),
+      ...memory.history.slice(-4).map((turn) => turn.content),
+      currentMessage,
+    ]
+      .join('\n')
+      .slice(-1200);
+  }
+
+  private async evidenceIsCurrent(
+    businessId: string,
+    evidence: EvidenceItem[],
+  ) {
+    for (const item of evidence) {
+      const query =
+        item.sourceType === 'FAQ'
+          ? `SELECT EXISTS (SELECT 1 FROM public.knowledge_faqs f
+              WHERE f.business_id=$1 AND f.id=$2 AND f.published_revision_id=$3) AS current`
+          : `SELECT EXISTS (SELECT 1 FROM public.merchant_products p
+              WHERE p.business_id=$1 AND p.id=$2 AND p.published_revision_id=$3) AS current`;
+      const [row] = await this.database.query<{ current: boolean }[]>(query, [
+        businessId,
+        item.sourceId,
+        item.revisionId,
+      ]);
+      if (row?.current !== true) return false;
+    }
+    return true;
   }
 
   private async finish(row: RunRow, status: string, category: string) {

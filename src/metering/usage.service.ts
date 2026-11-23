@@ -450,6 +450,11 @@ export class UsageService {
     return { businessId, periodStart: period, categories: summaries };
   }
 
+  async hasAiRequestAllowance(businessId: string): Promise<boolean> {
+    this.validateBusinessId(businessId);
+    return (await this.getLimits(businessId)).aiTokensPerRequest > 0;
+  }
+
   async getRemainingAllowance(
     businessId: string,
     category: UsageCategory,

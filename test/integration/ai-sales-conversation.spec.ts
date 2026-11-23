@@ -196,6 +196,14 @@ describe('first complete grounded WhatsApp sales conversation', () => {
       [businessId, connectionId, account.id],
     );
     await admin.query(
+      `INSERT INTO public.assistant_configurations
+        (business_id,version,assistant_name,greeting,tone,language,response_length,
+         handoff_behavior,fallback_response,updated_by)
+       VALUES ($1,1,'Kleva Assistant','Hello!','FRIENDLY','ENGLISH','BALANCED',
+         'OFFER_HUMAN','I can connect you with the team.', $2)`,
+      [businessId, account.id],
+    );
+    await admin.query(
       `UPDATE public.conversations SET control_mode='AUTO',control_version=1 WHERE id=$1 AND "businessId"=$2`,
       [conversationId, businessId],
     );

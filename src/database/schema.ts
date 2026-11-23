@@ -64,6 +64,7 @@ import { MerchantLeadConversion } from './entities/merchant-lead-conversion.enti
 import { AgentToolExecution } from './entities/agent-tool-execution.entity';
 import { AgentToolHandoffEvent } from './entities/agent-tool-handoff-event.entity';
 import { AgentToolExecution1760000000027 } from './migrations/1760000000027-AgentToolExecution';
+import { AgentActivationAndMemory1760000000028 } from './migrations/1760000000028-AgentActivationAndMemory';
 
 export const databaseEntities = [
   Business,
@@ -126,4 +127,5 @@ export const databaseMigrations = [
   MerchantAiPlayground1760000000025,
   LeadQualification1760000000026,
   AgentToolExecution1760000000027,
+  AgentActivationAndMemory1760000000028,
 ];
