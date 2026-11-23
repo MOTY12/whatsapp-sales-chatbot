@@ -25,6 +25,8 @@ async function openInbox(page: Page) {
   await page.goto(`/dashboard/conversations?businessId=${businessId}`);
   await expect(page.getByRole('heading', { name: 'Conversations' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Amina Yusuf/ })).toBeVisible();
+  await page.getByRole('button', { name: /Amina Yusuf/ }).click();
+  await expect(page.getByLabel('Message history')).toBeVisible();
 }
 
 test('hydrates without app warnings in an extension-free browser', async ({ page }) => {
@@ -61,6 +63,35 @@ test('lists conversations, loads history, and paginates older messages without l
   await expect(history.getByText('Fixture customer message 31')).toBeVisible();
 });
 
+test('filters and searches conversations, assigns teammates, records private notes, and resolves threads', async ({ page }) => {
+  await signInAndCreateBusiness(page);
+  await page.goto(`/dashboard/conversations?businessId=${businessId}`);
+  await expect(page.getByRole('button', { name: /Amina Yusuf/ })).toBeVisible();
+  await expect(page.getByText('2 unread')).toBeVisible();
+  await page.getByRole('button', { name: /Amina Yusuf/ }).click();
+  const thread = page.getByLabel('Message history');
+  await expect(thread.getByText('Fixture customer message 31')).toBeVisible();
+  await expect(page.getByText('+234 803 555 0101').first()).toBeVisible();
+
+  await page.getByLabel('Assign conversation').selectOption('fixture-account');
+  await page.getByText('Internal notes').click();
+  await page.getByLabel('Add internal note').fill('Call after 3 PM.');
+  await page.getByRole('button', { name: 'Add note' }).click();
+  await expect(page.getByText('Call after 3 PM.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Resolve' }).click();
+  await expect(page.getByRole('button', { name: 'Reopen' })).toBeVisible();
+  await page.getByRole('button', { name: 'Reopen' }).click();
+  await expect(page.getByRole('button', { name: 'Resolve' })).toBeVisible();
+
+  await page.getByLabel('Search conversations').fill('Amina');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await expect(page.getByRole('button', { name: /Amina Yusuf/ })).toBeVisible();
+  await page.getByLabel('Filter conversations by status').selectOption('closed');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await expect(page.getByText('No conversations yet')).toBeVisible();
+});
+
 test('takes over, queues one idempotent manual reply, and resumes automation', async ({ page, request }) => {
   await signInAndCreateBusiness(page);
   await openInbox(page);
@@ -83,6 +114,7 @@ test('takes over, queues one idempotent manual reply, and resumes automation', a
   }, { businessId, conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
   expect(releaseStatus).toBe(200);
   await page.reload();
+  await page.getByRole('button', { name: /Amina Yusuf/ }).click();
   await expect(page.getByRole('button', { name: 'Take over conversation' })).toBeVisible();
   await expect(page.getByText('Automation is paused.')).toHaveCount(0);
 });

@@ -52,6 +52,10 @@ let productKeys = new Map();
 let productCreateRequests = 0;
 let onboardingStep = 'business_profile';
 let onboardingCompletedSteps = [];
+let internalNotes = [];
+let assignedAccountId = null;
+let conversationStatus = 'open';
+let unreadCount = 2;
 
 function reset(search = new URLSearchParams()) {
   created = false;
@@ -76,6 +80,10 @@ function reset(search = new URLSearchParams()) {
   productCreateRequests = 0;
   onboardingStep = 'business_profile';
   onboardingCompletedSteps = [];
+  internalNotes = [];
+  assignedAccountId = null;
+  conversationStatus = 'open';
+  unreadCount = 2;
   const now = Date.now();
   messages = Array.from({ length: 31 }, (_, index) => {
     const inbound = index % 2 === 0;
@@ -121,10 +129,12 @@ function listItems(businessId) {
       customer_whatsapp_id: '+234 803 555 0101',
       last_activity: first?.created_at ?? changedAt,
       preview: first?.content ?? null,
-      status: 'open',
+      status: conversationStatus,
       control_mode: mode,
       control_version: 2,
       in_flight: String(controlInFlight),
+      assigned_to_account_id: assignedAccountId,
+      unread_count: String(unreadCount),
     },
     {
       id: SECOND_CONVERSATION_ID,
@@ -147,7 +157,7 @@ function detail(conversationId, businessId) {
     conversationId !== CONVERSATION_ID
   )
     return null;
-  return { ...listItems(businessId)[0], control_changed_at: changedAt };
+  return { ...listItems(businessId)[0], status: conversationStatus, control_changed_at: changedAt };
 }
 
 const server = createServer(async (req, res) => {
@@ -599,7 +609,7 @@ const server = createServer(async (req, res) => {
   }
 
   const inboxMatch = url.pathname.match(
-    /^\/merchant\/businesses\/([0-9a-f-]+)\/conversations(?:\/([0-9a-f-]+))?(?:\/(messages|takeover|release|replies))?$/i,
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/conversations(?:\/([0-9a-f-]+|members))?(?:\/(messages|takeover|release|replies|read|assignee|notes|status))?$/i,
   );
   if (inboxMatch) {
     const [, businessId, conversationId, resource] = inboxMatch;
@@ -609,8 +619,15 @@ const server = createServer(async (req, res) => {
       !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
     )
       return json(404, { message: 'Not found.' });
+    if (req.method === 'GET' && conversationId === 'members' && !resource)
+      return json(200, [{ account_id: 'fixture-account', role: 'owner' }]);
     if (req.method === 'GET' && !conversationId) {
-      const items = listItems(businessId);
+      let items = listItems(businessId);
+      const requestedStatus = url.searchParams.get('status') ?? 'all';
+      const search = (url.searchParams.get('search') ?? '').trim().toLowerCase();
+      if (requestedStatus === 'open') items = items.filter((item) => !['closed', 'resolved'].includes(String(item.status).toLowerCase()));
+      if (requestedStatus === 'closed') items = items.filter((item) => ['closed', 'resolved'].includes(String(item.status).toLowerCase()));
+      if (search) items = items.filter((item) => `${item.customer_name} ${item.customer_whatsapp_id} ${item.preview ?? ''}`.toLowerCase().includes(search));
       const pageSize = Number(url.searchParams.get('limit') ?? 30);
       const cursor = url.searchParams.get('cursor');
       return json(200, {
@@ -640,8 +657,44 @@ const server = createServer(async (req, res) => {
         for (const reply of replies.values()) reply.status = 'DELIVERED';
       return json(200, { items, nextCursor });
     }
+    if (req.method === 'GET' && conversationId && resource === 'notes') {
+      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      return json(200, internalNotes);
+    }
     if (req.method === 'POST' && conversationId && resource && !validCsrf)
       return json(403, { message: 'Forbidden' });
+    if (req.method === 'POST' && conversationId && resource === 'read') {
+      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      unreadCount = 0;
+      return json(200, { last_read_at: new Date().toISOString() });
+    }
+    if (req.method === 'POST' && conversationId && resource === 'assignee') {
+      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      assignedAccountId = input.accountId ?? null;
+      return json(200, { assigned_to_account_id: assignedAccountId, changed: true });
+    }
+    if (req.method === 'POST' && conversationId && resource === 'notes') {
+      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      const note = { id: `note-${internalNotes.length + 1}`, body: input.text, actor_account_id: 'fixture-account', created_at: new Date().toISOString() };
+      internalNotes = [...internalNotes, note];
+      return json(201, note);
+    }
+    if (req.method === 'POST' && conversationId && resource === 'status') {
+      if (!detail(conversationId, businessId)) return json(404, { message: 'Not found.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body);
+      conversationStatus = input.status;
+      if (conversationStatus === 'closed') mode = 'HUMAN';
+      changedAt = new Date().toISOString();
+      return json(200, { status: conversationStatus, updated_at: changedAt });
+    }
     if (req.method === 'POST' && conversationId && resource === 'takeover') {
       if (!detail(conversationId, businessId))
         return json(404, { message: 'Not found.' });

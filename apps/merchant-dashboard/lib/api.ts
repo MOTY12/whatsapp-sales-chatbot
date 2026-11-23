@@ -80,6 +80,8 @@ export type Conversation = {
   control_version: number | string;
   in_flight: number | string;
   handoff_needed?: boolean;
+  assigned_to_account_id?: string | null;
+  unread_count?: number | string;
 };
 export type ConversationDetail = Omit<
   Conversation,
@@ -104,6 +106,13 @@ export type InboxControlResult = {
   controlVersion: number;
   changedAt: string;
   changed: boolean;
+};
+export type InboxMember = { account_id: string; role: 'owner' | 'agent' };
+export type InboxNote = {
+  id: string;
+  body: string;
+  actor_account_id: string;
+  created_at: string;
 };
 export type QueuedReply = { outboundMessageId: string; status: 'QUEUED' };
 export type KnowledgeFaq = {
@@ -448,9 +457,17 @@ export const api = {
       `/merchant/businesses/${encodeURIComponent(businessId)}/pilot/${encodeURIComponent(enrollmentId)}/revoke`,
       { method: 'POST', body: JSON.stringify({}) },
     ),
-  conversations: (businessId: string, limit = 30, cursor?: string) => {
+  conversations: (
+    businessId: string,
+    limit = 30,
+    cursor?: string,
+    status: 'all' | 'open' | 'closed' = 'all',
+    search?: string,
+  ) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
+    query.set('status', status);
+    if (search?.trim()) query.set('search', search.trim());
     return request<CursorPage<Conversation>>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/conversations?${query}`,
     );
@@ -458,6 +475,46 @@ export const api = {
   conversation: (businessId: string, conversationId: string) =>
     request<ConversationDetail>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}`,
+    ),
+  inboxMembers: (businessId: string) =>
+    request<InboxMember[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/members`,
+    ),
+  markConversationRead: (businessId: string, conversationId: string) =>
+    request<{ last_read_at: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/read`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+  assignConversation: (
+    businessId: string,
+    conversationId: string,
+    accountId: string | null,
+  ) =>
+    request<{ assigned_to_account_id: string | null; changed: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/assignee`,
+      { method: 'POST', body: JSON.stringify({ accountId }) },
+    ),
+  conversationNotes: (businessId: string, conversationId: string) =>
+    request<InboxNote[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/notes`,
+    ),
+  addConversationNote: (
+    businessId: string,
+    conversationId: string,
+    text: string,
+  ) =>
+    request<InboxNote>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/notes`,
+      { method: 'POST', body: JSON.stringify({ text }) },
+    ),
+  setConversationStatus: (
+    businessId: string,
+    conversationId: string,
+    status: 'open' | 'closed',
+  ) =>
+    request<{ status: string; updated_at: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/status`,
+      { method: 'POST', body: JSON.stringify({ status }) },
     ),
   messages: (
     businessId: string,

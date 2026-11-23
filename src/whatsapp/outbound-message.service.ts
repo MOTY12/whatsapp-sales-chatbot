@@ -134,13 +134,14 @@ export class OutboundMessageService {
           }
           return existing.id;
         }
-        if (authorization.kind === 'AI') {
+        if (authorization.kind === 'AI' || authorization.kind === 'HUMAN') {
           if (
             !authorization.conversationId ||
-            authorization.controlVersion === undefined
+            (authorization.kind === 'AI' &&
+              authorization.controlVersion === undefined)
           ) {
             throw new OutboundPolicyError(
-              'AI outbound requires a conversation control fence.',
+              'Conversation outbound requires a valid control context.',
             );
           }
           await manager.query(
@@ -148,20 +149,32 @@ export class OutboundMessageService {
             [`conversation:${businessId}:${authorization.conversationId}`],
           );
           const [control] = await manager.query<
-            { control_mode: string; control_version: string | number }[]
+            {
+              control_mode: string;
+              control_version: string | number;
+              status: string | null;
+            }[]
           >(
-            `SELECT control_mode, control_version FROM public.conversations
+            `SELECT control_mode, control_version, status FROM public.conversations
             WHERE id = $1 AND "businessId" = $2 FOR UPDATE`,
             [authorization.conversationId, businessId],
           );
+          const statusIsOpen = !['closed', 'resolved'].includes(
+            (control?.status ?? 'open').toLowerCase(),
+          );
           if (
             !control ||
-            control.control_mode !== 'AUTO' ||
-            String(control.control_version) !==
-              String(authorization.controlVersion)
+            !statusIsOpen ||
+            (authorization.kind === 'AI' &&
+              (control.control_mode !== 'AUTO' ||
+                String(control.control_version) !==
+                  String(authorization.controlVersion))) ||
+            (authorization.kind === 'HUMAN' && control.control_mode !== 'HUMAN')
           ) {
             throw new OutboundPolicyError(
-              'AI response was suppressed by conversation takeover.',
+              authorization.kind === 'AI'
+                ? 'AI response was suppressed by conversation takeover.'
+                : 'Reopen and take over this conversation before replying.',
             );
           }
         }

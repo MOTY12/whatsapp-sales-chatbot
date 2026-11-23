@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   HttpException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import type { MerchantPrincipal } from './auth.service';
@@ -22,6 +23,8 @@ type InboxListRow = {
   control_version: string;
   in_flight: string;
   handoff_needed: boolean;
+  assigned_to_account_id: string | null;
+  unread_count: string | number;
 };
 type InboxConversationRow = Omit<InboxListRow, 'last_activity' | 'preview'> & {
   control_changed_at: Date | string;
@@ -88,17 +91,27 @@ export class MerchantInboxService {
     businessId: string,
     limit?: string,
     rawCursor?: string,
+    statusFilter?: string,
+    searchText?: string,
   ) {
     const size = pageLimit(limit);
     const cursor = cursorDecode(rawCursor);
+    const status = statusFilter?.trim().toLowerCase() || 'all';
+    if (!['all', 'open', 'closed'].includes(status)) {
+      throw new BadRequestException('Choose a valid conversation status.');
+    }
+    if (searchText !== undefined && searchText.trim().length > 100) {
+      throw new BadRequestException('Search must be 100 characters or fewer.');
+    }
+    const search = searchText?.trim() || null;
     return this.access.withBusiness(
       actor,
       businessId,
       'inbox.operate',
       async (manager) => {
         const rows = await manager.query<InboxListRow[]>(
-          'SELECT * FROM public.kleva_inbox_list($1,$2,$3)',
-          [size + 1, cursor?.at ?? null, cursor?.id ?? null],
+          'SELECT * FROM public.kleva_inbox_list_filtered($1,$2,$3,$4,$5)',
+          [size + 1, cursor?.at ?? null, cursor?.id ?? null, status, search],
         );
         const hasMore = rows.length > size;
         const items = rows.slice(0, size);
@@ -118,6 +131,195 @@ export class MerchantInboxService {
     );
   }
 
+  async members(actor: MerchantPrincipal, businessId: string) {
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) =>
+        manager.query<{ account_id: string; role: 'owner' | 'agent' }[]>(
+          'SELECT * FROM public.kleva_inbox_members()',
+        ),
+    );
+  }
+
+  async assign(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+    body: unknown,
+  ) {
+    validateConversationId(conversationId);
+    const input =
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as { accountId?: unknown })
+        : undefined;
+    if (
+      !input ||
+      Object.keys(input).some((key) => key !== 'accountId') ||
+      (input.accountId !== null &&
+        (typeof input.accountId !== 'string' || !uuid.test(input.accountId)))
+    ) {
+      throw new BadRequestException('Choose a valid inbox teammate.');
+    }
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        let result:
+          | { assigned_to_account_id: string | null; changed: boolean }
+          | undefined;
+        try {
+          [result] = await manager.query<
+            { assigned_to_account_id: string | null; changed: boolean }[]
+          >('SELECT * FROM public.kleva_inbox_assign($1,$2)', [
+            conversationId,
+            input.accountId,
+          ]);
+        } catch (error) {
+          const code = (error as { driverError?: { code?: string } })
+            .driverError?.code;
+          if (code === '22023')
+            throw new BadRequestException('Choose a valid inbox teammate.');
+          if (code === '42501') throw new ForbiddenException();
+          throw error;
+        }
+        if (!result) throw new NotFoundException();
+        return result;
+      },
+    );
+  }
+
+  async markRead(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+  ) {
+    validateConversationId(conversationId);
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        const [result] = await manager.query<{ last_read_at: Date | string }[]>(
+          'SELECT * FROM public.kleva_inbox_mark_read($1)',
+          [conversationId],
+        );
+        if (!result) throw new NotFoundException();
+        return result;
+      },
+    );
+  }
+
+  async notes(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+  ) {
+    validateConversationId(conversationId);
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        const rows = await manager.query<
+          {
+            id: string;
+            body: string;
+            actor_account_id: string;
+            created_at: Date | string;
+          }[]
+        >('SELECT * FROM public.kleva_inbox_notes($1)', [conversationId]);
+        const [conversation] = await manager.query<{ id: string }[]>(
+          'SELECT id FROM public.kleva_inbox_conversation_v2($1)',
+          [conversationId],
+        );
+        if (!conversation) throw new NotFoundException();
+        return rows;
+      },
+    );
+  }
+
+  async addNote(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+    body: unknown,
+  ) {
+    validateConversationId(conversationId);
+    const note =
+      body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 1 &&
+      Object.hasOwn(body, 'text')
+        ? (body as { text?: unknown }).text
+        : undefined;
+    if (typeof note !== 'string' || !note.trim() || note.trim().length > 2000) {
+      throw new BadRequestException(
+        'Internal notes must contain 1 to 2,000 characters.',
+      );
+    }
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        const [result] = await manager.query<
+          {
+            id: string;
+            body: string;
+            actor_account_id: string;
+            created_at: Date | string;
+          }[]
+        >('SELECT * FROM public.kleva_inbox_add_note($1,$2)', [
+          conversationId,
+          note.trim(),
+        ]);
+        if (!result) throw new NotFoundException();
+        return result;
+      },
+    );
+  }
+
+  async setStatus(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+    body: unknown,
+  ) {
+    validateConversationId(conversationId);
+    const status =
+      body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 1 &&
+      Object.hasOwn(body, 'status')
+        ? (body as { status?: unknown }).status
+        : undefined;
+    if (typeof status !== 'string' || !['open', 'closed'].includes(status)) {
+      throw new BadRequestException(
+        'Choose open or closed conversation status.',
+      );
+    }
+    return this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        const [result] = await manager.query<
+          { status: string; updated_at: Date | string }[]
+        >('SELECT * FROM public.kleva_inbox_set_status($1,$2)', [
+          conversationId,
+          status,
+        ]);
+        if (!result) throw new NotFoundException();
+        return result;
+      },
+    );
+  }
+
   async conversation(
     actor: MerchantPrincipal,
     businessId: string,
@@ -130,7 +332,7 @@ export class MerchantInboxService {
       'inbox.operate',
       async (manager) => {
         const [row] = await manager.query<InboxConversationRow[]>(
-          'SELECT * FROM public.kleva_inbox_conversation($1)',
+          'SELECT * FROM public.kleva_inbox_conversation_v2($1)',
           [conversationId],
         );
         if (!row) throw new NotFoundException();
@@ -160,7 +362,7 @@ export class MerchantInboxService {
         );
         if (!rows.length) {
           const [exists] = await manager.query<InboxConversationRow[]>(
-            'SELECT * FROM public.kleva_inbox_conversation($1)',
+            'SELECT * FROM public.kleva_inbox_conversation_v2($1)',
             [conversationId],
           );
           if (!exists) throw new NotFoundException();
@@ -193,18 +395,38 @@ export class MerchantInboxService {
       businessId,
       'inbox.operate',
       async (manager) => {
-        const [result] = await manager.query<
-          {
-            id: string;
-            control_mode: 'AUTO' | 'HUMAN';
-            control_version: string;
-            control_changed_at: Date | string;
-            changed: boolean;
-          }[]
-        >('SELECT * FROM public.kleva_inbox_change_control($1,$2)', [
-          conversationId,
-          mode,
-        ]);
+        let result:
+          | {
+              id: string;
+              control_mode: 'AUTO' | 'HUMAN';
+              control_version: string;
+              control_changed_at: Date | string;
+              changed: boolean;
+            }
+          | undefined;
+        try {
+          [result] = await manager.query<
+            {
+              id: string;
+              control_mode: 'AUTO' | 'HUMAN';
+              control_version: string;
+              control_changed_at: Date | string;
+              changed: boolean;
+            }[]
+          >('SELECT * FROM public.kleva_inbox_change_control($1,$2)', [
+            conversationId,
+            mode,
+          ]);
+        } catch (error) {
+          const code = (error as { driverError?: { code?: string } })
+            .driverError?.code;
+          if (code === '22023')
+            throw new BadRequestException(
+              'Reopen this conversation before resuming automation.',
+            );
+          if (code === '42501') throw new ForbiddenException();
+          throw error;
+        }
         if (!result) throw new NotFoundException();
         return {
           conversationId: result.id,
@@ -255,12 +477,18 @@ export class MerchantInboxService {
       'inbox.operate',
       async (manager) => {
         const [result] = await manager.query<
-          { whatsapp_id: string; control_mode: string }[]
-        >('SELECT * FROM public.kleva_inbox_recipient($1)', [conversationId]);
+          { whatsapp_id: string; control_mode: string; status: string }[]
+        >('SELECT * FROM public.kleva_inbox_recipient_v2($1)', [
+          conversationId,
+        ]);
         if (!result) throw new NotFoundException();
         if (result.control_mode !== 'HUMAN')
           throw new BadRequestException(
             'Take over this conversation before replying.',
+          );
+        if (['closed', 'resolved'].includes(result.status.toLowerCase()))
+          throw new BadRequestException(
+            'Reopen this conversation before replying.',
           );
         return result.whatsapp_id;
       },

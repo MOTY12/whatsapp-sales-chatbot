@@ -30,8 +30,26 @@ export class MerchantInboxController {
     @Param('businessId') businessId: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
   ) {
-    return this.inbox.list(principal(request), businessId, limit, cursor);
+    return this.inbox.list(
+      principal(request),
+      businessId,
+      limit,
+      cursor,
+      status,
+      search,
+    );
+  }
+
+  @Get('members')
+  @Header('Cache-Control', 'no-store')
+  members(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+  ) {
+    return this.inbox.members(principal(request), businessId);
   }
 
   @Get(':conversationId')
@@ -113,6 +131,78 @@ export class MerchantInboxController {
       businessId,
       conversationId,
       key,
+      body,
+    );
+  }
+
+  @Post(':conversationId/read')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  markRead(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    return this.inbox.markRead(principal(request), businessId, conversationId);
+  }
+
+  @Post(':conversationId/assignee')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  assign(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inbox.assign(
+      principal(request),
+      businessId,
+      conversationId,
+      body,
+    );
+  }
+
+  @Get(':conversationId/notes')
+  @Header('Cache-Control', 'no-store')
+  notes(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    return this.inbox.notes(principal(request), businessId, conversationId);
+  }
+
+  @Post(':conversationId/notes')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  addNote(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inbox.addNote(
+      principal(request),
+      businessId,
+      conversationId,
+      body,
+    );
+  }
+
+  @Post(':conversationId/status')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  setStatus(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() body: unknown,
+  ) {
+    return this.inbox.setStatus(
+      principal(request),
+      businessId,
+      conversationId,
       body,
     );
   }

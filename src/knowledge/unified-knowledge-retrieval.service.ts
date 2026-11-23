@@ -96,6 +96,39 @@ const defaultLimit = 5;
 const maximumLimit = 10;
 export const minimumEvidenceScore = 0.035;
 
+const naturalLanguageStopWords = new Set([
+  'are',
+  'can',
+  'cost',
+  'costs',
+  'does',
+  'do',
+  'for',
+  'have',
+  'how',
+  'is',
+  'me',
+  'much',
+  'of',
+  'please',
+  'price',
+  'priced',
+  'tell',
+  'the',
+  'what',
+  'you',
+]);
+
+function normalizeKnowledgeQuery(value: string): string {
+  return value
+    .toLocaleLowerCase('en')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((term) => !naturalLanguageStopWords.has(term))
+    .join(' ');
+}
+
 @Injectable()
 export class UnifiedKnowledgeRetrievalService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
@@ -120,42 +153,61 @@ export class UnifiedKnowledgeRetrievalService {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > maximumLimit)
       throw new BadRequestException('Search limit must be between 1 and 10.');
 
-    const rawRows: unknown = await this.dataSource.query(
-      'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
-      [request.businessId, request.query.trim(), limit],
-    );
-    if (!Array.isArray(rawRows))
-      throw new Error(
-        'PostgreSQL knowledge retrieval returned an invalid result.',
+    const queryText = request.query.trim();
+    const loadRows = async (queryText: string): Promise<SearchRow[]> => {
+      const rawRows: unknown = await this.dataSource.query(
+        'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
+        [request.businessId, queryText, limit],
       );
-    const rows = rawRows.filter(isSearchRow);
-    if (!rows.length || rows.length !== rawRows.length)
-      throw new Error(
-        'PostgreSQL knowledge retrieval returned an invalid result.',
-      );
-    const candidates = rows.filter(isEvidenceRow).map((row): EvidenceItem => {
-      const item: EvidenceItem = {
-        sourceType: row.source_type,
-        sourceId: row.source_id,
-        revisionId: row.revision_id,
-        relevanceScore: Number(row.relevance_score),
-        title: row.title,
-        content: row.content,
-      };
-      if (row.source_type === 'PRODUCT') {
-        item.sku = row.sku;
-        item.facts = {
-          price: row.price,
-          currency: row.currency ?? 'NGN',
-          availability: row.availability ?? 'UNKNOWN',
+      if (!Array.isArray(rawRows))
+        throw new Error(
+          'PostgreSQL knowledge retrieval returned an invalid result.',
+        );
+      const rows = rawRows.filter(isSearchRow);
+      if (!rows.length || rows.length !== rawRows.length)
+        throw new Error(
+          'PostgreSQL knowledge retrieval returned an invalid result.',
+        );
+      return rows;
+    };
+    const toEvidence = (rows: SearchRow[]): EvidenceItem[] =>
+      rows.filter(isEvidenceRow).map((row): EvidenceItem => {
+        const item: EvidenceItem = {
+          sourceType: row.source_type,
+          sourceId: row.source_id,
+          revisionId: row.revision_id,
+          relevanceScore: Number(row.relevance_score),
+          title: row.title,
+          content: row.content,
         };
-      }
-      return item;
-    });
+        if (row.source_type === 'PRODUCT') {
+          item.sku = row.sku;
+          item.facts = {
+            price: row.price,
+            currency: row.currency ?? 'NGN',
+            availability: row.availability ?? 'UNKNOWN',
+          };
+        }
+        return item;
+      });
+    const rows = await loadRows(queryText);
+    const candidates = toEvidence(rows);
     const evidence = candidates.filter(
       (item) => item.relevanceScore >= minimumEvidenceScore,
     );
     if (evidence.length) return { evidence, sufficientEvidence: true };
+
+    const normalizedQuery = normalizeKnowledgeQuery(queryText);
+    if (
+      normalizedQuery &&
+      normalizedQuery !== queryText.toLocaleLowerCase('en')
+    ) {
+      const fallbackEvidence = toEvidence(
+        await loadRows(normalizedQuery),
+      ).filter((item) => item.relevanceScore >= minimumEvidenceScore);
+      if (fallbackEvidence.length)
+        return { evidence: fallbackEvidence, sufficientEvidence: true };
+    }
 
     const hasPublishedContent = rows[0]?.has_published_content ?? false;
     const reason: InsufficientEvidenceReason = !hasPublishedContent

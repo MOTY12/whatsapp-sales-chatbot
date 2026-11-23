@@ -11,3 +11,26 @@
 @media(max-width:900px){.inbox{grid-template-columns:minmax(245px,300px) minmax(0,1fr)}.threadHeader{padding:9px 12px;gap:8px}.modePill{font-size:8px;padding:0 6px}.threadControls{gap:6px}.threadControls .button{padding:0 8px}}
 @media(max-width:720px){.inbox{display:block;height:calc(100dvh - 184px);min-height:420px;position:relative}.listPanel,.threadPanel{height:100%;width:100%}.listPanel{border-right:0}.threadPanel{display:none}.mobileListHidden{display:none}.mobileThreadOpen{display:flex}.threadHeader{min-height:66px;gap:7px;padding:8px}.backButton{display:inline-flex;align-items:center;gap:4px;flex:none}.threadCustomer{gap:6px}.threadCustomer .customerAvatar{width:30px;height:30px}.threadCustomer h2{max-width:125px;font-size:11px}.threadCustomer p{font-size:8px;max-width:135px}.threadControls{gap:5px;flex-direction:column;align-items:flex-end}.threadControls .button{height:29px;font-size:9px;max-width:144px}.modePill{height:20px}.messageArea{padding:12px 10px}.messageBubble{max-width:88%}.composerArea{padding:8px}.composer textarea{font-size:12px}.inbox-page-heading{align-items:flex-start}.listHeader{height:60px}.conversationRow{padding:12px 11px}.rowTop strong{font-size:12px}}
 .handoffNeeded{color:#9b4d20;background:#fff1e7;border-radius:8px;padding:1px 5px;font-weight:600}
+.filters{display:grid;grid-template-columns:minmax(110px,auto) minmax(90px,1fr) auto;gap:6px;padding:9px 10px;border-bottom:1px solid #edf1ee;flex:none}
+.filters select,.filters input,.assignmentControl select{min-width:0;width:100%;height:31px;border:1px solid #e1e9e4;border-radius:6px;background:#fff;color:#536259;padding:0 7px;font-size:9px}
+.filters .button{height:31px;padding:0 9px;font-size:9px}
+.searchBox{min-width:0}
+.rowPhone{display:block;margin-top:2px;color:#87938d;font-size:9px}
+.unreadCount{color:#fff;background:#238468;border-radius:9px;padding:2px 6px;font-weight:700}
+.assignmentControl{width:122px}
+.statusPill{height:23px;display:inline-flex;align-items:center;border-radius:12px;padding:0 8px;font-size:9px;white-space:nowrap;font-weight:650}
+.openStatus{background:#edf5ef;color:#4a805e}
+.closedStatus{background:#f0f1f0;color:#66736c}
+.reconnectNotice{margin:0;padding:6px 12px;border-bottom:1px solid #f0e7d7;background:#fff9ed;color:#856429;font-size:10px}
+.notesPanel{max-height:210px;overflow:auto;border-top:1px solid #edf1ee;padding:7px 1px 1px}
+.notesPanel summary{cursor:pointer;color:#5e7166;font-size:10px;font-weight:650;list-style-position:inside}
+.notesPanel summary span{margin-left:4px;color:#87938d;font-weight:400}
+.notesList{display:grid;gap:6px;padding:7px 3px;max-height:100px;overflow:auto}
+.note{border-radius:6px;background:#f7f6f0;padding:6px 8px}
+.note p{margin:0;color:#48564e;font-size:10px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.note time{display:block;margin-top:3px;color:#88938d;font-size:8px}
+.noteEmpty{margin:3px;color:#89948e;font-size:9px}
+.noteForm{display:flex;gap:6px;align-items:flex-end;padding:0 2px 4px}
+.noteForm textarea{min-width:0;flex:1;resize:vertical;border:1px solid #e1e9e4;border-radius:6px;padding:6px;font:inherit;font-size:10px}
+.noteForm .button{height:30px;padding:0 9px;font-size:9px}
+@media(max-width:720px){.filters{grid-template-columns:1fr 1.4fr auto}.assignmentControl{width:110px}.threadControls .button{max-width:150px}}

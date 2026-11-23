@@ -369,9 +369,10 @@ describe('first complete grounded WhatsApp sales conversation', () => {
         WHERE o.id=$1 AND o.business_id=$2`,
       [completedRun.outbound_message_id, businessId],
     );
-    expect(delivered).toEqual([
-      { status: 'DELIVERED', message_status: 'delivered' },
-    ]);
+    expect(delivered).toEqual({
+      status: 'DELIVERED',
+      message_status: 'delivered',
+    });
     expect(
       await admin.query(
         `SELECT id FROM public.ai_response_runs WHERE business_id=$1 AND inbound_message_id=$2`,

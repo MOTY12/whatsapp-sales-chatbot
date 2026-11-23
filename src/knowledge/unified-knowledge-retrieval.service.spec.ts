@@ -65,4 +65,40 @@ describe('UnifiedKnowledgeRetrievalService', () => {
     ).rejects.toThrow('Search limit must be between 1 and 10.');
     expect(query).not.toHaveBeenCalled();
   });
+
+  it('removes natural-language question words while keeping product identifiers searchable', async () => {
+    const query = jest.fn().mockResolvedValue([
+      {
+        has_published_content: true,
+        source_type: null,
+        source_id: null,
+        revision_id: null,
+        relevance_score: null,
+        title: null,
+        content: null,
+        sku: null,
+        price: null,
+        currency: null,
+        availability: null,
+      },
+    ]);
+    const service = new UnifiedKnowledgeRetrievalService({
+      query,
+    } as unknown as DataSource);
+
+    await service.retrieve({
+      businessId: '00000000-0000-4000-8000-000000000003',
+      query: 'How much is Product A?',
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
+      ['00000000-0000-4000-8000-000000000003', 'How much is Product A?', 5],
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
+      ['00000000-0000-4000-8000-000000000003', 'product a', 5],
+    );
+  });
 });

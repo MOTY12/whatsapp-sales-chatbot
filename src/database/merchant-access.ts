@@ -71,10 +71,19 @@ export const embeddedWhatsAppFunctions = [
 ];
 export const inboxFunctions = [
   'kleva_inbox_list(integer,timestamptz,uuid)',
+  'kleva_inbox_list_filtered(integer,timestamp,uuid,text,text)',
+  'kleva_inbox_conversation_v2(uuid)',
   'kleva_inbox_messages(uuid,integer,timestamptz,uuid)',
   'kleva_inbox_conversation(uuid)',
   'kleva_inbox_change_control(uuid,text)',
   'kleva_inbox_recipient(uuid)',
+  'kleva_inbox_members()',
+  'kleva_inbox_assign(uuid,uuid)',
+  'kleva_inbox_mark_read(uuid)',
+  'kleva_inbox_notes(uuid)',
+  'kleva_inbox_add_note(uuid,text)',
+  'kleva_inbox_set_status(uuid,text)',
+  'kleva_inbox_recipient_v2(uuid)',
 ];
 export const knowledgeFunctions = [
   'kleva_faq_list()',

@@ -1,14 +1,34 @@
 import { redirect } from 'next/navigation';
-import { ApiError, api, type CursorPage, type Conversation } from '@/lib/api';
+import {
+  ApiError,
+  api,
+  type CursorPage,
+  type Conversation,
+  type InboxMember,
+} from '@/lib/api';
 import { BusinessPicker } from '@/components/business-picker';
 import { InboxExperience } from './inbox-experience';
 
 export default async function ConversationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ businessId?: string; conversationId?: string }>;
+  searchParams: Promise<{
+    businessId?: string;
+    conversationId?: string;
+    status?: string;
+    search?: string;
+  }>;
 }) {
-  const { businessId: requested, conversationId } = await searchParams;
+  const {
+    businessId: requested,
+    conversationId,
+    status: requestedStatus,
+    search: requestedSearch,
+  } = await searchParams;
+  const status = ['all', 'open', 'closed'].includes(requestedStatus ?? '')
+    ? (requestedStatus as 'all' | 'open' | 'closed')
+    : 'all';
+  const search = requestedSearch?.trim().slice(0, 100) ?? '';
   let identity;
   try {
     identity = await api.identity();
@@ -56,7 +76,13 @@ export default async function ConversationsPage({
   let initialPage: CursorPage<Conversation> | null = null;
   let initialError: { code: string; message: string } | null = null;
   try {
-    initialPage = await api.conversations(membership.businessId);
+    initialPage = await api.conversations(
+      membership.businessId,
+      30,
+      undefined,
+      status,
+      search,
+    );
   } catch (error) {
     if (error instanceof ApiError && error.status === 401)
       redirect('/login?error=session');
@@ -67,6 +93,12 @@ export default async function ConversationsPage({
           ? error.message
           : 'The inbox could not be loaded. Try again.',
     };
+  }
+  let teammates: InboxMember[] = [];
+  try {
+    teammates = await api.inboxMembers(membership.businessId);
+  } catch {
+    // Conversation reading remains available if the optional assignment list is unavailable.
   }
   return (
     <div className="inbox-page">
@@ -87,8 +119,12 @@ export default async function ConversationsPage({
         )}
       </div>
       <InboxExperience
-        key={membership.businessId}
+        key={`${membership.businessId}:${status}:${search}:${conversationId ?? ''}`}
         businessId={membership.businessId}
+        accountId={identity.accountId}
+        teammates={teammates}
+        initialStatus={status}
+        initialSearch={search}
         initialPage={initialPage}
         initialError={initialError}
         initialConversationId={conversationId}

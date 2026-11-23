@@ -950,6 +950,8 @@ describe('merchant OIDC and tenant isolation', () => {
   it('serves tenant-scoped inbox pages and serializes idempotent takeover changes', async () => {
     const owner = await login('inbox-owner');
     const staff = await login('inbox-staff');
+    const agent = await login('inbox-agent');
+    const otherOwner = await login('inbox-other-owner');
     const members = admin.getRepository(BusinessMember);
     await members.insert([
       {
@@ -961,6 +963,16 @@ describe('merchant OIDC and tenant isolation', () => {
         businessId: first.business.id,
         accountId: staff.accountId,
         role: 'staff',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+      {
+        businessId: second.business.id,
+        accountId: otherOwner.accountId,
+        role: 'owner',
       },
     ]);
     const base = `/merchant/businesses/${first.business.id}/conversations`;
@@ -976,6 +988,7 @@ describe('merchant OIDC and tenant isolation', () => {
         customer_name: string;
         customer_whatsapp_id: string;
         control_mode: string;
+        unread_count: string | number;
       }[];
     };
     expect(listingBody.items).toHaveLength(1);
@@ -985,6 +998,100 @@ describe('merchant OIDC and tenant isolation', () => {
       customer_whatsapp_id: first.customer.whatsappId,
       control_mode: 'AUTO',
     });
+    expect(Number(listingBody.items[0].unread_count)).toBeGreaterThan(0);
+    const filteredOpen = await request(server)
+      .get(base)
+      .query({ status: 'open', search: first.customer.whatsappId })
+      .set('Cookie', owner.session)
+      .expect(200);
+    const filteredOpenBody = filteredOpen.body as { items: { id: string }[] };
+    expect(filteredOpenBody.items.map((item) => item.id)).toContain(
+      first.conversation.id,
+    );
+    const filteredClosed = await request(server)
+      .get(base)
+      .query({ status: 'closed', search: first.customer.whatsappId })
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect((filteredClosed.body as { items: unknown[] }).items).toHaveLength(0);
+    const teammateList = await request(server)
+      .get(`${base}/members`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(teammateList.body).toContainEqual({
+      account_id: agent.accountId,
+      role: 'agent',
+    });
+    const assignee = await request(server)
+      .post(`${base}/${first.conversation.id}/assignee`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ accountId: agent.accountId })
+      .expect(201);
+    expect(assignee.body).toMatchObject({
+      assigned_to_account_id: agent.accountId,
+      changed: true,
+    });
+    await request(server)
+      .post(`${base}/${first.conversation.id}/assignee`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ accountId: otherOwner.accountId })
+      .expect(400);
+    const unread = await request(server)
+      .post(`${base}/${first.conversation.id}/read`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({})
+      .expect(201);
+    expect((unread.body as { last_read_at: string }).last_read_at).toBeTruthy();
+    const readListing = await request(server)
+      .get(base)
+      .query({ search: first.customer.whatsappId })
+      .set('Cookie', owner.session)
+      .expect(200);
+    const readListingBody = readListing.body as {
+      items: { unread_count: string | number }[];
+    };
+    expect(Number(readListingBody.items[0].unread_count)).toBe(0);
+    const agentListing = await request(server)
+      .get(base)
+      .query({ search: first.customer.whatsappId })
+      .set('Cookie', agent.session)
+      .expect(200);
+    expect(
+      Number(
+        (agentListing.body as { items: { unread_count: string | number }[] })
+          .items[0].unread_count,
+      ),
+    ).toBeGreaterThan(0);
+    const createdNote = await request(server)
+      .post(`${base}/${first.conversation.id}/notes`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ text: 'Call after 3 PM.' })
+      .expect(201);
+    expect(createdNote.body).toMatchObject({
+      body: 'Call after 3 PM.',
+      actor_account_id: owner.accountId,
+    });
+    const listedNotes = await request(server)
+      .get(`${base}/${first.conversation.id}/notes`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(listedNotes.body).toContainEqual(
+      expect.objectContaining({
+        id: (createdNote.body as { id: string }).id,
+      }),
+    );
+    await request(server)
+      .get(`${base}/${second.conversation.id}/notes`)
+      .set('Cookie', owner.session)
+      .expect(404);
     await request(server)
       .get(`${base}/${second.conversation.id}`)
       .set('Cookie', owner.session)
@@ -1061,6 +1168,60 @@ describe('merchant OIDC and tenant isolation', () => {
     };
     expect(['AUTO', 'HUMAN']).toContain(finalStateBody.control_mode);
     expect(Number(finalStateBody.control_version)).toBeGreaterThanOrEqual(4);
+    const closed = await request(server)
+      .post(`${base}/${first.conversation.id}/status`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ status: 'closed' })
+      .expect(201);
+    expect((closed.body as { status: string }).status).toBe('closed');
+    await request(server)
+      .post(`${base}/${first.conversation.id}/release`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .expect(400);
+    await request(server)
+      .get(`${base}/${first.conversation.id}`)
+      .set('Cookie', owner.session)
+      .expect(200)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({ status: 'closed', control_mode: 'HUMAN' }),
+      );
+    const inboundAfterResolve = randomUUID();
+    await admin.query(
+      `INSERT INTO public.messages ("businessId","conversationId",direction,content,status,"whatsappMessageId")
+       VALUES ($1,$2,'inbound','Following up','delivered',$3)`,
+      [first.business.id, first.conversation.id, inboundAfterResolve],
+    );
+    await request(server)
+      .get(`${base}/${first.conversation.id}`)
+      .set('Cookie', owner.session)
+      .expect(200)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({ status: 'open', control_mode: 'HUMAN' }),
+      );
+    await admin.query(
+      'DELETE FROM public.messages WHERE "whatsappMessageId"=$1',
+      [inboundAfterResolve],
+    );
+    await admin.query(
+      'DELETE FROM public.conversation_internal_notes WHERE conversation_id=$1',
+      [first.conversation.id],
+    );
+    await admin.query(
+      'DELETE FROM public.conversation_inbox_reads WHERE conversation_id=$1',
+      [first.conversation.id],
+    );
+    await admin.query(
+      'DELETE FROM public.conversation_inbox_state WHERE conversation_id=$1',
+      [first.conversation.id],
+    );
+    await admin.query(
+      'DELETE FROM public.conversation_inbox_audit WHERE conversation_id=$1',
+      [first.conversation.id],
+    );
     await admin.query(
       'DELETE FROM public.conversation_control_audit WHERE conversation_id = $1',
       [first.conversation.id],
@@ -1389,6 +1550,9 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
+      // Migrations 0020-0024 sit after the 0019 onboarding rollback guard.
+      await admin.undoLastMigration();
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
       await admin.undoLastMigration();
@@ -1659,16 +1823,8 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      // Migrations 0015–0022 were added after this rollback guard was written.
-      // The seven calls above unwind through migration 0016; unwind 0015 too.
-      await admin.undoLastMigration();
+      // Unwind migrations 0024–0015 before exercising catalog migration 0014.
+      for (let i = 0; i < 10; i += 1) await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -2052,7 +2208,9 @@ describe('merchant OIDC and tenant isolation', () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
       await admin.undoLastMigration();
-      // Migration 0022 adds WhatsApp signup state after email authentication.
+      await admin.undoLastMigration();
+      // Migrations 0022-0024 add WhatsApp signup, operator activation and inbox state.
+      await admin.undoLastMigration();
       await admin.undoLastMigration();
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant email authentication data exists',

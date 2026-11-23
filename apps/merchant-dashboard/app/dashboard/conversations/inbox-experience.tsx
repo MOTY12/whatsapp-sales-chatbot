@@ -15,6 +15,8 @@ import type {
   ConversationDetail,
   CursorPage,
   InboxMessage,
+  InboxMember,
+  InboxNote,
   InboxMode,
 } from '@/lib/api';
 import {
@@ -29,6 +31,10 @@ import styles from './inbox.module.css';
 type ApiFailure = { code: string; message: string };
 type Props = {
   businessId: string;
+  accountId: string;
+  teammates: InboxMember[];
+  initialStatus: 'all' | 'open' | 'closed';
+  initialSearch: string;
   initialPage: CursorPage<Conversation> | null;
   initialError: ApiFailure | null;
   initialConversationId?: string;
@@ -36,6 +42,7 @@ type Props = {
 type ThreadData = {
   detail: ConversationDetail;
   messages: CursorPage<InboxMessage>;
+  notes: InboxNote[];
 };
 
 class InboxRequestError extends Error {
@@ -124,6 +131,10 @@ function modeLabel(mode: InboxMode) {
 
 export function InboxExperience({
   businessId,
+  accountId,
+  teammates,
+  initialStatus,
+  initialSearch,
   initialPage,
   initialError,
   initialConversationId,
@@ -135,13 +146,13 @@ export function InboxExperience({
   const [listError, setListError] = useState<ApiFailure | null>(initialError);
   const [listLoading, setListLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
-    initialConversationId ?? initialItems[0]?.id ?? null,
+    initialConversationId ?? null,
   );
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [messageCursor, setMessageCursor] = useState<string | null>(null);
   const [threadLoading, setThreadLoading] = useState(
-    Boolean(initialConversationId || initialItems[0]),
+    Boolean(initialConversationId),
   );
   const [threadError, setThreadError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -155,6 +166,11 @@ export function InboxExperience({
   const [replyError, setReplyError] = useState<string | null>(null);
   const [queuedNotice, setQueuedNotice] = useState<string | null>(null);
   const [threadRequestVersion, setThreadRequestVersion] = useState(0);
+  const [notes, setNotes] = useState<InboxNote[]>([]);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [liveUpdateError, setLiveUpdateError] = useState<string | null>(null);
 
   const selectedRef = useRef(selectedId);
   const messagesPaneRef = useRef<HTMLDivElement>(null);
@@ -164,6 +180,7 @@ export function InboxExperience({
     null,
   );
   const pollingRef = useRef(false);
+  const listPollingRef = useRef(false);
   const replyKeyRef = useRef<{ text: string; key: string } | null>(null);
   const queuedMessageRef = useRef<string | null>(null);
 
@@ -182,6 +199,9 @@ export function InboxExperience({
   const inFlight = Number(
     detail?.in_flight ?? selectedConversation?.in_flight ?? 0,
   );
+  const conversationClosed = ['closed', 'resolved'].includes(
+    (detail?.status ?? selectedConversation?.status ?? '').toLowerCase(),
+  );
 
   const loadThread = useCallback(
     async (
@@ -192,13 +212,14 @@ export function InboxExperience({
         businessId,
         `/${encodeURIComponent(conversationId)}`,
       );
-      const [conversation, page] = await Promise.all([
+      const [conversation, page, threadNotes] = await Promise.all([
         getInboxJson<ConversationDetail>(base, { signal }),
         getInboxJson<CursorPage<InboxMessage>>(`${base}/messages?limit=30`, {
           signal,
         }),
+        getInboxJson<InboxNote[]>(`${base}/notes`, { signal }),
       ]);
-      return { detail: conversation, messages: page };
+      return { detail: conversation, messages: page, notes: threadNotes };
     },
     [businessId],
   );
@@ -214,6 +235,20 @@ export function InboxExperience({
         setDetail(data.detail);
         setMessages(data.messages.items);
         setMessageCursor(data.messages.nextCursor);
+        setNotes(data.notes);
+        setNoteError(null);
+        void getInboxJson<{ last_read_at: string }>(
+          inboxPath(businessId, `/${encodeURIComponent(selectedId)}/read`),
+          { method: 'POST', body: JSON.stringify({}) },
+        )
+          .then(() => {
+            setConversations((current) =>
+              current.map((item) =>
+                item.id === selectedId ? { ...item, unread_count: 0 } : item,
+              ),
+            );
+          })
+          .catch(() => undefined);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || selectedRef.current !== selectedId)
@@ -229,7 +264,7 @@ export function InboxExperience({
           setThreadLoading(false);
       });
     return () => controller.abort();
-  }, [loadThread, selectedId, threadRequestVersion]);
+  }, [businessId, loadThread, selectedId, threadRequestVersion]);
 
   useLayoutEffect(() => {
     const pane = messagesPaneRef.current;
@@ -246,14 +281,16 @@ export function InboxExperience({
   }, [messages]);
 
   const refreshList = useCallback(
-    async (append = false) => {
+    async (append = false): Promise<boolean> => {
+      if (!append && listPollingRef.current) return false;
+      if (!append) listPollingRef.current = true;
       if (append) setListLoading(true);
       try {
         const cursor = append ? listCursor : undefined;
         const page = await getInboxJson<CursorPage<Conversation>>(
           inboxPath(
             businessId,
-            `?limit=30${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+            `?limit=30&status=${initialStatus}&search=${encodeURIComponent(initialSearch)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
           ),
         );
         setConversations((current) =>
@@ -266,6 +303,7 @@ export function InboxExperience({
         if (append || conversations.length <= initialItems.length)
           setListCursor(page.nextCursor);
         setListError(null);
+        return true;
       } catch (error) {
         setListError({
           code: error instanceof InboxRequestError ? error.code : 'unavailable',
@@ -274,11 +312,20 @@ export function InboxExperience({
               ? error.message
               : 'The inbox could not be loaded.',
         });
+        return false;
       } finally {
+        if (!append) listPollingRef.current = false;
         if (append) setListLoading(false);
       }
     },
-    [businessId, conversations.length, initialItems.length, listCursor],
+    [
+      businessId,
+      conversations.length,
+      initialItems.length,
+      listCursor,
+      initialSearch,
+      initialStatus,
+    ],
   );
 
   const refreshListRef = useRef(refreshList);
@@ -286,15 +333,46 @@ export function InboxExperience({
     refreshListRef.current = refreshList;
   }, [refreshList]);
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refreshListRef.current(false);
-    }, 20_000);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let timer: number | undefined;
+    let failures = 0;
+    const schedule = (delay: number) => {
+      if (!stopped && document.visibilityState === 'visible')
+        timer = window.setTimeout(run, delay);
+    };
+    const run = async () => {
+      if (stopped || document.visibilityState === 'hidden') return;
+      const ok = await refreshListRef.current(false);
+      failures = ok ? 0 : Math.min(failures + 1, 5);
+      schedule(ok ? 20_000 : Math.min(60_000, 2_000 * 2 ** failures));
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (timer !== undefined) window.clearTimeout(timer);
+        void run();
+      } else if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+    schedule(20_000);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
     let stopped = false;
+    let timer: number | undefined;
+    let failures = 0;
+    let controller: AbortController | undefined;
+    const schedule = (delay: number) => {
+      if (!stopped && document.visibilityState === 'visible')
+        timer = window.setTimeout(poll, delay);
+    };
     const poll = async () => {
       if (
         stopped ||
@@ -303,9 +381,13 @@ export function InboxExperience({
       )
         return;
       const conversationId = selectedRef.current;
-      if (!conversationId) return;
+      if (!conversationId) {
+        schedule(8_000);
+        return;
+      }
       pollingRef.current = true;
-      const controller = new AbortController();
+      controller = new AbortController();
+      let ok = false;
       try {
         const base = inboxPath(
           businessId,
@@ -318,6 +400,9 @@ export function InboxExperience({
           }),
         ]);
         if (stopped || selectedRef.current !== conversationId) return;
+        ok = true;
+        failures = 0;
+        setLiveUpdateError(null);
         setDetail(nextDetail);
         nearBottomRef.current = messagesPaneRef.current
           ? messagesPaneRef.current.scrollHeight -
@@ -352,11 +437,23 @@ export function InboxExperience({
                   control_mode: nextDetail.control_mode,
                   control_version: nextDetail.control_version,
                   in_flight: nextDetail.in_flight,
+                  assigned_to_account_id: nextDetail.assigned_to_account_id,
                 }
               : item,
           ),
         );
       } catch (error) {
+        if (
+          !stopped &&
+          controller &&
+          !controller.signal.aborted &&
+          !(error instanceof InboxRequestError && error.status === 404)
+        ) {
+          failures = Math.min(failures + 1, 5);
+          setLiveUpdateError(
+            'Live updates are reconnecting. Your messages and drafts remain safe.',
+          );
+        }
         if (
           !stopped &&
           selectedRef.current === conversationId &&
@@ -368,18 +465,25 @@ export function InboxExperience({
         }
       } finally {
         pollingRef.current = false;
+        if (!stopped && document.visibilityState === 'visible')
+          schedule(ok ? 8_000 : Math.min(60_000, 2_000 * 2 ** failures));
       }
     };
-    const timer = window.setInterval(() => {
-      void poll();
-    }, 8_000);
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void poll();
+      if (document.visibilityState === 'visible') {
+        if (timer !== undefined) window.clearTimeout(timer);
+        void poll();
+      } else {
+        if (timer !== undefined) window.clearTimeout(timer);
+        controller?.abort();
+      }
     };
+    schedule(8_000);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
+      controller?.abort();
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [businessId, selectedId]);
@@ -486,6 +590,107 @@ export function InboxExperience({
     }
   }
 
+  async function updateAssignee(accountId: string | null) {
+    if (!selectedId || !detail) return;
+    try {
+      const response = await getInboxJson<{
+        assigned_to_account_id: string | null;
+        changed: boolean;
+      }>(inboxPath(businessId, `/${encodeURIComponent(selectedId)}/assignee`), {
+        method: 'POST',
+        body: JSON.stringify({ accountId }),
+      });
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              assigned_to_account_id: response.assigned_to_account_id,
+            }
+          : current,
+      );
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === selectedId
+            ? {
+                ...item,
+                assigned_to_account_id: response.assigned_to_account_id,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setControlError(
+        error instanceof Error
+          ? error.message
+          : 'Assignment could not be updated.',
+      );
+    }
+  }
+
+  async function updateConversationStatus(status: 'open' | 'closed') {
+    if (!selectedId) return;
+    setControlPending(true);
+    setControlError(null);
+    try {
+      await getInboxJson<{ status: string; updated_at: string }>(
+        inboxPath(businessId, `/${encodeURIComponent(selectedId)}/status`),
+        { method: 'POST', body: JSON.stringify({ status }) },
+      );
+      const refreshed = await loadThread(selectedId);
+      if (selectedRef.current !== selectedId) return;
+      setDetail(refreshed.detail);
+      setMessages((current) =>
+        mergeMessages(current, refreshed.messages.items),
+      );
+      setNotes(refreshed.notes);
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === selectedId
+            ? {
+                ...item,
+                status: refreshed.detail.status,
+                control_mode: refreshed.detail.control_mode,
+                control_version: refreshed.detail.control_version,
+                assigned_to_account_id: refreshed.detail.assigned_to_account_id,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      setControlError(
+        error instanceof Error
+          ? error.message
+          : 'Conversation status could not be changed.',
+      );
+    } finally {
+      setControlPending(false);
+    }
+  }
+
+  async function addInternalNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = noteDraft.trim();
+    if (!selectedId || !text || noteSaving) return;
+    setNoteSaving(true);
+    setNoteError(null);
+    try {
+      const note = await getInboxJson<InboxNote>(
+        inboxPath(businessId, `/${encodeURIComponent(selectedId)}/notes`),
+        { method: 'POST', body: JSON.stringify({ text }) },
+      );
+      setNotes((current) => [...current, note]);
+      setNoteDraft('');
+    } catch (error) {
+      setNoteError(
+        error instanceof Error
+          ? error.message
+          : 'Internal note could not be saved.',
+      );
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
   async function sendReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
@@ -562,6 +767,39 @@ export function InboxExperience({
           </div>
           <span className={styles.count}>{conversations.length}</span>
         </div>
+        <form
+          className={styles.filters}
+          action="/dashboard/conversations"
+          method="get"
+          role="search"
+        >
+          <input type="hidden" name="businessId" value={businessId} />
+          <label>
+            <span className={styles.visuallyHidden}>Conversation status</span>
+            <select
+              name="status"
+              defaultValue={initialStatus}
+              aria-label="Filter conversations by status"
+            >
+              <option value="all">All conversations</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label className={styles.searchBox}>
+            <span className={styles.visuallyHidden}>Search conversations</span>
+            <input
+              name="search"
+              type="search"
+              defaultValue={initialSearch}
+              maxLength={100}
+              placeholder="Search name, number, message"
+            />
+          </label>
+          <button className="button button-secondary" type="submit">
+            Search
+          </button>
+        </form>
         {loadingError ? (
           <div className={styles.listState} role="alert">
             <strong>Inbox unavailable</strong>
@@ -609,10 +847,20 @@ export function InboxExperience({
                           {formatInboxTime(conversation.last_activity)}
                         </time>
                       </span>
+                      <span className={styles.rowPhone}>
+                        {conversation.customer_whatsapp_id}
+                      </span>
                       <span className={styles.rowPreview}>
                         {conversation.preview || 'No message preview'}
                       </span>
                       <span className={styles.rowMeta}>
+                        <span>
+                          {['closed', 'resolved'].includes(
+                            (conversation.status ?? '').toLowerCase(),
+                          )
+                            ? 'RESOLVED'
+                            : 'OPEN'}
+                        </span>
                         <span>
                           {conversation.control_mode === 'HUMAN'
                             ? 'HUMAN'
@@ -621,6 +869,14 @@ export function InboxExperience({
                         {conversation.handoff_needed && (
                           <span className={styles.handoffNeeded}>
                             Needs follow-up
+                          </span>
+                        )}
+                        {Number(conversation.unread_count) > 0 && (
+                          <span
+                            className={styles.unreadCount}
+                            aria-label={`${conversation.unread_count} unread messages`}
+                          >
+                            {conversation.unread_count} unread
                           </span>
                         )}
                         {Number(conversation.in_flight) > 0 && (
@@ -707,6 +963,11 @@ export function InboxExperience({
               </div>
               <div className={styles.threadControls}>
                 <span
+                  className={`${styles.statusPill} ${conversationClosed ? styles.closedStatus : styles.openStatus}`}
+                >
+                  {conversationClosed ? 'Resolved' : 'Open'}
+                </span>
+                <span
                   className={`${styles.modePill} ${mode === 'HUMAN' ? styles.humanMode : styles.autoMode}`}
                 >
                   <i /> {modeLabel(mode)}
@@ -720,6 +981,10 @@ export function InboxExperience({
                   >
                     {controlPending ? 'Taking over…' : 'Take over conversation'}
                   </button>
+                ) : conversationClosed ? (
+                  <span className={styles.humanNotice} role="status">
+                    Automation stays paused while this conversation is resolved.
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -730,9 +995,50 @@ export function InboxExperience({
                     {controlPending ? 'Resuming…' : 'Resume automation'}
                   </button>
                 )}
+                <label className={styles.assignmentControl}>
+                  <span className={styles.visuallyHidden}>
+                    Assign conversation
+                  </span>
+                  <select
+                    aria-label="Assign conversation"
+                    value={detail?.assigned_to_account_id ?? ''}
+                    disabled={!detail}
+                    onChange={(event) =>
+                      void updateAssignee(event.target.value || null)
+                    }
+                  >
+                    <option value="">Unassigned</option>
+                    {teammates.map((member) => (
+                      <option key={member.account_id} value={member.account_id}>
+                        {member.account_id === accountId
+                          ? 'You'
+                          : `${member.role === 'owner' ? 'Owner' : 'Agent'} · ${member.account_id.slice(0, 8)}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {conversationClosed ? (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={controlPending || !detail}
+                    onClick={() => void updateConversationStatus('open')}
+                  >
+                    Reopen
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={controlPending || !detail}
+                    onClick={() => void updateConversationStatus('closed')}
+                  >
+                    Resolve
+                  </button>
+                )}
               </div>
             </header>
-            {releaseConfirmation && mode === 'HUMAN' && (
+            {releaseConfirmation && mode === 'HUMAN' && !conversationClosed && (
               <div
                 className={styles.humanNotice}
                 role="group"
@@ -771,6 +1077,11 @@ export function InboxExperience({
             {controlError && (
               <p className={styles.inlineError} role="alert">
                 {controlError}
+              </p>
+            )}
+            {liveUpdateError && (
+              <p className={styles.reconnectNotice} role="status">
+                {liveUpdateError}
               </p>
             )}
             <div
@@ -876,7 +1187,7 @@ export function InboxExperience({
                   {replyError}
                 </p>
               )}
-              {mode === 'HUMAN' ? (
+              {mode === 'HUMAN' && !conversationClosed ? (
                 <form className={styles.composer} onSubmit={sendReply}>
                   <label
                     className={styles.visuallyHidden}
@@ -912,9 +1223,62 @@ export function InboxExperience({
               ) : (
                 <div className={styles.composerDisabled}>
                   <span aria-hidden="true">⌑</span>
-                  <p>Take over this conversation to send a manual reply.</p>
+                  <p>
+                    {conversationClosed
+                      ? 'This conversation is resolved. Reopen it before replying.'
+                      : 'Take over this conversation to send a manual reply.'}
+                  </p>
                 </div>
               )}
+              <details className={styles.notesPanel}>
+                <summary>
+                  Internal notes <span>{notes.length}</span>
+                </summary>
+                <div className={styles.notesList}>
+                  {notes.length ? (
+                    notes.map((note) => (
+                      <article className={styles.note} key={note.id}>
+                        <p>{note.body}</p>
+                        <time dateTime={note.created_at}>
+                          {formatInboxTime(note.created_at)}
+                        </time>
+                      </article>
+                    ))
+                  ) : (
+                    <p className={styles.noteEmpty}>
+                      Notes are visible to authorized business teammates only.
+                    </p>
+                  )}
+                </div>
+                {noteError && (
+                  <p className={styles.inlineError} role="alert">
+                    {noteError}
+                  </p>
+                )}
+                <form className={styles.noteForm} onSubmit={addInternalNote}>
+                  <label
+                    className={styles.visuallyHidden}
+                    htmlFor="inbox-internal-note"
+                  >
+                    Add internal note
+                  </label>
+                  <textarea
+                    id="inbox-internal-note"
+                    value={noteDraft}
+                    onChange={(event) => setNoteDraft(event.target.value)}
+                    maxLength={2000}
+                    rows={2}
+                    placeholder="Add a private note…"
+                  />
+                  <button
+                    type="submit"
+                    className="button button-secondary"
+                    disabled={noteSaving || !noteDraft.trim()}
+                  >
+                    {noteSaving ? 'Saving…' : 'Add note'}
+                  </button>
+                </form>
+              </details>
             </footer>
           </>
         )}
