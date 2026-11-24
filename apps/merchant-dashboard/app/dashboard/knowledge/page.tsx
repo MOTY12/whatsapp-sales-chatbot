@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { ApiError, api, type KnowledgeFaq } from '@/lib/api';
 import { BusinessPicker } from '@/components/business-picker';
 import { KnowledgeExperience } from './knowledge-experience';
+import { KnowledgeDocuments } from './knowledge-documents';
 
 export default async function KnowledgePage({
   searchParams,
@@ -90,6 +91,7 @@ export default async function KnowledgePage({
         initialFaqs={faqs}
         initialError={initialError}
       />
+      <KnowledgeDocuments businessId={membership.businessId} />
     </div>
   );
 }

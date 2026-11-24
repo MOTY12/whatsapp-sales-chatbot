@@ -656,6 +656,11 @@ export class OutboundMessageService {
                   SELECT 1 FROM public.merchant_products p
                   WHERE p.business_id=a.business_id AND p.id=(evidence_item->>'sourceId')::uuid
                     AND p.published_revision_id=(evidence_item->>'revisionId')::uuid
+                )) OR
+                (evidence_item->>'sourceType'='DOCUMENT' AND EXISTS (
+                  SELECT 1 FROM public.knowledge_documents d
+                  WHERE d.business_id=a.business_id AND d.id=(evidence_item->>'sourceId')::uuid
+                    AND d.published_revision_id=(evidence_item->>'revisionId')::uuid
                 ))
               )
             )

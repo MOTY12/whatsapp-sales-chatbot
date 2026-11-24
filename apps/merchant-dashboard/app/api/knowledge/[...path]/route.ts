@@ -25,10 +25,19 @@ function failure(error: unknown) {
 }
 
 function validPath(path: string[]) {
+  if (!uuid.test(path[0] ?? '')) return false;
+  if (path[1] === 'documents') {
+    return (
+      path.length === 2 ||
+      (path.length === 3 && ['uploads'].includes(path[2])) ||
+      (path.length === 4 &&
+        uuid.test(path[2]) &&
+        ['complete', 'publish', 'unpublish'].includes(path[3]))
+    );
+  }
   return (
     path.length >= 1 &&
     path.length <= 3 &&
-    uuid.test(path[0]) &&
     (path.length === 1 ||
       (uuid.test(path[1]) &&
         (path.length === 2 || ['publish', 'unpublish'].includes(path[2]))))
@@ -47,7 +56,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       path.length === 1
         ? await api.faqs(path[0])
         : path.length === 2
-          ? await api.faq(path[0], path[1])
+          ? path[1] === 'documents'
+            ? await api.knowledgeDocuments(path[0])
+            : await api.faq(path[0], path[1])
           : null;
     if (!result)
       return NextResponse.json(
@@ -92,6 +103,48 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 403, headers: { 'Cache-Control': 'no-store' } },
     );
   try {
+    if (path[1] === 'documents') {
+      if (path.length === 3 && path[2] === 'uploads') {
+        const body = await request.json().catch(() => null);
+        const input =
+          body && typeof body === 'object'
+            ? (body as Record<string, unknown>)
+            : {};
+        return NextResponse.json(
+          await api.createKnowledgeDocumentUpload(
+            path[0],
+            {
+              title: typeof input.title === 'string' ? input.title : '',
+              fileName:
+                typeof input.fileName === 'string' ? input.fileName : '',
+              contentType:
+                typeof input.contentType === 'string' ? input.contentType : '',
+              sizeBytes:
+                typeof input.sizeBytes === 'number' ? input.sizeBytes : 0,
+              sha256: typeof input.sha256 === 'string' ? input.sha256 : '',
+            },
+            request.headers.get('idempotency-key') ?? '',
+          ),
+          { status: 201, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+      if (path.length === 4 && path[3] === 'complete')
+        return NextResponse.json(
+          await api.completeKnowledgeDocumentUpload(path[0], path[2]),
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
+      if (path.length === 4 && ['publish', 'unpublish'].includes(path[3]))
+        return NextResponse.json(
+          await (path[3] === 'publish'
+            ? api.publishKnowledgeDocument(path[0], path[2])
+            : api.unpublishKnowledgeDocument(path[0], path[2])),
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Not found.' } },
+        { status: 404 },
+      );
+    }
     if (path.length === 1) {
       const key = request.headers.get('idempotency-key') ?? '';
       if (!uuidV4.test(key))

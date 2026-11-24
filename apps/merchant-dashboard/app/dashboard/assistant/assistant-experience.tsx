@@ -430,8 +430,15 @@ export function AssistantExperience({
                           className={styles.source}
                         >
                           <span>
-                            {source.type === 'FAQ' ? 'FAQ' : 'Product'} ·{' '}
-                            {source.title}
+                            {source.type === 'FAQ'
+                              ? 'FAQ'
+                              : source.type === 'PRODUCT'
+                                ? 'Product'
+                                : 'PDF'}{' '}
+                            · {source.title}
+                            {source.pageNumber
+                              ? ` · Page ${source.pageNumber}`
+                              : ''}
                           </span>
                           <small>{source.excerpt}</small>
                         </div>

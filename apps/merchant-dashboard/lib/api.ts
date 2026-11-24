@@ -170,6 +170,33 @@ export type KnowledgeFaq = {
   created_at: string;
   updated_at: string;
 };
+export type KnowledgeDocument = {
+  id: string;
+  title: string;
+  status: 'PROCESSING' | 'DRAFT' | 'PUBLISHED' | 'FAILED' | 'EXPIRED';
+  revision_id: string | null;
+  revision_status:
+    | 'UPLOADING'
+    | 'QUEUED'
+    | 'PROCESSING'
+    | 'DRAFT'
+    | 'PUBLISHED'
+    | 'FAILED'
+    | 'EXPIRED'
+    | null;
+  page_count: number | null;
+  size_bytes: number | null;
+  created_at: string;
+  updated_at: string;
+};
+export type KnowledgeUploadIntent = {
+  documentId: string;
+  revisionId: string;
+  title: string;
+  uploadUrl: string;
+  expiresAt: string;
+  headers: Record<string, string>;
+};
 export type KnowledgeGap = {
   id: string;
   category:
@@ -297,7 +324,8 @@ export type PlaygroundResult = {
   sources: {
     id: string;
     revisionId: string;
-    type: 'FAQ' | 'PRODUCT';
+    type: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
+    pageNumber?: number;
     title: string;
     excerpt: string;
   }[];
@@ -802,6 +830,44 @@ export const api = {
   unpublishFaq: (businessId: string, faqId: string) =>
     request<KnowledgeFaq>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/unpublish`,
+      { method: 'POST' },
+    ),
+  knowledgeDocuments: (businessId: string) =>
+    request<KnowledgeDocument[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents`,
+    ),
+  createKnowledgeDocumentUpload: (
+    businessId: string,
+    details: {
+      title: string;
+      fileName: string;
+      contentType: string;
+      sizeBytes: number;
+      sha256: string;
+    },
+    idempotencyKey: string,
+  ) =>
+    request<KnowledgeUploadIntent>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/uploads`,
+      {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(details),
+      },
+    ),
+  completeKnowledgeDocumentUpload: (businessId: string, revisionId: string) =>
+    request<{ documentId: string; revisionId: string; status: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/uploads/${encodeURIComponent(revisionId)}/complete`,
+      { method: 'POST' },
+    ),
+  publishKnowledgeDocument: (businessId: string, documentId: string) =>
+    request<KnowledgeDocument>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/publish`,
+      { method: 'POST' },
+    ),
+  unpublishKnowledgeDocument: (businessId: string, documentId: string) =>
+    request<KnowledgeDocument>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/unpublish`,
       { method: 'POST' },
     ),
   knowledgeGaps: (businessId: string, status?: string) => {

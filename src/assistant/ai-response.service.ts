@@ -268,6 +268,7 @@ export class AiResponseService {
               type: item.sourceType,
               title: item.title,
               content: item.content,
+              pageNumber: item.pageNumber,
               facts: item.facts,
             })),
           });
@@ -428,11 +429,14 @@ export class AiResponseService {
           row.business_id,
           reply,
           JSON.stringify(
-            evidence.map(({ sourceId, revisionId, sourceType }) => ({
-              sourceId,
-              revisionId,
-              sourceType,
-            })),
+            evidence.map(
+              ({ sourceId, revisionId, sourceType, pageNumber }) => ({
+                sourceId,
+                revisionId,
+                sourceType,
+                ...(pageNumber ? { pageNumber } : {}),
+              }),
+            ),
           ),
           errorCategory,
         ],
@@ -573,7 +577,9 @@ export class AiResponseService {
         (EXISTS (SELECT 1 FROM public.knowledge_faqs f
           WHERE f.business_id=a.business_id AND f.published_revision_id IS NOT NULL)
           OR EXISTS (SELECT 1 FROM public.merchant_products p
-          WHERE p.business_id=a.business_id AND p.published_revision_id IS NOT NULL)) AS published_knowledge_ready,
+          WHERE p.business_id=a.business_id AND p.published_revision_id IS NOT NULL)
+          OR EXISTS (SELECT 1 FROM public.knowledge_documents d
+          WHERE d.business_id=a.business_id AND d.published_revision_id IS NOT NULL)) AS published_knowledge_ready,
         EXISTS (SELECT 1 FROM public.assistant_configurations ac WHERE ac.business_id=a.business_id) AS assistant_configured,
         w.enabled AS widget_enabled,w.ai_enabled AS widget_ai_enabled
        FROM public.ai_response_runs a JOIN public.messages m ON m.id=a.inbound_message_id AND m."businessId"=a.business_id
@@ -661,8 +667,11 @@ export class AiResponseService {
         item.sourceType === 'FAQ'
           ? `SELECT EXISTS (SELECT 1 FROM public.knowledge_faqs f
               WHERE f.business_id=$1 AND f.id=$2 AND f.published_revision_id=$3) AS current`
-          : `SELECT EXISTS (SELECT 1 FROM public.merchant_products p
-              WHERE p.business_id=$1 AND p.id=$2 AND p.published_revision_id=$3) AS current`;
+          : item.sourceType === 'PRODUCT'
+            ? `SELECT EXISTS (SELECT 1 FROM public.merchant_products p
+              WHERE p.business_id=$1 AND p.id=$2 AND p.published_revision_id=$3) AS current`
+            : `SELECT EXISTS (SELECT 1 FROM public.knowledge_documents d
+              WHERE d.business_id=$1 AND d.id=$2 AND d.published_revision_id=$3) AS current`;
       const [row] = await this.database.query<{ current: boolean }[]>(query, [
         businessId,
         item.sourceId,

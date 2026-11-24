@@ -300,6 +300,71 @@ export function workerConfig(env = process.env) {
   return { redis, prefix, concurrency, ai: aiConfig(env) };
 }
 
+export function knowledgeStorageConfig(env = process.env) {
+  const names = [
+    'KNOWLEDGE_S3_BUCKET',
+    'KNOWLEDGE_S3_REGION',
+    'KNOWLEDGE_S3_ENDPOINT',
+    'KNOWLEDGE_S3_ACCESS_KEY_ID',
+    'KNOWLEDGE_S3_SECRET_ACCESS_KEY',
+    'KNOWLEDGE_S3_FORCE_PATH_STYLE',
+  ] as const;
+  const supplied = names.filter((name) => !!env[name]?.trim());
+  if (!supplied.includes('KNOWLEDGE_S3_BUCKET')) {
+    if (supplied.length)
+      throw new Error(
+        'KNOWLEDGE_S3_BUCKET is required when S3 settings are supplied.',
+      );
+    return null;
+  }
+  const bucket = env.KNOWLEDGE_S3_BUCKET!.trim();
+  const region = env.KNOWLEDGE_S3_REGION?.trim() || 'us-east-1';
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket))
+    throw new Error('KNOWLEDGE_S3_BUCKET has an invalid format.');
+  if (!/^[a-z0-9-]{1,40}$/.test(region))
+    throw new Error('KNOWLEDGE_S3_REGION has an invalid format.');
+  const endpointValue = env.KNOWLEDGE_S3_ENDPOINT?.trim();
+  const production = applicationEnvironment(env) === 'production';
+  const endpoint = endpointValue
+    ? validatedUrl(
+        endpointValue,
+        'KNOWLEDGE_S3_ENDPOINT',
+        production ? ['https:'] : ['http:', 'https:'],
+      )
+    : undefined;
+  if (
+    endpoint &&
+    (endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
+  )
+    throw new Error(
+      'KNOWLEDGE_S3_ENDPOINT must not include credentials, query or fragment.',
+    );
+  const accessKeyId = env.KNOWLEDGE_S3_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = env.KNOWLEDGE_S3_SECRET_ACCESS_KEY?.trim();
+  if (!!accessKeyId !== !!secretAccessKey)
+    throw new Error(
+      'KNOWLEDGE_S3_ACCESS_KEY_ID and KNOWLEDGE_S3_SECRET_ACCESS_KEY must be supplied together.',
+    );
+  if (
+    accessKeyId &&
+    (isPlaceholder(accessKeyId) || isPlaceholder(secretAccessKey!))
+  )
+    throw new Error('Knowledge S3 credentials must not be placeholders.');
+  if (production && endpoint?.protocol !== 'https:')
+    throw new Error(
+      'Production knowledge storage requires a private HTTPS endpoint or AWS S3.',
+    );
+  return {
+    bucket,
+    region,
+    endpoint: endpoint?.origin,
+    forcePathStyle: flag(env, 'KNOWLEDGE_S3_FORCE_PATH_STYLE', false),
+    ...(accessKeyId
+      ? { credentials: { accessKeyId, secretAccessKey: secretAccessKey! } }
+      : {}),
+  };
+}
+
 export function aiConfig(env = process.env) {
   const enabled = aiResponsesEnabled(env);
   const apiKey = env.OPENAI_API_KEY?.trim();

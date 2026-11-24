@@ -427,3 +427,91 @@
     width: 100%;
   }
 }
+.documentPanel {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 1rem;
+  background: var(--card, #fff);
+}
+.documentHeading h2 {
+  margin: 0.3rem 0;
+}
+.documentHeading p,
+.documentHelp {
+  color: var(--muted, #667085);
+  max-width: 68ch;
+}
+.documentUploadForm {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) auto;
+  gap: 1rem;
+  align-items: end;
+  margin: 1rem 0;
+}
+.documentUploadForm label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+.documentUploadForm input {
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 0.5rem;
+}
+.documentUploadForm button {
+  min-height: 2.7rem;
+}
+.documentHelp {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.documentList {
+  display: grid;
+  gap: 0.8rem;
+}
+.documentCard {
+  padding: 1rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 0.75rem;
+}
+.documentCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.documentCardTop h3 {
+  margin: 0;
+}
+.documentCardTop p {
+  margin: 0.3rem 0;
+  color: var(--muted, #667085);
+}
+.documentPreview {
+  padding: 0.8rem;
+  border-radius: 0.5rem;
+  background: var(--surface, #f8fafc);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.documentActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.documentActions span {
+  color: var(--muted, #667085);
+  font-size: 0.9rem;
+}
+@media (max-width: 700px) {
+  .documentPanel {
+    padding: 1rem;
+  }
+  .documentUploadForm {
+    grid-template-columns: 1fr;
+  }
+}

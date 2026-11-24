@@ -386,6 +386,7 @@ export class MerchantAssistantService {
             type: item.sourceType,
             title: item.title,
             content: item.content,
+            pageNumber: item.pageNumber,
             facts: item.facts,
           })),
         });
@@ -456,6 +457,7 @@ export class MerchantAssistantService {
                   type: item.sourceType,
                   title: item.title,
                   excerpt: item.content.slice(0, 400),
+                  ...(item.pageNumber ? { pageNumber: item.pageNumber } : {}),
                 }));
               handoffRecommended = false;
             } else if (

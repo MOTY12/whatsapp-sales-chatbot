@@ -475,6 +475,63 @@ describe('published PostgreSQL knowledge retrieval', () => {
     ).rejects.toThrow('Search query must be at most 256 characters.');
   });
 
+  it('returns only published document pages with stable page anchors and never crosses tenant boundaries', async () => {
+    const documentId = '42000000-0000-4000-8000-000000000001';
+    const revisionId = '42000000-0000-4000-8000-000000000002';
+    await admin.query(
+      `INSERT INTO public.knowledge_documents(id,business_id,title,status)
+       VALUES ($1,$2,'Delivery policy','DRAFT')`,
+      [documentId, secondBusinessId],
+    );
+    await admin.query(
+      `INSERT INTO public.knowledge_document_revisions(id,business_id,document_id,revision,status,object_key,object_version_id,checksum_sha256,size_bytes,page_count)
+       VALUES ($1,$2,$3,1,'PUBLISHED','private/knowledge/test.pdf','test-version',repeat('a',64),100,1)`,
+      [revisionId, secondBusinessId, documentId],
+    );
+    await admin.query(
+      `UPDATE public.knowledge_documents SET draft_revision_id=$2,published_revision_id=$2,status='PUBLISHED' WHERE id=$1`,
+      [documentId, revisionId],
+    );
+    await admin.query(
+      `INSERT INTO public.knowledge_document_pages(business_id,document_id,revision_id,page_number,content)
+       VALUES ($1,$2,$3,7,'We deliver to Ikeja and the surrounding area on request.')`,
+      [secondBusinessId, documentId, revisionId],
+    );
+
+    const hidden = await search.retrieve({
+      businessId: firstBusinessId,
+      query: 'deliver Ikeja',
+    });
+    expect(hidden.evidence).toEqual([]);
+    const visible = await search.retrieve({
+      businessId: secondBusinessId,
+      query: 'deliver Ikeja',
+    });
+    expect(visible.evidence[0]).toMatchObject({
+      sourceType: 'DOCUMENT',
+      sourceId: documentId,
+      revisionId,
+      pageNumber: 7,
+      title: 'Delivery policy',
+    });
+    await admin.query(
+      "UPDATE public.knowledge_documents SET published_revision_id=NULL,status='DRAFT' WHERE id=$1",
+      [documentId],
+    );
+    expect(
+      await search.retrieve({
+        businessId: secondBusinessId,
+        query: 'deliver Ikeja',
+      }),
+    ).toMatchObject({ evidence: [], reason: 'NO_MATCH' });
+    await expect(
+      merchant.query(
+        'SELECT * FROM public.kleva_search_published_documents($1,$2,$3)',
+        [secondBusinessId, 'Ikeja', 5],
+      ),
+    ).rejects.toMatchObject({ driverError: { code: '42501' } });
+  });
+
   it('keeps search internals unavailable to merchant database roles and uses the GIN indexes', async () => {
     await expect(
       merchant.query(
@@ -482,15 +539,26 @@ describe('published PostgreSQL knowledge retrieval', () => {
         [firstBusinessId, 'anything', 5],
       ),
     ).rejects.toMatchObject({ driverError: { code: '42501' } });
+    await expect(
+      merchant.query('SELECT * FROM public.knowledge_document_pages'),
+    ).rejects.toMatchObject({ driverError: { code: '42501' } });
+    await expect(
+      merchant.query(
+        'SELECT * FROM public.kleva_knowledge_document_job_read($1)',
+        ['42000000-0000-4000-8000-000000000002'],
+      ),
+    ).rejects.toMatchObject({ driverError: { code: '42501' } });
     const indexes = await admin.query<{ indexname: string }[]>(
       `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
        AND indexname IN ('IDX_knowledge_faq_revision_search',
-         'IDX_merchant_product_revision_search','IDX_merchant_product_revision_sku_exact')`,
+         'IDX_merchant_product_revision_search','IDX_merchant_product_revision_sku_exact',
+         'idx_knowledge_document_pages_search')`,
     );
     expect(indexes.map(({ indexname }) => indexname).sort()).toEqual([
       'IDX_knowledge_faq_revision_search',
       'IDX_merchant_product_revision_search',
       'IDX_merchant_product_revision_sku_exact',
+      'idx_knowledge_document_pages_search',
     ]);
     await admin.transaction(async (manager) => {
       await manager.query('SET LOCAL enable_seqscan = off');

@@ -38,6 +38,8 @@ import { MerchantLearningService } from './merchant-learning.service';
 import { MerchantWebsiteWidgetController } from './merchant-website-widget.controller';
 import { MerchantWebsiteWidgetService } from './merchant-website-widget.service';
 import { WebsiteChatModule } from '../website-chat/website-chat.module';
+import { KnowledgeDocumentController } from '../knowledge/knowledge-document.controller';
+import { KnowledgeDocumentUploadService } from '../knowledge/knowledge-document-upload.service';
 
 @Module({
   imports: [
@@ -63,6 +65,7 @@ import { WebsiteChatModule } from '../website-chat/website-chat.module';
     MerchantAssistantController,
     MerchantLearningController,
     MerchantWebsiteWidgetController,
+    KnowledgeDocumentController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -75,6 +78,7 @@ import { WebsiteChatModule } from '../website-chat/website-chat.module';
     MerchantWhatsAppService,
     MerchantInboxService,
     KnowledgeFaqService,
+    KnowledgeDocumentUploadService,
     ProductService,
     MerchantLeadsService,
     MerchantPilotService,

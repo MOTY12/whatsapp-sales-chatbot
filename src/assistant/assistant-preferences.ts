@@ -45,7 +45,8 @@ export type PlaygroundMessage = {
 export type PlaygroundSource = {
   id: string;
   revisionId: string;
-  type: 'FAQ' | 'PRODUCT';
+  type: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
+  pageNumber?: number;
   title: string;
   excerpt: string;
 };

@@ -25,6 +25,7 @@ export type GroundedModelRequest = {
     type: string;
     title: string;
     content: string;
+    pageNumber?: number;
     facts?: unknown;
   }>;
 };

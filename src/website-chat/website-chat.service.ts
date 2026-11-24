@@ -504,7 +504,8 @@ export class WebsiteChatService {
             AND EXISTS(SELECT 1 FROM public.website_widgets w WHERE w.id=$5 AND w.business_id=$1 AND w.enabled AND w.ai_enabled)
             AND EXISTS(SELECT 1 FROM public.assistant_configurations ac WHERE ac.business_id=$1)
             AND (EXISTS(SELECT 1 FROM public.knowledge_faqs f WHERE f.business_id=$1 AND f.published_revision_id IS NOT NULL)
-              OR EXISTS(SELECT 1 FROM public.merchant_products p WHERE p.business_id=$1 AND p.published_revision_id IS NOT NULL))
+              OR EXISTS(SELECT 1 FROM public.merchant_products p WHERE p.business_id=$1 AND p.published_revision_id IS NOT NULL)
+              OR EXISTS(SELECT 1 FROM public.knowledge_documents d WHERE d.business_id=$1 AND d.published_revision_id IS NOT NULL))
           ON CONFLICT (business_id,inbound_message_id) DO NOTHING RETURNING id`,
           [
             session.business_id,
@@ -1021,11 +1022,12 @@ export class WebsiteChatService {
           conversation_id: string;
           authorization_kind: string;
           control_version: string;
+          idempotency_key: string | null;
           status: string;
         }>
       >(
         `SELECT m.id,m."conversationId" AS conversation_id,
-        m.metadata->>'authorizationKind' AS authorization_kind,m.metadata->>'controlVersion' AS control_version,m.status
+        m.metadata->>'authorizationKind' AS authorization_kind,m.metadata->>'controlVersion' AS control_version,m.idempotency_key,m.status
         FROM public.messages m WHERE m.id=$1 AND m."businessId"=$2 AND m.channel='WEBSITE' AND m.direction='outbound' FOR UPDATE`,
         [messageId, businessId],
       );
@@ -1062,6 +1064,47 @@ export class WebsiteChatService {
           sent: false,
           kind: message.authorization_kind,
         };
+      }
+      if (message.authorization_kind === 'AI') {
+        const [staleEvidence] = await manager.query<Array<{ stale: boolean }>>(
+          `SELECT EXISTS (
+            SELECT 1 FROM public.ai_response_runs a,
+              LATERAL jsonb_array_elements(a.evidence) evidence_item
+            WHERE a.id=$1 AND a.business_id=$2 AND EXISTS (
+              SELECT 1 WHERE NOT (
+                (evidence_item->>'sourceType'='FAQ' AND EXISTS (
+                  SELECT 1 FROM public.knowledge_faqs f WHERE f.business_id=a.business_id
+                    AND f.id=(evidence_item->>'sourceId')::uuid AND f.published_revision_id=(evidence_item->>'revisionId')::uuid
+                )) OR
+                (evidence_item->>'sourceType'='PRODUCT' AND EXISTS (
+                  SELECT 1 FROM public.merchant_products p WHERE p.business_id=a.business_id
+                    AND p.id=(evidence_item->>'sourceId')::uuid AND p.published_revision_id=(evidence_item->>'revisionId')::uuid
+                )) OR
+                (evidence_item->>'sourceType'='DOCUMENT' AND EXISTS (
+                  SELECT 1 FROM public.knowledge_documents d WHERE d.business_id=a.business_id
+                    AND d.id=(evidence_item->>'sourceId')::uuid AND d.published_revision_id=(evidence_item->>'revisionId')::uuid
+                ))
+              )
+            )
+          ) AS stale`,
+          [message.idempotency_key, businessId],
+        );
+        if (staleEvidence?.stale) {
+          await manager.query(
+            `UPDATE public.messages SET status='failed',metadata=COALESCE(metadata,'{}'::jsonb)||'{"safeFailure":"PUBLISHED_EVIDENCE_CHANGED"}'::jsonb WHERE id=$1 AND "businessId"=$2`,
+            [messageId, businessId],
+          );
+          await manager.query(
+            `UPDATE public.ai_response_runs SET status='SKIPPED',error_category='PUBLISHED_EVIDENCE_CHANGED',updated_at=now(),completed_at=now()
+              WHERE id=$1 AND business_id=$2 AND status='QUEUED'`,
+            [message.idempotency_key, businessId],
+          );
+          return {
+            conversationId: message.conversation_id,
+            sent: false,
+            kind: 'AI',
+          };
+        }
       }
       await manager.query(
         `UPDATE public.messages SET status='sent' WHERE id=$1 AND "businessId"=$2`,

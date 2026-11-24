@@ -9,12 +9,13 @@ export type RetrievalRequest = {
 };
 
 export type EvidenceItem = {
-  sourceType: 'FAQ' | 'PRODUCT';
+  sourceType: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
   sourceId: string;
   revisionId: string;
   relevanceScore: number;
   title: string;
   content: string;
+  pageNumber?: number;
   sku?: string | null;
   facts?: {
     price: string | null;
@@ -34,20 +35,21 @@ export type RetrievalResult = {
 
 type SearchRow = {
   has_published_content: boolean;
-  source_type: 'FAQ' | 'PRODUCT' | null;
+  source_type: 'FAQ' | 'PRODUCT' | 'DOCUMENT' | null;
   source_id: string | null;
   revision_id: string | null;
   relevance_score: number | string | null;
   title: string | null;
   content: string | null;
-  sku: string | null;
-  price: string | null;
-  currency: string | null;
-  availability: 'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN' | null;
+  sku?: string | null;
+  price?: string | null;
+  currency?: string | null;
+  availability?: 'IN_STOCK' | 'OUT_OF_STOCK' | 'UNKNOWN' | null;
+  page_number?: number | null;
 };
 
 type EvidenceRow = SearchRow & {
-  source_type: 'FAQ' | 'PRODUCT';
+  source_type: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
   source_id: string;
   revision_id: string;
   relevance_score: number | string;
@@ -62,7 +64,8 @@ function isSearchRow(value: unknown): value is SearchRow {
     typeof row.has_published_content === 'boolean' &&
     (row.source_type === null ||
       row.source_type === 'FAQ' ||
-      row.source_type === 'PRODUCT') &&
+      row.source_type === 'PRODUCT' ||
+      row.source_type === 'DOCUMENT') &&
     (row.source_id === null || typeof row.source_id === 'string') &&
     (row.revision_id === null || typeof row.revision_id === 'string') &&
     (row.relevance_score === null ||
@@ -70,13 +73,23 @@ function isSearchRow(value: unknown): value is SearchRow {
       typeof row.relevance_score === 'number') &&
     (row.title === null || typeof row.title === 'string') &&
     (row.content === null || typeof row.content === 'string') &&
-    (row.sku === null || typeof row.sku === 'string') &&
-    (row.price === null || typeof row.price === 'string') &&
-    (row.currency === null || typeof row.currency === 'string') &&
-    (row.availability === null ||
+    (row.sku === undefined ||
+      row.sku === null ||
+      typeof row.sku === 'string') &&
+    (row.price === undefined ||
+      row.price === null ||
+      typeof row.price === 'string') &&
+    (row.currency === undefined ||
+      row.currency === null ||
+      typeof row.currency === 'string') &&
+    (row.availability === undefined ||
+      row.availability === null ||
       row.availability === 'IN_STOCK' ||
       row.availability === 'OUT_OF_STOCK' ||
-      row.availability === 'UNKNOWN')
+      row.availability === 'UNKNOWN') &&
+    (row.page_number === undefined ||
+      row.page_number === null ||
+      Number.isSafeInteger(row.page_number))
   );
 }
 
@@ -170,6 +183,23 @@ export class UnifiedKnowledgeRetrievalService {
         );
       return rows;
     };
+    const loadDocumentRows = async (
+      queryText: string,
+    ): Promise<SearchRow[]> => {
+      const rawRows: unknown = await this.dataSource.query(
+        'SELECT * FROM public.kleva_search_published_documents($1, $2, $3)',
+        [request.businessId, queryText, limit],
+      );
+      if (
+        !Array.isArray(rawRows) ||
+        !rawRows.length ||
+        rawRows.some((row) => !isSearchRow(row))
+      )
+        throw new Error(
+          'PostgreSQL document retrieval returned an invalid result.',
+        );
+      return rawRows as SearchRow[];
+    };
     const toEvidence = (rows: SearchRow[]): EvidenceItem[] =>
       rows.filter(isEvidenceRow).map((row): EvidenceItem => {
         const item: EvidenceItem = {
@@ -180,18 +210,31 @@ export class UnifiedKnowledgeRetrievalService {
           title: row.title,
           content: row.content,
         };
+        if (row.source_type === 'DOCUMENT' && row.page_number) {
+          item.pageNumber = Number(row.page_number);
+        }
         if (row.source_type === 'PRODUCT') {
           item.sku = row.sku;
           item.facts = {
-            price: row.price,
+            price: row.price ?? null,
             currency: row.currency ?? 'NGN',
             availability: row.availability ?? 'UNKNOWN',
           };
         }
         return item;
       });
-    const rows = await loadRows(queryText);
-    const candidates = toEvidence(rows);
+    const [rows, documentRows] = await Promise.all([
+      loadRows(queryText),
+      loadDocumentRows(queryText),
+    ]);
+    const candidates = [...toEvidence(rows), ...toEvidence(documentRows)]
+      .sort(
+        (a, b) =>
+          b.relevanceScore - a.relevanceScore ||
+          a.sourceType.localeCompare(b.sourceType) ||
+          a.sourceId.localeCompare(b.sourceId),
+      )
+      .slice(0, limit);
     const evidence = candidates.filter(
       (item) => item.relevanceScore >= minimumEvidenceScore,
     );
@@ -202,14 +245,24 @@ export class UnifiedKnowledgeRetrievalService {
       normalizedQuery &&
       normalizedQuery !== queryText.toLocaleLowerCase('en')
     ) {
-      const fallbackEvidence = toEvidence(
-        await loadRows(normalizedQuery),
-      ).filter((item) => item.relevanceScore >= minimumEvidenceScore);
+      const [faqFallback, documentFallback] = await Promise.all([
+        loadRows(normalizedQuery),
+        loadDocumentRows(normalizedQuery),
+      ]);
+      const fallbackEvidence = [
+        ...toEvidence(faqFallback),
+        ...toEvidence(documentFallback),
+      ]
+        .filter((item) => item.relevanceScore >= minimumEvidenceScore)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, limit);
       if (fallbackEvidence.length)
         return { evidence: fallbackEvidence, sufficientEvidence: true };
     }
 
-    const hasPublishedContent = rows[0]?.has_published_content ?? false;
+    const hasPublishedContent = Boolean(
+      rows[0]?.has_published_content || documentRows[0]?.has_published_content,
+    );
     const reason: InsufficientEvidenceReason = !hasPublishedContent
       ? 'NO_PUBLISHED_CONTENT'
       : candidates.length

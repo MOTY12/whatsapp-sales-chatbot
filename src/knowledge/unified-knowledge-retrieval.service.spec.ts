@@ -3,7 +3,7 @@ import { UnifiedKnowledgeRetrievalService } from './unified-knowledge-retrieval.
 
 describe('UnifiedKnowledgeRetrievalService', () => {
   it('abstains when candidates fall below the conservative relevance threshold', async () => {
-    const query = jest.fn().mockResolvedValue([
+    const faqRows = [
       {
         has_published_content: true,
         source_type: 'FAQ',
@@ -17,7 +17,25 @@ describe('UnifiedKnowledgeRetrievalService', () => {
         currency: null,
         availability: null,
       },
-    ]);
+    ];
+    const query = jest.fn((sql: string) =>
+      Promise.resolve(
+        sql.includes('published_knowledge')
+          ? faqRows
+          : [
+              {
+                has_published_content: false,
+                source_type: null,
+                source_id: null,
+                revision_id: null,
+                relevance_score: null,
+                title: null,
+                content: null,
+                page_number: null,
+              },
+            ],
+      ),
+    );
     const service = new UnifiedKnowledgeRetrievalService({
       query,
     } as unknown as DataSource);
@@ -34,6 +52,10 @@ describe('UnifiedKnowledgeRetrievalService', () => {
     });
     expect(query).toHaveBeenCalledWith(
       'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
+      ['00000000-0000-4000-8000-000000000003', 'returns', 5],
+    );
+    expect(query).toHaveBeenCalledWith(
+      'SELECT * FROM public.kleva_search_published_documents($1, $2, $3)',
       ['00000000-0000-4000-8000-000000000003', 'returns', 5],
     );
   });
@@ -67,7 +89,7 @@ describe('UnifiedKnowledgeRetrievalService', () => {
   });
 
   it('removes natural-language question words while keeping product identifiers searchable', async () => {
-    const query = jest.fn().mockResolvedValue([
+    const emptyRows = [
       {
         has_published_content: true,
         source_type: null,
@@ -81,7 +103,8 @@ describe('UnifiedKnowledgeRetrievalService', () => {
         currency: null,
         availability: null,
       },
-    ]);
+    ];
+    const query = jest.fn(() => Promise.resolve(emptyRows));
     const service = new UnifiedKnowledgeRetrievalService({
       query,
     } as unknown as DataSource);
@@ -96,7 +119,7 @@ describe('UnifiedKnowledgeRetrievalService', () => {
       ['00000000-0000-4000-8000-000000000003', 'How much is Product A?', 5],
     );
     expect(query).toHaveBeenNthCalledWith(
-      2,
+      3,
       'SELECT * FROM public.kleva_search_published_knowledge($1, $2, $3)',
       ['00000000-0000-4000-8000-000000000003', 'product a', 5],
     );

@@ -67,6 +67,10 @@ import { AgentToolExecution1760000000027 } from './migrations/1760000000027-Agen
 import { AgentActivationAndMemory1760000000028 } from './migrations/1760000000028-AgentActivationAndMemory';
 import { LearningKnowledgeGaps1760000000029 } from './migrations/1760000000029-LearningKnowledgeGaps';
 import { WebsiteChat1760000000030 } from './migrations/1760000000030-WebsiteChat';
+import { KnowledgeDocument } from './entities/knowledge-document.entity';
+import { KnowledgeDocumentRevision } from './entities/knowledge-document-revision.entity';
+import { KnowledgeDocumentPage } from './entities/knowledge-document-page.entity';
+import { KnowledgeDocumentUploads1760000000031 } from './migrations/1760000000031-KnowledgeDocumentUploads';
 
 export const databaseEntities = [
   Business,
@@ -97,6 +101,9 @@ export const databaseEntities = [
   AgentToolExecution,
   AgentToolHandoffEvent,
   MerchantEmailDelivery,
+  KnowledgeDocument,
+  KnowledgeDocumentRevision,
+  KnowledgeDocumentPage,
 ];
 
 export const databaseMigrations = [
@@ -132,4 +139,5 @@ export const databaseMigrations = [
   AgentActivationAndMemory1760000000028,
   LearningKnowledgeGaps1760000000029,
   WebsiteChat1760000000030,
+  KnowledgeDocumentUploads1760000000031,
 ];

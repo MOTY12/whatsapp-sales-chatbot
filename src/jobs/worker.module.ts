@@ -42,6 +42,8 @@ import {
   websiteAiResponseOperation,
   websiteDeliveryOperation,
 } from '../website-chat/website-chat.service';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { KnowledgeDocumentIngestionService } from '../knowledge/knowledge-document-ingestion.service';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -67,6 +69,7 @@ export class WorkerRuntime
     @Inject(OUTBOX_HANDLERS) handlers: ReadonlyMap<string, OutboxHandler>,
     @InjectDataSource() private readonly database: DataSource,
     private readonly websiteChat: WebsiteChatService,
+    private readonly knowledgeDocuments: KnowledgeDocumentIngestionService,
   ) {
     this.queue.on('error', () =>
       this.logger.warn('Outbox producer Redis connection error.'),
@@ -143,6 +146,13 @@ export class WorkerRuntime
     } catch {
       this.logger.warn('Website retention maintenance failed.');
     }
+    try {
+      const removed = await this.knowledgeDocuments.cleanupExpiredUploads();
+      if (removed)
+        this.logger.log({ event: 'knowledge.document.cleanup', removed });
+    } catch {
+      this.logger.warn('Knowledge upload cleanup failed.');
+    }
   }
 
   private async writeHeartbeat(): Promise<void> {
@@ -173,10 +183,12 @@ export class WorkerRuntime
     AssistantModule,
     EmailModule,
     WebsiteChatModule,
+    KnowledgeModule,
   ],
   providers: [
     WorkerRuntime,
     WhatsAppResponseIntentDispatcher,
+    KnowledgeDocumentIngestionService,
     {
       provide: OUTBOX_HANDLERS,
       useFactory: (
@@ -185,6 +197,7 @@ export class WorkerRuntime
         ai: AiResponseService,
         email: EmailService,
         website: WebsiteChatService,
+        knowledgeDocuments: KnowledgeDocumentIngestionService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
@@ -218,6 +231,10 @@ export class WorkerRuntime
                 ),
             },
           ],
+          [
+            'knowledge.document.extract',
+            { execute: (operation) => knowledgeDocuments.execute(operation) },
+          ],
         ]),
       inject: [
         WhatsAppResponseIntentDispatcher,
@@ -225,6 +242,7 @@ export class WorkerRuntime
         AiResponseService,
         EmailService,
         WebsiteChatService,
+        KnowledgeDocumentIngestionService,
       ],
     },
   ],
