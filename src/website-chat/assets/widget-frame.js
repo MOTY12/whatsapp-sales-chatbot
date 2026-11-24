@@ -6,7 +6,7 @@
   const apiBase = `${window.location.origin}/public/widgets/${encodeURIComponent(widgetId)}`;
   const root = document.getElementById('widget-root');
   const tokenKey = `kleva.website.${widgetId}.${siteOrigin}`;
-  const state = { config: null, token: '', cursor: null, open: false, sending: false, contactSaved: false, unread: 0, loaded: false, timer: 0 };
+  const state = { config: null, token: '', cursor: null, open: false, sending: false, contactSaved: false, unread: 0, loaded: false, timer: 0, eventController: null, eventRetry: 0, realtimeState: 'connecting', typingActor: '', typingTimer: 0, pendingSend: null, sendError: '' };
   const storage = {
     get(key) { try { return localStorage.getItem(key); } catch { return null; } },
     set(key, value) { try { localStorage.setItem(key, value); } catch { /* Storage may be disabled in embedded contexts. */ } },
@@ -72,7 +72,8 @@
     const availability = config.availability === 'CLOSED'
       ? `${config.configuration.offlineMessage}${config.aiEnabled ? ' The AI assistant can still answer questions.' : ''}`
       : config.aiEnabled ? 'AI assistant available · A person can join anytime' : 'Messages stay here for the business to review';
-    shell.append(el('div', 'status', availability));
+    const connectionLabel = state.realtimeState === 'connected' ? 'Connected' : state.realtimeState === 'connecting' ? 'Connecting…' : 'Reconnecting…';
+    shell.append(el('div', 'status', `${connectionLabel} · ${availability}`));
 
     if (config.configuration.requireContact && !state.contactSaved) {
       shell.append(el('p', 'offline', 'Before chatting, share your contact details with your consent.'));
@@ -86,6 +87,12 @@
         if (Number.isFinite(time.getTime())) bubble.append(el('span', 'stamp', new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(time)));
         list.append(bubble);
       }
+      if (state.pendingSend) {
+        const pending = el('div', 'bubble inbound pending', state.pendingSend.text);
+        pending.append(el('span', 'stamp', state.sending ? 'Sending…' : 'Not sent'));
+        list.append(pending);
+      }
+      if (state.typingActor) list.append(el('div', 'typing', state.typingActor === 'assistant' ? 'AI assistant is replying…' : 'A team member is typing…'));
       if (state.sending) list.append(el('div', 'typing', 'Sending…'));
       shell.append(list);
       if (state.messages?.length <= 1 && config.configuration.suggestedQuestions.length) {
@@ -101,8 +108,15 @@
       const handoff = el('button', 'request-human', 'Request a human'); handoff.type = 'button'; handoff.addEventListener('click', requestHuman); shell.append(handoff);
       const form = el('form', 'composer');
       const input = el('input'); input.type = 'text'; input.name = 'message'; input.maxLength = 2000; input.autocomplete = 'off'; input.placeholder = 'Type your message…'; input.setAttribute('aria-label', 'Your message'); input.required = true;
+      input.value = state.draft || '';
+      input.addEventListener('input', () => { state.draft = input.value; if (input.value.trim()) sendTyping(true); else sendTyping(false); });
+      input.addEventListener('blur', () => sendTyping(false));
       const submit = el('button', '', 'Send'); submit.type = 'submit'; submit.disabled = state.sending;
       form.append(input, submit); form.addEventListener('submit', (event) => { event.preventDefault(); const text = input.value.trim(); if (text) send(text); }); shell.append(form);
+      if (state.pendingSend && !state.sending) {
+        const retry = el('button', 'request-human', 'Retry message'); retry.type = 'button'; retry.addEventListener('click', () => send(state.pendingSend.text)); shell.append(retry);
+        if (state.sendError) { const error = el('p', 'error', state.sendError); error.setAttribute('role', 'alert'); shell.append(error); }
+      }
     }
     const privacy = el('div', 'privacy', config.configuration.privacyNotice); shell.append(privacy);
     root.append(shell); notifySize();
@@ -126,10 +140,17 @@
   }
   async function send(text) {
     if (state.sending) return;
-    state.sending = true; render();
-    try { await request('/messages', { method: 'POST', body: JSON.stringify({ text, idempotencyKey: crypto.randomUUID() }) }); await refresh(); }
-    catch (error) { showError(error.message); }
+    if (!state.pendingSend || state.pendingSend.text !== text) state.pendingSend = { text, idempotencyKey: crypto.randomUUID() };
+    state.sending = true; state.sendError = ''; state.draft = ''; sendTyping(false); render();
+    try { await request('/messages', { method: 'POST', body: JSON.stringify(state.pendingSend) }); state.pendingSend = null; await refresh(); }
+    catch (error) { state.sendError = error.message || 'Message could not be sent.'; state.draft = text; }
     finally { state.sending = false; render(); }
+  }
+  function sendTyping(active) {
+    if (!state.token) return;
+    if (state.typingTimer) window.clearTimeout(state.typingTimer);
+    if (!active) { request('/typing', { method: 'POST', body: JSON.stringify({ active: false }) }).catch(() => undefined); return; }
+    state.typingTimer = window.setTimeout(() => request('/typing', { method: 'POST', body: JSON.stringify({ active: true }) }).catch(() => undefined), 250);
   }
   async function requestHuman() {
     try { await request('/handoff', { method: 'POST', body: '{}' }); await refresh(); showNotice('A team member has been notified.'); }
@@ -149,6 +170,43 @@
     state.loaded = true;
     if (state.open) render();
   }
+  async function connectEvents() {
+    if (!state.token) return;
+    const controller = new AbortController(); state.eventController = controller;
+    try {
+      const response = await fetch(`${apiBase}/events`, { headers: { Authorization: `Bearer ${state.token}`, 'X-Kleva-Site-Origin': siteOrigin, Accept: 'text/event-stream' }, cache: 'no-store', credentials: 'omit', signal: controller.signal });
+      if (!response.ok || !response.body) throw new Error('realtime unavailable');
+      state.eventRetry = 0; state.realtimeState = 'connected'; render();
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let pending = '';
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read(); if (done) break;
+        pending += decoder.decode(value, { stream: true }); let match = /\r?\n\r?\n/.exec(pending);
+        while (match) {
+          const frame = pending.slice(0, match.index); pending = pending.slice(match.index + match[0].length);
+          const eventName = frame.split(/\r?\n/).find((line) => line.startsWith('event:'))?.slice(6).trim();
+          const data = frame.split(/\r?\n/).find((line) => line.startsWith('data:'))?.slice(5).trim();
+          if (eventName === 'ready') {
+            try { const ready = JSON.parse(data || '{}'); state.realtimeState = ready.realtime === false ? 'reconnecting' : 'connected'; if (state.open) render(); } catch { state.realtimeState = 'reconnecting'; }
+            await refresh().catch(() => undefined);
+          }
+          if (data) {
+            try {
+              const event = JSON.parse(data);
+              if (eventName === 'session.revoked') { state.token = ''; storage.remove(tokenKey); showNotice('This chat session has ended. Refresh the page to start again.'); controller.abort(); break; }
+              if (eventName === 'typing.started' && ['assistant','human'].includes(event.actor)) { state.typingActor = event.actor; if (state.typingTimer) window.clearTimeout(state.typingTimer); state.typingTimer = window.setTimeout(() => { state.typingActor = ''; if (state.open) render(); }, 6000); if (state.open) render(); }
+              if (eventName === 'typing.stopped' && state.typingActor === event.actor) { state.typingActor = ''; if (state.typingTimer) window.clearTimeout(state.typingTimer); if (state.open) render(); }
+              if (['message.created','message.updated','conversation.updated','conversation.resolved','conversation.reopened','conversation.control.changed'].includes(eventName)) await refresh().catch(() => undefined);
+            } catch { /* Reconcile from durable history on the next event or poll. */ }
+          }
+          match = /\r?\n\r?\n/.exec(pending);
+        }
+      }
+    } catch { if (!controller.signal.aborted) { state.eventRetry = Math.min(state.eventRetry + 1, 6); state.realtimeState = 'reconnecting'; } }
+    if (!controller.signal.aborted && state.token) {
+      const delay = Math.min(30000, 500 * 2 ** state.eventRetry) + Math.random() * 300;
+      window.setTimeout(() => connectEvents(), delay); if (state.open) render();
+    }
+  }
   async function start() {
     try {
       state.config = await request('/config');
@@ -163,6 +221,7 @@
         await refresh();
       }
       render();
+      void connectEvents();
       state.timer = window.setInterval(() => { if (document.visibilityState === 'visible') refresh().catch(() => undefined); }, state.open ? 1800 : 6000);
       document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && state.open) { state.open = false; render(); notifySize(); root.querySelector('.launcher')?.focus(); } });
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh().catch(() => undefined); });

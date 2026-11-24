@@ -255,6 +255,32 @@ export function redisConfig(env = process.env) {
   };
 }
 
+export function websiteChatMaintenanceConfig(env = process.env) {
+  const batchValue = env.WEBSITE_SESSION_CLEANUP_BATCH?.trim() || '250';
+  const batchSize = Number(batchValue);
+  const graceValue = env.WEBSITE_SESSION_CLEANUP_GRACE_HOURS?.trim() || '24';
+  const graceHours = Number(graceValue);
+  const retentionValue = env.WEBSITE_MESSAGE_RETENTION_DAYS?.trim() || '0';
+  const messageRetentionDays = Number(retentionValue);
+  if (!/^\d+$/.test(batchValue) || batchSize < 1 || batchSize > 2000)
+    throw new Error(
+      'WEBSITE_SESSION_CLEANUP_BATCH must be between 1 and 2000.',
+    );
+  if (!/^\d+$/.test(graceValue) || graceHours < 1 || graceHours > 8760)
+    throw new Error(
+      'WEBSITE_SESSION_CLEANUP_GRACE_HOURS must be between 1 and 8760.',
+    );
+  if (!/^\d+$/.test(retentionValue) || messageRetentionDays > 3650)
+    throw new Error('WEBSITE_MESSAGE_RETENTION_DAYS must be from 0 to 3650.');
+  return {
+    cleanupEnabled: flag(env, 'WEBSITE_SESSION_CLEANUP_ENABLED', false),
+    dryRun: flag(env, 'WEBSITE_SESSION_CLEANUP_DRY_RUN', true),
+    batchSize,
+    graceHours,
+    messageRetentionDays,
+  };
+}
+
 export function workerConfig(env = process.env) {
   const environment = applicationEnvironment(env);
   const redis = redisConfig(env);

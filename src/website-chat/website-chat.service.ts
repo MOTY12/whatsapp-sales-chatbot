@@ -10,7 +10,15 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
-import { aiConfig, applicationEnvironment } from '../config/env';
+import {
+  aiConfig,
+  applicationEnvironment,
+  websiteChatMaintenanceConfig,
+} from '../config/env';
+import {
+  WebsiteRealtimeService,
+  type WebsiteEventType,
+} from './website-realtime.service';
 
 export const websiteAiResponseOperation = 'website.ai_response';
 export const websiteDeliveryOperation = 'website.delivery';
@@ -290,7 +298,10 @@ export function isWebsiteAiAvailable() {
 @Injectable()
 export class WebsiteChatService {
   private readonly logger = new Logger(WebsiteChatService.name);
-  constructor(@InjectDataSource() private readonly database: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly database: DataSource,
+    private readonly realtime: WebsiteRealtimeService,
+  ) {}
 
   async publicConfiguration(
     publicId: string,
@@ -433,7 +444,7 @@ export class WebsiteChatService {
     await this.consumeRate(rateHash, 20);
     const newMessageId = randomUUID();
     const text = input.text.trim();
-    const messageId = await this.database.transaction(async (manager) => {
+    const result = await this.database.transaction(async (manager) => {
       await manager.query(
         'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
         [`website:${session.business_id}:${session.conversation_id}`],
@@ -448,7 +459,7 @@ export class WebsiteChatService {
       if (existing) {
         if (existing.content !== text)
           throw new BadRequestException('This message key was already used.');
-        return existing.id;
+        return { id: existing.id, created: false, aiScheduled: false };
       }
       const [message] = await manager.query<Array<{ id: string }>>(
         `INSERT INTO public.messages
@@ -482,6 +493,7 @@ export class WebsiteChatService {
         VALUES($1,$2,'CREATED','NEW','SYSTEM') ON CONFLICT DO NOTHING`,
         [session.business_id, lead.id],
       );
+      let aiScheduled = false;
       if (session.ai_enabled && isWebsiteAiAvailable()) {
         const [run] = await manager.query<Array<{ id: string }>>(
           `INSERT INTO public.ai_response_runs
@@ -502,7 +514,8 @@ export class WebsiteChatService {
             session.widget_id,
           ],
         );
-        if (run)
+        if (run) {
+          aiScheduled = true;
           await manager.query(
             `INSERT INTO public.outbox_operations(id,"businessId",operation,metadata)
           VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING`,
@@ -513,17 +526,33 @@ export class WebsiteChatService {
               JSON.stringify({ aiResponseRunId: run.id }),
             ],
           );
+        }
       }
       await manager.query(
         `UPDATE public.website_visitor_sessions SET last_seen_at=now()
         WHERE id=$1 AND business_id=$2`,
         [session.session_id, session.business_id],
       );
-      return message.id;
+      return { id: message.id, created: true, aiScheduled };
     });
+    if (result.created) {
+      await this.realtime.publish({
+        type: 'message.created',
+        businessId: session.business_id,
+        conversationId: session.conversation_id,
+        messageId: result.id,
+      });
+      if (result.aiScheduled)
+        await this.realtime.publishTyping({
+          businessId: session.business_id,
+          conversationId: session.conversation_id,
+          actor: 'assistant',
+          active: true,
+        });
+    }
     return {
       accepted: true,
-      messageId,
+      messageId: result.id,
       aiEnabled: session.ai_enabled && isWebsiteAiAvailable(),
     };
   }
@@ -575,6 +604,7 @@ export class WebsiteChatService {
     >(
       `SELECT id,direction,content,status,"createdAt" AS created_at
        FROM public.messages WHERE "businessId"=$1 AND "conversationId"=$2 AND channel='WEBSITE'
+       AND (direction='inbound' OR status='sent')
          AND ($3::timestamptz IS NULL OR ("createdAt",id)>($3,$4::uuid))
        ORDER BY "createdAt",id LIMIT 100`,
       [
@@ -685,7 +715,7 @@ export class WebsiteChatService {
       originHeader,
       forwardedOrigin,
     );
-    return this.database.transaction(async (manager) => {
+    await this.database.transaction(async (manager) => {
       await manager.query(
         'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
         [`conversation:${session.business_id}:${session.conversation_id}`],
@@ -709,6 +739,12 @@ export class WebsiteChatService {
       );
       return { requested: true };
     });
+    await this.realtime.publish({
+      type: 'conversation.control.changed',
+      businessId: session.business_id,
+      conversationId: session.conversation_id,
+    });
+    return { requested: true };
   }
 
   async endSession(
@@ -728,7 +764,147 @@ export class WebsiteChatService {
       WHERE id=$1 AND business_id=$2 AND credential_hash=$3`,
       [session.session_id, session.business_id, session.credential_hash],
     );
+    await this.realtime.publish({
+      type: 'session.revoked',
+      businessId: session.business_id,
+      conversationId: session.conversation_id,
+    });
     return { ended: true };
+  }
+
+  async visitorEventContext(
+    publicId: string,
+    token: string,
+    originHeader?: string,
+    forwardedOrigin?: string,
+  ) {
+    const session = await this.authenticate(
+      publicId,
+      token,
+      originHeader,
+      forwardedOrigin,
+    );
+    return {
+      sessionId: session.session_id,
+      businessId: session.business_id,
+      conversationId: session.conversation_id,
+    };
+  }
+
+  async validateVisitorEventContext(
+    publicId: string,
+    token: string,
+    originHeader?: string,
+    forwardedOrigin?: string,
+  ) {
+    try {
+      await this.authenticate(publicId, token, originHeader, forwardedOrigin);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async publishConversationEvent(
+    businessId: string,
+    conversationId: string,
+    type: WebsiteEventType,
+    messageId?: string,
+  ) {
+    return this.realtime.publish({
+      type,
+      businessId,
+      conversationId,
+      ...(messageId ? { messageId } : {}),
+    });
+  }
+
+  async publishVisitorTyping(
+    publicId: string,
+    token: string,
+    originHeader: string | undefined,
+    forwardedOrigin: string | undefined,
+    active: unknown,
+  ) {
+    if (typeof active !== 'boolean')
+      throw new BadRequestException('Typing status must be true or false.');
+    const session = await this.authenticate(
+      publicId,
+      token,
+      originHeader,
+      forwardedOrigin,
+    );
+    await this.consumeRate(digest(`${session.session_id}\0typing`), 60);
+    return {
+      accepted: await this.realtime.publishTyping({
+        businessId: session.business_id,
+        conversationId: session.conversation_id,
+        actor: 'visitor',
+        active,
+      }),
+    };
+  }
+
+  publishMerchantTyping(
+    businessId: string,
+    conversationId: string,
+    active: boolean,
+  ) {
+    return this.realtime.publishTyping({
+      businessId,
+      conversationId,
+      actor: 'human',
+      active,
+    });
+  }
+
+  async runRetentionMaintenance() {
+    const policy = websiteChatMaintenanceConfig();
+    const [eligible] = await this.database.query<
+      Array<{
+        expired_sessions: string;
+        revoked_sessions: string;
+        eligible_messages: string;
+      }>
+    >(
+      `SELECT
+        count(*) FILTER (WHERE expires_at < now() - ($1::int * interval '1 hour') AND revoked_at IS NULL)::text AS expired_sessions,
+        count(*) FILTER (WHERE revoked_at < now() - ($1::int * interval '1 hour'))::text AS revoked_sessions,
+        CASE WHEN $2::int > 0 THEN (SELECT count(*)::text FROM public.messages WHERE channel='WEBSITE' AND "createdAt" < now() - ($2::int * interval '1 day')) ELSE '0' END AS eligible_messages
+      FROM public.website_visitor_sessions
+      WHERE (expires_at < now() - ($1::int * interval '1 hour') AND revoked_at IS NULL)
+         OR revoked_at < now() - ($1::int * interval '1 hour')`,
+      [policy.graceHours, policy.messageRetentionDays],
+    );
+    let deletedSessions = 0;
+    if (policy.cleanupEnabled && !policy.dryRun) {
+      const result = await this.database.transaction(async (manager) =>
+        manager.query<Array<{ id: string }>>(
+          `WITH candidates AS (
+             SELECT id FROM public.website_visitor_sessions
+             WHERE (expires_at < now() - ($1::int * interval '1 hour') AND revoked_at IS NULL)
+                OR revoked_at < now() - ($1::int * interval '1 hour')
+             ORDER BY COALESCE(revoked_at, expires_at), id
+             FOR UPDATE SKIP LOCKED LIMIT $2
+           )
+           DELETE FROM public.website_visitor_sessions s USING candidates c
+           WHERE s.id=c.id RETURNING s.id`,
+          [policy.graceHours, policy.batchSize],
+        ),
+      );
+      deletedSessions = result.length;
+    }
+    return {
+      enabled: policy.cleanupEnabled,
+      dryRun: policy.dryRun || !policy.cleanupEnabled,
+      batchSize: policy.batchSize,
+      sessionGraceHours: policy.graceHours,
+      messageRetentionDays: policy.messageRetentionDays,
+      expiredSessions: Number(eligible.expired_sessions),
+      revokedSessions: Number(eligible.revoked_sessions),
+      eligibleMessages: Number(eligible.eligible_messages),
+      deletedSessions,
+    };
   }
 
   async enqueueAiReply(
@@ -838,7 +1014,7 @@ export class WebsiteChatService {
   }
 
   async executeDelivery(messageId: string, businessId: string) {
-    await this.database.transaction(async (manager) => {
+    const outcome = await this.database.transaction(async (manager) => {
       const [message] = await manager.query<
         Array<{
           id: string;
@@ -853,7 +1029,7 @@ export class WebsiteChatService {
         FROM public.messages m WHERE m.id=$1 AND m."businessId"=$2 AND m.channel='WEBSITE' AND m.direction='outbound' FOR UPDATE`,
         [messageId, businessId],
       );
-      if (!message || message.status === 'sent') return;
+      if (!message || message.status === 'sent') return null;
       const [control] = await manager.query<
         Array<{
           control_mode: string;
@@ -881,7 +1057,11 @@ export class WebsiteChatService {
           `UPDATE public.messages SET status='failed',metadata=COALESCE(metadata,'{}'::jsonb)||'{"safeFailure":"SUPPRESSED"}'::jsonb WHERE id=$1 AND "businessId"=$2`,
           [messageId, businessId],
         );
-        return;
+        return {
+          conversationId: message.conversation_id,
+          sent: false,
+          kind: message.authorization_kind,
+        };
       }
       await manager.query(
         `UPDATE public.messages SET status='sent' WHERE id=$1 AND "businessId"=$2`,
@@ -891,7 +1071,26 @@ export class WebsiteChatService {
         `UPDATE public.conversations SET "updatedAt"=now() WHERE id=$1 AND "businessId"=$2`,
         [message.conversation_id, businessId],
       );
+      return {
+        conversationId: message.conversation_id,
+        sent: true,
+        kind: message.authorization_kind,
+      };
     });
+    if (!outcome) return;
+    await this.realtime.publish({
+      type: outcome.sent ? 'message.created' : 'message.updated',
+      businessId,
+      conversationId: outcome.conversationId,
+      messageId,
+    });
+    if (outcome.kind === 'AI')
+      await this.realtime.publishTyping({
+        businessId,
+        conversationId: outcome.conversationId,
+        actor: 'assistant',
+        active: false,
+      });
   }
 
   private async authenticate(

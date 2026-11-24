@@ -512,7 +512,27 @@ async function request<T>(
   return response.json() as Promise<T>;
 }
 
+async function inboxEventStream(businessId: string, signal: AbortSignal) {
+  const jar = await cookies();
+  const cookieHeader = jar
+    .getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join('; ');
+  return fetch(
+    `${backend()}/merchant/businesses/${encodeURIComponent(businessId)}/conversations/events`,
+    {
+      headers: {
+        Accept: 'text/event-stream',
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      },
+      cache: 'no-store',
+      signal,
+    },
+  );
+}
+
 export const api = {
+  inboxEventStream,
   identity: () => request<Identity>('/auth/me'),
   onboarding: () => request<OnboardingProgress>('/auth/onboarding'),
   updateOnboarding: (currentStep: OnboardingStep) =>
@@ -718,6 +738,11 @@ export const api = {
     request<InboxControlResult>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/release`,
       { method: 'POST' },
+    ),
+  inboxTyping: (businessId: string, conversationId: string, active: boolean) =>
+    request<{ accepted: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/conversations/${encodeURIComponent(conversationId)}/typing`,
+      { method: 'POST', body: JSON.stringify({ active }) },
     ),
   reply: (
     businessId: string,

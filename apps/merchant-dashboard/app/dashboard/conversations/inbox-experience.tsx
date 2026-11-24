@@ -175,6 +175,7 @@ export function InboxExperience({
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [liveUpdateError, setLiveUpdateError] = useState<string | null>(null);
+  const [typingActor, setTypingActor] = useState<'visitor' | null>(null);
 
   const selectedRef = useRef(selectedId);
   const messagesPaneRef = useRef<HTMLDivElement>(null);
@@ -187,6 +188,8 @@ export function InboxExperience({
   const listPollingRef = useRef(false);
   const replyKeyRef = useRef<{ text: string; key: string } | null>(null);
   const queuedMessageRef = useRef<string | null>(null);
+  const typingTimerRef = useRef<number | undefined>(undefined);
+  const typingSendRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const onExpired = () => router.push('/login?error=session');
@@ -337,6 +340,159 @@ export function InboxExperience({
   useEffect(() => {
     refreshListRef.current = refreshList;
   }, [refreshList]);
+  useEffect(() => {
+    let stopped = false;
+    let controller: AbortController | undefined;
+    let retryTimer: number | undefined;
+    let failures = 0;
+    const recentEventIds = new Set<string>();
+    const schedule = () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      const delay = Math.min(30_000, 500 * 2 ** Math.min(failures, 6));
+      retryTimer = window.setTimeout(
+        () => void connect(),
+        delay + Math.random() * 300,
+      );
+    };
+    const handleFrame = (frame: string) => {
+      const lines = frame.split(/\r?\n/);
+      const eventName = lines
+        .find((line) => line.startsWith('event:'))
+        ?.slice(6)
+        .trim();
+      const data = lines
+        .find((line) => line.startsWith('data:'))
+        ?.slice(5)
+        .trim();
+      if (eventName === 'ready') {
+        try {
+          const ready = JSON.parse(data ?? '{}') as { realtime?: boolean };
+          setLiveUpdateError(
+            ready.realtime === false
+              ? 'Realtime notifications are unavailable. Inbox polling is active.'
+              : null,
+          );
+        } catch {
+          setLiveUpdateError(
+            'Realtime notifications are reconnecting. Inbox polling is active.',
+          );
+        }
+        failures = 0;
+        void refreshListRef.current(false);
+        if (selectedRef.current) setThreadRequestVersion((value) => value + 1);
+        return;
+      }
+      if (!data) return;
+      try {
+        const event = JSON.parse(data) as {
+          version?: number;
+          id?: string;
+          type?: string;
+          conversationId?: string;
+          actor?: string;
+        };
+        if (
+          (event.type === 'typing.started' ||
+            event.type === 'typing.stopped') &&
+          event.conversationId === selectedRef.current &&
+          (event.actor === 'visitor' || event.actor === 'assistant')
+        ) {
+          if (typingTimerRef.current !== undefined)
+            window.clearTimeout(typingTimerRef.current);
+          if (event.type === 'typing.started' && event.actor === 'visitor') {
+            setTypingActor('visitor');
+            typingTimerRef.current = window.setTimeout(
+              () => setTypingActor(null),
+              6000,
+            );
+          } else setTypingActor(null);
+          return;
+        }
+        if (
+          event.version !== 1 ||
+          !event.id ||
+          !event.conversationId ||
+          ![
+            'message.created',
+            'message.updated',
+            'conversation.updated',
+            'conversation.resolved',
+            'conversation.reopened',
+            'conversation.control.changed',
+          ].includes(event.type ?? '')
+        )
+          return;
+        if (recentEventIds.has(event.id)) return;
+        recentEventIds.add(event.id);
+        if (recentEventIds.size > 500)
+          recentEventIds.delete(recentEventIds.values().next().value!);
+        void refreshListRef.current(false);
+        if (selectedRef.current === event.conversationId)
+          setThreadRequestVersion((value) => value + 1);
+      } catch {
+        // Malformed notification frames are ignored; durable polling recovers.
+      }
+    };
+    const connect = async () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      controller = new AbortController();
+      try {
+        const response = await fetch(
+          `/api/inbox/${encodeURIComponent(businessId)}/conversations/events`,
+          {
+            headers: { Accept: 'text/event-stream' },
+            cache: 'no-store',
+            signal: controller.signal,
+          },
+        );
+        if (response.status === 401) {
+          window.dispatchEvent(new CustomEvent('kleva-session-expired'));
+          return;
+        }
+        if (!response.ok || !response.body)
+          throw new Error('Realtime unavailable');
+        failures = 0;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let pending = '';
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pending += decoder.decode(value, { stream: true });
+          let boundary = pending.search(/\r?\n\r?\n/);
+          while (boundary >= 0) {
+            const separator = pending.match(/\r?\n\r?\n/)?.[0] ?? '\n\n';
+            handleFrame(pending.slice(0, boundary));
+            pending = pending.slice(boundary + separator.length);
+            boundary = pending.search(/\r?\n\r?\n/);
+          }
+        }
+      } catch {
+        if (!stopped && !controller?.signal.aborted)
+          failures = Math.min(failures + 1, 6);
+      }
+      if (!stopped) schedule();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+        void connect();
+      } else {
+        controller?.abort();
+        if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      }
+    };
+    void connect();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopped = true;
+      if (typingTimerRef.current !== undefined)
+        window.clearTimeout(typingTimerRef.current);
+      controller?.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [businessId]);
   useEffect(() => {
     let stopped = false;
     let timer: number | undefined;
@@ -496,6 +652,7 @@ export function InboxExperience({
   async function selectConversation(conversationId: string) {
     selectedRef.current = conversationId;
     setDetail(null);
+    setTypingActor(null);
     setMessages([]);
     setMessageCursor(null);
     setThreadLoading(true);
@@ -706,6 +863,10 @@ export function InboxExperience({
         : window.crypto.randomUUID();
     replyKeyRef.current = { text, key };
     setSending(true);
+    void getInboxJson(
+      inboxPath(businessId, `/${encodeURIComponent(selectedId)}/typing`),
+      { method: 'POST', body: JSON.stringify({ active: false }) },
+    ).catch(() => undefined);
     setReplyError(null);
     setQueuedNotice(null);
     try {
@@ -756,6 +917,21 @@ export function InboxExperience({
     } finally {
       setSending(false);
     }
+  }
+
+  function sendTyping(active: boolean) {
+    if (!selectedId || detail?.channel !== 'WEBSITE') return;
+    if (typingSendRef.current !== undefined)
+      window.clearTimeout(typingSendRef.current);
+    typingSendRef.current = window.setTimeout(
+      () => {
+        void getInboxJson(
+          inboxPath(businessId, `/${encodeURIComponent(selectedId)}/typing`),
+          { method: 'POST', body: JSON.stringify({ active }) },
+        ).catch(() => undefined);
+      },
+      active ? 250 : 0,
+    );
   }
 
   const loadingError = listError && conversations.length === 0;
@@ -1203,6 +1379,11 @@ export function InboxExperience({
                       </article>
                     );
                   })}
+                  {typingActor && (
+                    <p className={styles.liveTyping} role="status">
+                      Website visitor is typing…
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -1232,10 +1413,12 @@ export function InboxExperience({
                       setDraft(event.target.value);
                       setReplyError(null);
                       setQueuedNotice(null);
+                      sendTyping(Boolean(event.target.value.trim()));
                     }}
+                    onBlur={() => sendTyping(false)}
                     maxLength={4096}
                     rows={2}
-                    placeholder="Write a WhatsApp reply…"
+                    placeholder="Write a reply…"
                     disabled={sending}
                   />
                   <div className={styles.composerTools}>

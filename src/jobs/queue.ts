@@ -1,6 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import { Redis, type RedisOptions } from 'ioredis';
-import type { workerConfig } from '../config/env';
+import type { redisConfig, workerConfig } from '../config/env';
 import type { DispatchClaim } from './outbox.store';
 
 type WorkerConfig = ReturnType<typeof workerConfig>;
@@ -8,7 +8,9 @@ type WorkerConfig = ReturnType<typeof workerConfig>;
 export type Delivery = { id: string };
 const queueName = 'outbox';
 
-export function redisOptions(config: WorkerConfig['redis']): RedisOptions {
+export function redisOptions(
+  config: ReturnType<typeof redisConfig>,
+): RedisOptions {
   if (!config.url)
     return { host: config.host, port: config.port, password: config.password };
 

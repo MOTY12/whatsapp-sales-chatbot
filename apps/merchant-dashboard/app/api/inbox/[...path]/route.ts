@@ -68,6 +68,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { headers: { 'Cache-Control': 'no-store' } },
       );
     }
+    if (path.length === 3 && conversationId === 'events') {
+      const upstream = await api.inboxEventStream(businessId, request.signal);
+      if (!upstream.ok) {
+        const payload = await upstream.json().catch(() => null);
+        return NextResponse.json(
+          payload ?? {
+            error: { code: 'unavailable', message: 'Inbox unavailable.' },
+          },
+          { status: upstream.status, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
     if (path.length === 3 && conversationId === 'members')
       return NextResponse.json(await api.inboxMembers(businessId), {
         headers: { 'Cache-Control': 'no-store' },
@@ -142,7 +162,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       result = await api.takeover(businessId, conversationId);
     else if (path.length === 4 && action === 'release')
       result = await api.release(businessId, conversationId);
-    else if (path.length === 4 && action === 'read')
+    else if (path.length === 4 && action === 'typing') {
+      const body: unknown = await request.json().catch(() => null);
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        Array.isArray(body) ||
+        Object.keys(body).length !== 1 ||
+        typeof (body as { active?: unknown }).active !== 'boolean'
+      )
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_request',
+              message: 'Typing state is invalid.',
+            },
+          },
+          { status: 400 },
+        );
+      result = await api.inboxTyping(
+        businessId,
+        conversationId,
+        (body as { active: boolean }).active,
+      );
+    } else if (path.length === 4 && action === 'read')
       result = await api.markConversationRead(businessId, conversationId);
     else if (path.length === 4 && action === 'assignee') {
       const body: unknown = await request.json().catch(() => null);

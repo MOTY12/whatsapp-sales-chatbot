@@ -9,8 +9,9 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
-	@api path /health/* /merchant/* /meta/* /webhooks/*
+	@api path /health/* /merchant/* /meta/* /webhooks/* /public/*
 	reverse_proxy @api api:3000 {
+		flush_interval -1
 		transport http {
 			dial_timeout 5s
 			response_header_timeout 90s

@@ -318,7 +318,7 @@ export class MerchantInboxService {
         'Choose open or closed conversation status.',
       );
     }
-    return this.access.withBusiness(
+    const result = await this.access.withBusiness(
       actor,
       businessId,
       'inbox.operate',
@@ -333,6 +333,12 @@ export class MerchantInboxService {
         return result;
       },
     );
+    await this.websiteChat.publishConversationEvent(
+      businessId,
+      conversationId,
+      status === 'closed' ? 'conversation.resolved' : 'conversation.reopened',
+    );
+    return result;
   }
 
   async conversation(
@@ -422,7 +428,7 @@ export class MerchantInboxService {
     mode: 'AUTO' | 'HUMAN',
   ) {
     validateConversationId(conversationId);
-    return this.access.withBusiness(
+    const result = await this.access.withBusiness(
       actor,
       businessId,
       'inbox.operate',
@@ -469,6 +475,46 @@ export class MerchantInboxService {
         };
       },
     );
+    await this.websiteChat.publishConversationEvent(
+      businessId,
+      conversationId,
+      'conversation.control.changed',
+    );
+    return result;
+  }
+
+  async authorizeRealtime(actor: MerchantPrincipal, businessId: string) {
+    await this.access.withBusiness(actor, businessId, 'inbox.operate', () =>
+      Promise.resolve(true),
+    );
+  }
+
+  async publishAgentTyping(
+    actor: MerchantPrincipal,
+    businessId: string,
+    conversationId: string,
+    active: boolean,
+  ) {
+    validateConversationId(conversationId);
+    const websiteConversation = await this.access.withBusiness(
+      actor,
+      businessId,
+      'inbox.operate',
+      async (manager) => {
+        const [row] = await manager.query<Array<{ channel: string }>>(
+          'SELECT channel FROM public.kleva_inbox_channel_info($1)',
+          [conversationId],
+        );
+        return row?.channel === 'WEBSITE';
+      },
+    );
+    if (websiteConversation)
+      await this.websiteChat.publishMerchantTyping(
+        businessId,
+        conversationId,
+        active,
+      );
+    return { accepted: websiteConversation };
   }
 
   async reply(
@@ -540,6 +586,12 @@ export class MerchantInboxService {
         conversationId,
         text.trim(),
         key,
+      );
+      await this.websiteChat.publishConversationEvent(
+        businessId,
+        conversationId,
+        'message.created',
+        outboundMessageId,
       );
       return { outboundMessageId, status: 'QUEUED' };
     }

@@ -14,6 +14,7 @@ import {
 } from '../../src/jobs/outbox.store';
 import { createQueue, createWorker, enqueue } from '../../src/jobs/queue';
 import { WorkerRuntime } from '../../src/jobs/worker.module';
+import type { WebsiteChatService } from '../../src/website-chat/website-chat.service';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
 async function until(check: () => Promise<boolean>) {
@@ -374,8 +375,14 @@ describe('durable outbox with PostgreSQL and Redis', () => {
         ],
       ]),
       source,
+      {
+        runRetentionMaintenance: async () => ({
+          enabled: false,
+          dryRun: true,
+        }),
+      } as unknown as WebsiteChatService,
     );
-    runtime.onApplicationBootstrap();
+    await runtime.onApplicationBootstrap();
     try {
       await until(() => Promise.resolve(entered));
       const stopping = runtime.beforeApplicationShutdown();

@@ -55,6 +55,8 @@ export class WorkerRuntime
   private readonly relay: OutboxRelay;
   private readonly worker: ReturnType<typeof createWorker>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private retentionTimer?: ReturnType<typeof setInterval>;
+  private retentionTask?: Promise<void>;
   private redisReady = false;
   private healthProbeFailed = false;
   private heartbeatTask?: Promise<void>;
@@ -64,6 +66,7 @@ export class WorkerRuntime
     outbox: OutboxStore,
     @Inject(OUTBOX_HANDLERS) handlers: ReadonlyMap<string, OutboxHandler>,
     @InjectDataSource() private readonly database: DataSource,
+    private readonly websiteChat: WebsiteChatService,
   ) {
     this.queue.on('error', () =>
       this.logger.warn('Outbox producer Redis connection error.'),
@@ -96,6 +99,16 @@ export class WorkerRuntime
     }, 10000);
     this.heartbeatTimer.unref();
     await this.writeHeartbeat();
+    void this.runWebsiteRetention();
+    this.retentionTimer = setInterval(
+      () => {
+        this.retentionTask ??= this.runWebsiteRetention().finally(() => {
+          this.retentionTask = undefined;
+        });
+      },
+      60 * 60 * 1000,
+    );
+    this.retentionTimer.unref();
     void this.worker.run().catch(() => {
       this.logger.error('Outbox consumer stopped unexpectedly.');
       process.kill(process.pid, 'SIGTERM');
@@ -106,10 +119,13 @@ export class WorkerRuntime
   async beforeApplicationShutdown(): Promise<void> {
     clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = undefined;
+    clearInterval(this.retentionTimer);
+    this.retentionTimer = undefined;
     const results = await Promise.allSettled([
       this.relay.stop(),
       this.worker.close(),
       this.heartbeatTask,
+      this.retentionTask,
     ]);
     const queueResult = await Promise.allSettled([this.queue.close()]);
     await unlink(this.heartbeatPath).catch(() => undefined);
@@ -117,6 +133,15 @@ export class WorkerRuntime
       [...results, ...queueResult].some(({ status }) => status === 'rejected')
     ) {
       throw new Error('Outbox runtime shutdown failed.');
+    }
+  }
+
+  private async runWebsiteRetention() {
+    try {
+      const result = await this.websiteChat.runRetentionMaintenance();
+      this.logger.log({ event: 'website.retention.maintenance', ...result });
+    } catch {
+      this.logger.warn('Website retention maintenance failed.');
     }
   }
 
