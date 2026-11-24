@@ -60,6 +60,7 @@ describe('AiResponseService', () => {
       toolCall?: unknown;
       tools?: { qualificationFields: jest.Mock; execute: jest.Mock };
       memory?: { prepare: jest.Mock };
+      knowledgeGaps?: { capture: jest.Mock };
     } = {},
   ) {
     const state = initial();
@@ -106,6 +107,11 @@ describe('AiResponseService', () => {
           },
           async release() {},
         } as unknown as QueryRunner;
+      },
+      async transaction<T>(
+        operation: (manager: { query: typeof database.query }) => Promise<T>,
+      ) {
+        return operation({ query: database.query.bind(database) });
       },
     } as unknown as DataSource;
     const retrieval = {
@@ -178,6 +184,7 @@ describe('AiResponseService', () => {
       modelAdapter,
       options.tools as never,
       options.memory as never,
+      options.knowledgeGaps as never,
     );
     return { service, usage, outbound, state, modelAdapter };
   }
@@ -216,6 +223,48 @@ describe('AiResponseService', () => {
         controlVersion: '1',
       },
     );
+  });
+
+  it('captures a persisted no-match AI outcome but not an explicit customer handoff', async () => {
+    const knowledgeGaps = { capture: jest.fn().mockResolvedValue(true) };
+    const gapFixture = fixture({
+      sufficient: false,
+      customerMessage: 'Una dey deliver reach Ikeja?',
+      knowledgeGaps,
+    });
+    await gapFixture.service.execute(operation());
+    expect(knowledgeGaps.capture).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        businessId: initial().business_id,
+        aiRunId: initial().id,
+        inboundMessageId: initial().inbound_message_id,
+        channel: 'WHATSAPP',
+        customerQuestion: 'Una dey deliver reach Ikeja?',
+        reasonCode: 'NO_MATCH',
+      }),
+    );
+
+    const handoffTools = {
+      qualificationFields: jest.fn(),
+      execute: jest.fn().mockResolvedValue({
+        toolName: 'request_human_handoff',
+        classification: 'HANDOFF',
+        result: { handedOff: true },
+      }),
+    };
+    const explicitHandoff = fixture({
+      toolCall: {
+        name: 'request_human_handoff',
+        version: 1,
+        arguments: { reason: 'CUSTOMER_REQUEST' },
+      },
+      tools: handoffTools,
+      knowledgeGaps,
+    });
+    const callsBefore = knowledgeGaps.capture.mock.calls.length;
+    await explicitHandoff.service.execute(operation());
+    expect(knowledgeGaps.capture).toHaveBeenCalledTimes(callsBefore);
   });
 
   it('executes a registered handoff proposal and does not send an AI reply afterward', async () => {

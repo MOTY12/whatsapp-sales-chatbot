@@ -135,6 +135,10 @@ export const assistantFunctions = [
   'kleva_ai_playground_admit(uuid)',
   'kleva_ai_playground_finish(uuid,text,integer,integer,integer)',
 ];
+export const learningFunctions = [
+  'kleva_learning_gaps(integer,text)',
+  'kleva_learning_gap_set_status(uuid,text)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -167,7 +171,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

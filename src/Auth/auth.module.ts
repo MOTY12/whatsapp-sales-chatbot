@@ -33,6 +33,8 @@ import { UsageModule } from '../metering/usage.module';
 import { MerchantAssistantController } from './merchant-assistant.controller';
 import { MerchantAssistantService } from './merchant-assistant.service';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
+import { MerchantLearningController } from './merchant-learning.controller';
+import { MerchantLearningService } from './merchant-learning.service';
 
 @Module({
   imports: [
@@ -55,6 +57,7 @@ import { AgentToolsModule } from '../agent-tools/agent-tools.module';
     MerchantSalesPolicyController,
     MerchantPilotController,
     MerchantAssistantController,
+    MerchantLearningController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -71,6 +74,7 @@ import { AgentToolsModule } from '../agent-tools/agent-tools.module';
     MerchantLeadsService,
     MerchantPilotService,
     MerchantAssistantService,
+    MerchantLearningService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

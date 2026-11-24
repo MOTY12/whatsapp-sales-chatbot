@@ -65,6 +65,7 @@ import { AgentToolExecution } from './entities/agent-tool-execution.entity';
 import { AgentToolHandoffEvent } from './entities/agent-tool-handoff-event.entity';
 import { AgentToolExecution1760000000027 } from './migrations/1760000000027-AgentToolExecution';
 import { AgentActivationAndMemory1760000000028 } from './migrations/1760000000028-AgentActivationAndMemory';
+import { LearningKnowledgeGaps1760000000029 } from './migrations/1760000000029-LearningKnowledgeGaps';
 
 export const databaseEntities = [
   Business,
@@ -128,4 +129,5 @@ export const databaseMigrations = [
   LeadQualification1760000000026,
   AgentToolExecution1760000000027,
   AgentActivationAndMemory1760000000028,
+  LearningKnowledgeGaps1760000000029,
 ];

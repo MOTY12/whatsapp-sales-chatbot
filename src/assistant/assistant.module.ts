@@ -13,6 +13,7 @@ import { AiResponseService } from './ai-response.service';
 import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
 import { SupportAgentModule } from '../support-agent/support-agent.module';
+import { LearningModule } from '../learning/learning.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SupportAgentModule } from '../support-agent/support-agent.module';
     OutboundModule,
     AgentToolsModule,
     SupportAgentModule,
+    LearningModule,
   ],
   providers: [
     AssistantService,

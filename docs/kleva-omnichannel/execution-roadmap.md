@@ -758,3 +758,12 @@ V1 mapping and adaptation. Paid WhatsApp pilot go/no-go. Require official accoun
 - **Acceptance and required tests.** Approved account accepts normalized inbound and permitted replies. Eligibility, permission and opt-out fixtures pass.
 - **Verify.** npm run test:integration -- tiktok-approved-adapter, plus lint/build and applicable dashboard or provider contract checks.
 - **Done.** Only approved market and account capabilities can be enabled after the provider contract and sandbox checks pass.
+
+### LEARNING-001 · Capture feedback and detect recurring knowledge gaps · Medium
+
+- **Objective.** Give merchants a tenant-safe view of recurring questions their published knowledge did not resolve.
+- **Reuse and implementation.** Reuse `ai_response_runs`, inbound messages, `MerchantAccess`, the `knowledge.manage` permission and existing dashboard API patterns. Capture only allowlisted persisted AI outcomes in the outcome transaction; redact text locally; group by bounded deterministic English/Pidgin topic normalization and tenant-specific stable keys. Exclude user-requested handoff and operational/model failures.
+- **Database and API.** Migration `LearningKnowledgeGaps1760000000029` adds forced-RLS clusters and 90-day occurrences. Owner/editor API lists and filters gaps and updates OPEN/REVIEWED/DISMISSED review state. Dashboard adds Learning Gaps navigation and review actions.
+- **Security and product boundary.** No direct merchant table access, private notes, cross-tenant clustering or external clustering provider. No automatic model retraining or knowledge publication; LEARNING-002 owns knowledge approval.
+- **Verification.** Focused unit and dashboard tests plus disposable PostgreSQL migration, RLS, actual-outcome validation, duplicate delivery, redaction, English/Pidgin grouping and retention tests. See the [learning API](../kleva-mvp-30d/learning-gaps-api.md).
+- **Status.** Implemented and locally verified; hosted CI and staged operational retention remain release checks.

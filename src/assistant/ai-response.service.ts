@@ -28,6 +28,7 @@ import {
 import { AgentToolExecutor } from '../agent-tools/agent-tool-executor.service';
 import { agentToolRegistry } from '../agent-tools/tool-registry';
 import { ConversationMemoryService } from '../support-agent/conversation-memory.service';
+import { KnowledgeGapCaptureService } from '../learning/knowledge-gap-capture.service';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 const inputBudget = 3600;
@@ -68,6 +69,7 @@ export class AiResponseService {
     @Inject(GROUNDED_MODEL) private readonly model: GroundedModel,
     @Optional() private readonly tools?: AgentToolExecutor,
     @Optional() private readonly memory?: ConversationMemoryService,
+    @Optional() private readonly knowledgeGaps?: KnowledgeGapCaptureService,
   ) {}
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
@@ -451,16 +453,28 @@ export class AiResponseService {
           controlVersion: row.authorized_control_version,
         },
       );
-      await this.database.query(
-        `UPDATE public.ai_response_runs SET status = $3, outbound_message_id = $4,
-          updated_at = now(), completed_at = now() WHERE id = $1 AND business_id = $2 AND status = 'GENERATED'`,
-        [
-          runId,
-          row.business_id,
-          status === 'HANDOFF_REQUIRED' ? 'HANDOFF_REQUIRED' : 'QUEUED',
-          outboundId,
-        ],
-      );
+      await this.database.transaction(async (manager) => {
+        await manager.query(
+          `UPDATE public.ai_response_runs SET status = $3, outbound_message_id = $4,
+            updated_at = now(), completed_at = now() WHERE id = $1 AND business_id = $2 AND status = 'GENERATED'`,
+          [
+            runId,
+            row.business_id,
+            status === 'HANDOFF_REQUIRED' ? 'HANDOFF_REQUIRED' : 'QUEUED',
+            outboundId,
+          ],
+        );
+        if (status === 'HANDOFF_REQUIRED' && this.knowledgeGaps) {
+          await this.knowledgeGaps.capture(manager, {
+            businessId: row.business_id,
+            aiRunId: runId,
+            inboundMessageId: row.inbound_message_id,
+            channel: 'WHATSAPP',
+            customerQuestion: row.customer_message,
+            reasonCode: errorCategory,
+          });
+        }
+      });
       this.log(
         status === 'HANDOFF_REQUIRED'
           ? 'AI_HANDOFF_REQUIRED'

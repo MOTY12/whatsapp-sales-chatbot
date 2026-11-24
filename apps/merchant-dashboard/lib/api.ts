@@ -133,6 +133,23 @@ export type KnowledgeFaq = {
   created_at: string;
   updated_at: string;
 };
+export type KnowledgeGap = {
+  id: string;
+  category:
+    | 'MISSING_KNOWLEDGE'
+    | 'UNSUPPORTED_REQUEST'
+    | 'CLARIFICATION_FAILURE'
+    | 'STALE_KNOWLEDGE';
+  topic_label: string;
+  normalized_topic: string;
+  status: 'OPEN' | 'REVIEWED' | 'DISMISSED';
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  last_reason_code: string;
+  sample_question: string | null;
+};
+export type KnowledgeGapList = { items: KnowledgeGap[]; limit: number };
 export type MerchantProduct = {
   id: string;
   status: 'DRAFT' | 'PUBLISHED';
@@ -694,6 +711,22 @@ export const api = {
     request<KnowledgeFaq>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/unpublish`,
       { method: 'POST' },
+    ),
+  knowledgeGaps: (businessId: string, status?: string) => {
+    const query = new URLSearchParams({ limit: '50' });
+    if (status) query.set('status', status);
+    return request<KnowledgeGapList>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/gaps?${query}`,
+    );
+  },
+  updateKnowledgeGap: (
+    businessId: string,
+    gapId: string,
+    status: KnowledgeGap['status'],
+  ) =>
+    request<{ id: string; status: KnowledgeGap['status']; updated_at: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/gaps/${encodeURIComponent(gapId)}`,
+      { method: 'PATCH', body: JSON.stringify({ status }) },
     ),
   products: (businessId: string, limit = 50, offset = 0) =>
     request<ProductPage>(
