@@ -40,6 +40,37 @@ export type WhatsAppStatus = {
   signupFailure?: string | null;
   signupExpiresAt?: string | null;
 };
+export type WebsiteWidget = {
+  id: string;
+  publicId: string;
+  name: string;
+  enabled: boolean;
+  aiEnabled: boolean;
+  aiAvailable: boolean;
+  configuration: {
+    primaryColor: string;
+    assistantName: string;
+    welcomeMessage: string;
+    position: 'bottom-left' | 'bottom-right';
+    theme: 'light' | 'dark';
+    collectContact: boolean;
+    requireContact: boolean;
+    privacyNotice: string;
+    offlineMessage: string;
+    suggestedQuestions: string[];
+    logoUrl: string | null;
+    businessHours: {
+      enabled: boolean;
+      daysOfWeek: number[];
+      opensAt: string;
+      closesAt: string;
+    };
+  };
+  availability: 'OPEN' | 'CLOSED';
+  domains: string[];
+  connectionStatus: string;
+  installScript: string;
+};
 export type EmbeddedWhatsAppSignup = {
   attemptId: string;
   appId: string;
@@ -78,7 +109,11 @@ export type InboxMode = 'AUTO' | 'HUMAN';
 export type Conversation = {
   id: string;
   customer_name: string;
-  customer_whatsapp_id: string;
+  customer_whatsapp_id: string | null;
+  channel?: 'WHATSAPP' | 'WEBSITE';
+  website_domain?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
   last_activity: string;
   preview: string | null;
   status: string | null;
@@ -94,6 +129,8 @@ export type ConversationDetail = Omit<
   'last_activity' | 'preview'
 > & {
   control_changed_at: string;
+  channel?: 'WHATSAPP' | 'WEBSITE';
+  website_domain?: string | null;
 };
 export type InboxMessage = {
   id: string;
@@ -185,8 +222,8 @@ export type MerchantLead = {
   customer_id: string;
   conversation_id: string;
   customer_name: string;
-  customer_whatsapp_id: string;
-  source: 'WHATSAPP';
+  customer_whatsapp_id: string | null;
+  source: 'WHATSAPP' | 'WEBSITE';
   status: 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'WON' | 'LOST';
   first_contact_at: string;
   last_activity_at: string;
@@ -516,6 +553,34 @@ export const api = {
     request<WhatsAppStatus>(
       `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
     ),
+  websiteWidgets: (businessId: string) =>
+    request<WebsiteWidget[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/website-widget`,
+    ),
+  createWebsiteWidget: (businessId: string, name: string) =>
+    request<{ id: string; publicId: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/website-widget`,
+      { method: 'POST', body: JSON.stringify({ name }) },
+    ),
+  updateWebsiteWidget: (businessId: string, widgetId: string, body: unknown) =>
+    request<{ enabled: boolean; aiEnabled: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/website-widget/${encodeURIComponent(widgetId)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+  setWebsiteWidgetDomains: (
+    businessId: string,
+    widgetId: string,
+    origins: string[],
+  ) =>
+    request<{ count: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/website-widget/${encodeURIComponent(widgetId)}/domains`,
+      { method: 'PATCH', body: JSON.stringify({ origins }) },
+    ),
+  rotateWebsiteWidget: (businessId: string, widgetId: string) =>
+    request<{ publicId: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/website-widget/${encodeURIComponent(widgetId)}/rotate`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
   disconnectWhatsApp: (id: string) =>
     request<WhatsAppStatus>(
       `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
@@ -577,11 +642,13 @@ export const api = {
     cursor?: string,
     status: 'all' | 'open' | 'closed' = 'all',
     search?: string,
+    channel: 'all' | 'WHATSAPP' | 'WEBSITE' = 'all',
   ) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
     query.set('status', status);
     if (search?.trim()) query.set('search', search.trim());
+    query.set('channel', channel);
     return request<CursorPage<Conversation>>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/conversations?${query}`,
     );

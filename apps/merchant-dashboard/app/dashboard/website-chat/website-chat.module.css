@@ -1,0 +1,227 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 20px;
+  align-items: start;
+}
+.card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e6e8ec);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 12px 35px #19253808;
+}
+.card h2 {
+  font-size: 19px;
+  margin: 0 0 8px;
+}
+.card p {
+  color: #657080;
+  line-height: 1.55;
+}
+.card label {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #263246;
+}
+.card input:not([type='checkbox']):not([type='color']),
+.card textarea {
+  width: 100%;
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font: inherit;
+  font-weight: 400;
+  color: #172337;
+  background: #fff;
+}
+.card input[type='color'] {
+  width: 54px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+}
+.card small,
+.muted {
+  font-size: 12px;
+  font-weight: 400;
+  color: #697586;
+}
+.card button {
+  border: 0;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  padding: 11px 15px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.card button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.card .secondary {
+  background: #edf2ff;
+  color: #2149a6;
+}
+.card .danger {
+  background: #fff0ed;
+  color: #9e3023;
+  margin-top: 14px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.status {
+  display: inline-block;
+  background: #e9f8ef;
+  color: #137342;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 9px;
+  margin-top: 4px;
+}
+.check {
+  display: flex !important;
+  align-items: center;
+  grid-template-columns: 20px 1fr !important;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: #2563eb;
+}
+.code {
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #101827;
+  color: #eaf0fb;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.error {
+  color: #a22b27 !important;
+  background: #fff3f2;
+  padding: 10px 12px;
+  border-radius: 9px;
+}
+.success {
+  color: #117245 !important;
+  background: #effaf3;
+  padding: 10px 12px;
+  border-radius: 9px;
+}
+.preview {
+  margin: 18px 0;
+  overflow: hidden;
+  border: 1px solid #d9dee7;
+  border-radius: 16px;
+  color: #172337;
+  background: #fff;
+  box-shadow: 0 10px 28px #19253812;
+}
+.previewDark {
+  background: #101a27;
+  color: #f2f5f8;
+}
+.previewHeader {
+  display: grid;
+  gap: 3px;
+  padding: 15px;
+  color: #fff;
+}
+.previewHeader span {
+  font-size: 12px;
+  opacity: 0.86;
+}
+.previewMessages {
+  display: grid;
+  gap: 12px;
+  padding: 18px 14px;
+  font-size: 13px;
+}
+.previewBubble,
+.previewVisitor {
+  max-width: 88%;
+  padding: 10px 12px;
+  border-radius: 13px;
+  line-height: 1.45;
+}
+.previewBubble {
+  justify-self: start;
+  background: #f0f3f6;
+}
+.previewDark .previewBubble {
+  background: #243345;
+}
+.previewVisitor {
+  justify-self: end;
+  color: white;
+  background: var(--preview-brand, #2563eb);
+}
+.previewComposer {
+  margin: 0 12px 12px;
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #697586;
+}
+.timeFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.timeFields label {
+  min-width: 0;
+}
+.dayPicker {
+  margin: 18px 0;
+  border: 1px solid #d9dee7;
+  border-radius: 12px;
+  padding: 12px;
+}
+.dayPicker legend {
+  padding: 0 5px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.daysGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.dayOption {
+  display: flex !important;
+  align-items: center;
+  gap: 5px !important;
+  margin: 2px 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+.dayOption input {
+  accent-color: #2563eb;
+}
+.previewLogo {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #ffffff30;
+}
+@media (max-width: 850px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    padding: 18px;
+  }
+}

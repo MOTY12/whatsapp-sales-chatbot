@@ -32,6 +32,7 @@ export class MerchantInboxController {
     @Query('cursor') cursor?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
+    @Query('channel') channel?: string,
   ) {
     return this.inbox.list(
       principal(request),
@@ -40,6 +41,7 @@ export class MerchantInboxController {
       cursor,
       status,
       search,
+      channel,
     );
   }
 

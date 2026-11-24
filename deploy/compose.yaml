@@ -35,6 +35,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      WEBSITE_WIDGET_PUBLIC_ORIGIN: ${WEBSITE_WIDGET_PUBLIC_ORIGIN:?Set WEBSITE_WIDGET_PUBLIC_ORIGIN to the public HTTPS API origin}
     expose:
       - '3000'
     read_only: true

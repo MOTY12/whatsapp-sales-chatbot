@@ -533,13 +533,13 @@ V1 mapping and adaptation. Paid WhatsApp pilot go/no-go. Require official accoun
 
 - **Objective.** Add first native second channel and validate neutral contracts.
 - **Reuse and likely changes.** Reuse channel/inbox modules → website adapter and widget.
-- **Implementation.** Add first native second channel and validate neutral contracts.
-- **Database and API.** Signed widget sessions and allowlisted domains. Public handshake and message ingress.
-- **Dependencies.** QA-002, CHANNEL-001. **External services.** Test merchant domain and browser.
-- **Security.** Origin checks, abuse limits, signed anonymous session and no inferred merge.
-- **Acceptance and required tests.** Two merchants can embed widgets. Cross-origin, reconnect, handoff and leakage tests pass.
+- **Implementation.** Added cross-origin iframe widget, exact normalized origin allowlists, anonymous hashed visitor sessions, durable visitor messages, lead capture, human handoff, optional contact consent, and the shared AI/orchestration/outbox path. Website AI is owner-enabled and does not depend on WhatsApp or Meta approval.
+- **Database and API.** Additive `WebsiteChat1760000000030` schema and public widget/session/message/contact/handoff APIs; owner-only widget management API. Merchant inbox includes the Website channel and origin.
+- **Dependencies.** CHANNEL-001, INBOX-001, AGENT-001, METER-001. This channel is intentionally prioritized ahead of QA-002 because it does not require Meta approval; WhatsApp launch requirements and QA-002 remain unchanged. **External services.** Test merchant domain and browser.
+- **Security.** HTTPS origin normalization (localhost HTTP only in development), session credentials stored as SHA-256 digests, widget/business/visitor/conversation binding, exact origin checks, database-backed rate limits, idempotency keys, text-only rendering, explicit contact consent and no inferred customer merge.
+- **Acceptance and required tests.** PostgreSQL migration rollback/reapply and visitor session/message integration tests pass; unit and dashboard suites pass. Two-tenant widget lifecycle, native real-time cross-instance delivery, and full embedded-browser acceptance remain required.
 - **Verify.** npm run test:integration -- website-adapter, plus lint/build and applicable dashboard or provider contract checks.
-- **Done.** Authorized pilot website can be enabled per tenant with contract and browser evidence.
+- **Done.** Authorized pilot website can be enabled per tenant with contract and browser evidence. Real-time transport, retention cleanup, end-to-end visitor/inbox browser journey, multi-instance tests, and full integration suite must pass before verification.
 
 ### CHANNEL-003 · Add Telegram Bot API adapter · Medium
 

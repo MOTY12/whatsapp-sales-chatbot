@@ -19,7 +19,7 @@ export class MerchantLead {
   @Column('uuid') customer_id!: string;
   @Column('uuid') conversation_id!: string;
   @Column({ type: 'varchar', length: 16, default: 'WHATSAPP' })
-  source!: 'WHATSAPP';
+  source!: 'WHATSAPP' | 'WEBSITE';
   @Column({ type: 'varchar', length: 16, default: 'NEW' })
   status!: MerchantLeadStatus;
   @Column('timestamptz') first_contact_at!: Date;

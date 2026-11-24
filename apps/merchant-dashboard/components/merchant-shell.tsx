@@ -8,6 +8,7 @@ const items = [
   ['Overview', '/dashboard', '⌂'],
   ['Conversations', '/dashboard/conversations', '◷'],
   ['WhatsApp', '/dashboard/whatsapp', '◉'],
+  ['Website Chat', '/dashboard/website-chat', '▣'],
   ['Knowledge Base', '/dashboard/knowledge', '▤'],
   ['Products', '/dashboard/products', '◇'],
   ['AI Assistant', '/dashboard/assistant', '✦'],

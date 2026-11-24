@@ -35,6 +35,9 @@ import { MerchantAssistantService } from './merchant-assistant.service';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
 import { MerchantLearningController } from './merchant-learning.controller';
 import { MerchantLearningService } from './merchant-learning.service';
+import { MerchantWebsiteWidgetController } from './merchant-website-widget.controller';
+import { MerchantWebsiteWidgetService } from './merchant-website-widget.service';
+import { WebsiteChatModule } from '../website-chat/website-chat.module';
 
 @Module({
   imports: [
@@ -45,6 +48,7 @@ import { MerchantLearningService } from './merchant-learning.service';
     KnowledgeModule,
     UsageModule,
     AgentToolsModule,
+    WebsiteChatModule,
   ],
   controllers: [
     MerchantAuthController,
@@ -58,6 +62,7 @@ import { MerchantLearningService } from './merchant-learning.service';
     MerchantPilotController,
     MerchantAssistantController,
     MerchantLearningController,
+    MerchantWebsiteWidgetController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -75,6 +80,7 @@ import { MerchantLearningService } from './merchant-learning.service';
     MerchantPilotService,
     MerchantAssistantService,
     MerchantLearningService,
+    MerchantWebsiteWidgetService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

@@ -17,6 +17,7 @@ export default async function ConversationsPage({
     conversationId?: string;
     status?: string;
     search?: string;
+    channel?: string;
   }>;
 }) {
   const {
@@ -24,11 +25,16 @@ export default async function ConversationsPage({
     conversationId,
     status: requestedStatus,
     search: requestedSearch,
+    channel: requestedChannel,
   } = await searchParams;
   const status = ['all', 'open', 'closed'].includes(requestedStatus ?? '')
     ? (requestedStatus as 'all' | 'open' | 'closed')
     : 'all';
   const search = requestedSearch?.trim().slice(0, 100) ?? '';
+  const channel: 'all' | 'WHATSAPP' | 'WEBSITE' =
+    requestedChannel === 'WHATSAPP' || requestedChannel === 'WEBSITE'
+      ? requestedChannel
+      : 'all';
   let identity;
   try {
     identity = await api.identity();
@@ -82,6 +88,7 @@ export default async function ConversationsPage({
       undefined,
       status,
       search,
+      channel,
     );
   } catch (error) {
     if (error instanceof ApiError && error.status === 401)
@@ -119,12 +126,13 @@ export default async function ConversationsPage({
         )}
       </div>
       <InboxExperience
-        key={`${membership.businessId}:${status}:${search}:${conversationId ?? ''}`}
+        key={`${membership.businessId}:${status}:${search}:${channel}:${conversationId ?? ''}`}
         businessId={membership.businessId}
         accountId={identity.accountId}
         teammates={teammates}
         initialStatus={status}
         initialSearch={search}
+        initialChannel={channel}
         initialPage={initialPage}
         initialError={initialError}
         initialConversationId={conversationId}

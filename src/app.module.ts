@@ -12,6 +12,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { WebsiteChatModule } from './website-chat/website-chat.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CatalogModule } from './catalog/catalog.module';
     MetaEmbeddedSignupModule,
     KnowledgeModule,
     CatalogModule,
+    WebsiteChatModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, DatabaseReadiness],

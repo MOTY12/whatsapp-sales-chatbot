@@ -11,7 +11,7 @@ export type KnowledgeGapOutcome = {
   businessId: string;
   aiRunId: string;
   inboundMessageId: string;
-  channel: 'WHATSAPP';
+  channel: 'WHATSAPP' | 'WEBSITE';
   customerQuestion: string;
   reasonCode: string | null;
 };

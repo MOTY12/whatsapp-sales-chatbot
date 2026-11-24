@@ -29,6 +29,7 @@ import { AgentToolExecutor } from '../agent-tools/agent-tool-executor.service';
 import { agentToolRegistry } from '../agent-tools/tool-registry';
 import { ConversationMemoryService } from '../support-agent/conversation-memory.service';
 import { KnowledgeGapCaptureService } from '../learning/knowledge-gap-capture.service';
+import { WebsiteChatService } from '../website-chat/website-chat.service';
 
 export const whatsappAiResponseOperation = 'whatsapp.ai_response';
 const inputBudget = 3600;
@@ -45,7 +46,8 @@ type RunRow = {
   error_category: string | null;
   evidence: Array<{ sourceId: string; revisionId: string; sourceType: string }>;
   reply: string | null;
-  recipient: string;
+  recipient: string | null;
+  website_widget_id: string | null;
   customer_message: string;
   control_mode: string;
   control_version: number | string;
@@ -56,6 +58,9 @@ type RunRow = {
   has_newer_inbound: boolean;
   published_knowledge_ready: boolean;
   assistant_configured: boolean;
+  channel: 'WHATSAPP' | 'WEBSITE';
+  widget_enabled: boolean | null;
+  widget_ai_enabled: boolean | null;
 };
 
 @Injectable()
@@ -70,6 +75,7 @@ export class AiResponseService {
     @Optional() private readonly tools?: AgentToolExecutor,
     @Optional() private readonly memory?: ConversationMemoryService,
     @Optional() private readonly knowledgeGaps?: KnowledgeGapCaptureService,
+    @Optional() private readonly websiteChat?: WebsiteChatService,
   ) {}
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
@@ -132,7 +138,7 @@ export class AiResponseService {
           ? 'HUMAN_TAKEOVER'
           : row.has_newer_inbound
             ? 'NEWER_CUSTOMER_TURN'
-            : !row.pilot_approved
+            : row.channel === 'WHATSAPP' && !row.pilot_approved
               ? 'PILOT_APPROVAL_REQUIRED'
               : !row.published_knowledge_ready || !row.assistant_configured
                 ? 'AI_SETUP_INCOMPLETE'
@@ -442,6 +448,49 @@ export class AiResponseService {
     row = current;
     if (!reply) throw new Error('Generated reply is missing.');
     try {
+      if (row.channel === 'WEBSITE') {
+        if (!this.websiteChat || !row.website_widget_id)
+          throw new Error('Website response delivery is unavailable.');
+        await this.database.transaction(async (manager) => {
+          const outboundId = await this.websiteChat!.enqueueAiReply(manager, {
+            businessId: row.business_id,
+            conversationId: row.conversation_id,
+            widgetId: row.website_widget_id!,
+            runId,
+            text: reply,
+            controlVersion: row.authorized_control_version,
+          });
+          await manager.query(
+            `UPDATE public.ai_response_runs SET status=$3,website_outbound_message_id=$4,
+              updated_at=now(),completed_at=now() WHERE id=$1 AND business_id=$2 AND status='GENERATED'`,
+            [
+              runId,
+              row.business_id,
+              status === 'HANDOFF_REQUIRED' ? 'HANDOFF_REQUIRED' : 'QUEUED',
+              outboundId,
+            ],
+          );
+          if (status === 'HANDOFF_REQUIRED' && this.knowledgeGaps) {
+            await this.knowledgeGaps.capture(manager, {
+              businessId: row.business_id,
+              aiRunId: runId,
+              inboundMessageId: row.inbound_message_id,
+              channel: 'WEBSITE',
+              customerQuestion: row.customer_message,
+              reasonCode: errorCategory,
+            });
+          }
+        });
+        this.log(
+          status === 'HANDOFF_REQUIRED'
+            ? 'AI_HANDOFF_REQUIRED'
+            : 'AI_RESPONSE_QUEUED',
+          row,
+          errorCategory,
+        );
+        return;
+      }
+      if (!row.recipient) throw new Error('WhatsApp recipient is unavailable.');
       const outboundId = await this.outbound.enqueueTextMessage(
         row.business_id,
         { to: row.recipient, message: reply },
@@ -514,7 +563,7 @@ export class AiResponseService {
     const [row] = await this.database.query<RunRow[]>(
       `SELECT a.id,a.business_id,a.inbound_message_id,a.conversation_id,a.lead_id,
         a.authorized_control_version,a.status,a.error_category,a.evidence,a.reply,m.content AS customer_message,
-        c."whatsappId" AS recipient,v.control_mode,v.control_version,b.status AS business_status,
+        c."whatsappId" AS recipient,v.control_mode,v.control_version,b.status AS business_status,a.channel,a.website_widget_id,
         ch.status AS connection_status,ch."verifiedAt" AS verified_at,
         EXISTS (SELECT 1 FROM public.business_pilot_enrollments p
           WHERE p.business_id=a.business_id AND p.connection_id=ch.id AND p.status='ACTIVE') AS pilot_approved,
@@ -525,13 +574,15 @@ export class AiResponseService {
           WHERE f.business_id=a.business_id AND f.published_revision_id IS NOT NULL)
           OR EXISTS (SELECT 1 FROM public.merchant_products p
           WHERE p.business_id=a.business_id AND p.published_revision_id IS NOT NULL)) AS published_knowledge_ready,
-        EXISTS (SELECT 1 FROM public.assistant_configurations ac WHERE ac.business_id=a.business_id) AS assistant_configured
+        EXISTS (SELECT 1 FROM public.assistant_configurations ac WHERE ac.business_id=a.business_id) AS assistant_configured,
+        w.enabled AS widget_enabled,w.ai_enabled AS widget_ai_enabled
        FROM public.ai_response_runs a JOIN public.messages m ON m.id=a.inbound_message_id AND m."businessId"=a.business_id
        JOIN public.conversations v ON v.id=a.conversation_id AND v."businessId"=a.business_id
        JOIN public.customers c ON c.id=v."customerId" AND c."businessId"=a.business_id
        JOIN public.businesses b ON b.id=a.business_id
-       JOIN LATERAL (SELECT id,status,"verifiedAt" FROM public.channel_connections WHERE "businessId"=a.business_id
-         AND provider='whatsapp' ORDER BY "updatedAt" DESC LIMIT 1) ch ON true
+       LEFT JOIN LATERAL (SELECT id,status,"verifiedAt" FROM public.channel_connections WHERE "businessId"=a.business_id
+         AND provider=CASE WHEN a.channel='WEBSITE' THEN 'website' ELSE 'whatsapp' END ORDER BY "updatedAt" DESC LIMIT 1) ch ON true
+       LEFT JOIN public.website_widgets w ON w.id=a.website_widget_id AND w.business_id=a.business_id AND a.channel='WEBSITE'
        WHERE a.id=$1 AND a.business_id=$2`,
       [id, businessId],
     );
@@ -572,18 +623,20 @@ export class AiResponseService {
   }
 
   private isAuthorized(row: RunRow | null): boolean {
-    return Boolean(
+    const common = Boolean(
       row &&
       row.business_status === 'active' &&
       row.connection_status === 'active' &&
-      row.verified_at &&
-      row.pilot_approved === true &&
       row.has_newer_inbound !== true &&
       row.published_knowledge_ready === true &&
       row.assistant_configured === true &&
       row.control_mode === 'AUTO' &&
       String(row.control_version) === String(row.authorized_control_version),
     );
+    if (!common || !row) return false;
+    return row.channel === 'WEBSITE'
+      ? row.widget_enabled === true && row.widget_ai_enabled === true
+      : Boolean(row.pilot_approved === true && row.verified_at);
   }
 
   private retrievalQuery(

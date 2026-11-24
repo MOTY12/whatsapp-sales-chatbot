@@ -18,7 +18,7 @@ export type CustomerLeadStage =
   'New Lead' | 'Interested' | 'Negotiating' | 'Paid' | 'Delivered' | 'Lost';
 
 @Entity('customers')
-@Index(['businessId', 'phone'], { unique: true })
+@Index(['businessId', 'phone'])
 @Index(['businessId', 'whatsappId'], { unique: true })
 @Index(['businessId', 'leadStage'])
 export class Customer {
@@ -28,11 +28,11 @@ export class Customer {
   @Column()
   name: string;
 
-  @Column()
-  phone: string;
+  @Column({ type: 'varchar', nullable: true })
+  phone: string | null;
 
-  @Column()
-  whatsappId: string;
+  @Column({ type: 'varchar', nullable: true })
+  whatsappId: string | null;
 
   @Column({ nullable: true })
   email: string;

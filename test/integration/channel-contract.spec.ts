@@ -74,7 +74,7 @@ describe('channel connection contract', () => {
     });
     await expect(resolve(connected.displayPhoneNumber)).resolves.toBeNull();
     await expect(resolve('unknown')).resolves.toBeNull();
-    await expect(resolve(first.customer.whatsappId)).resolves.toBeNull();
+    await expect(resolve(first.customer.whatsappId!)).resolves.toBeNull();
     await expect(
       source.getRepository(Business).findOneByOrFail({ id: first.business.id }),
     ).resolves.toMatchObject(connected);

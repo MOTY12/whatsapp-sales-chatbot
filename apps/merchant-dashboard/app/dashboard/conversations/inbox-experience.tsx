@@ -35,6 +35,7 @@ type Props = {
   teammates: InboxMember[];
   initialStatus: 'all' | 'open' | 'closed';
   initialSearch: string;
+  initialChannel: 'all' | 'WHATSAPP' | 'WEBSITE';
   initialPage: CursorPage<Conversation> | null;
   initialError: ApiFailure | null;
   initialConversationId?: string;
@@ -121,7 +122,9 @@ function displayName(
   conversation: Pick<Conversation, 'customer_name' | 'customer_whatsapp_id'>,
 ) {
   return (
-    conversation.customer_name?.trim() || conversation.customer_whatsapp_id
+    conversation.customer_name?.trim() ||
+    conversation.customer_whatsapp_id ||
+    'Website visitor'
   );
 }
 
@@ -135,6 +138,7 @@ export function InboxExperience({
   teammates,
   initialStatus,
   initialSearch,
+  initialChannel,
   initialPage,
   initialError,
   initialConversationId,
@@ -290,7 +294,7 @@ export function InboxExperience({
         const page = await getInboxJson<CursorPage<Conversation>>(
           inboxPath(
             businessId,
-            `?limit=30&status=${initialStatus}&search=${encodeURIComponent(initialSearch)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+            `?limit=30&status=${initialStatus}&channel=${initialChannel}&search=${encodeURIComponent(initialSearch)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
           ),
         );
         setConversations((current) =>
@@ -325,6 +329,7 @@ export function InboxExperience({
       listCursor,
       initialSearch,
       initialStatus,
+      initialChannel,
     ],
   );
 
@@ -763,7 +768,7 @@ export function InboxExperience({
         <div className={styles.listHeader}>
           <div>
             <h2>Inbox</h2>
-            <p>WhatsApp conversations</p>
+            <p>Customer conversations across channels</p>
           </div>
           <span className={styles.count}>{conversations.length}</span>
         </div>
@@ -774,6 +779,18 @@ export function InboxExperience({
           role="search"
         >
           <input type="hidden" name="businessId" value={businessId} />
+          <label>
+            <span className={styles.visuallyHidden}>Conversation channel</span>
+            <select
+              name="channel"
+              defaultValue={initialChannel}
+              aria-label="Filter conversations by channel"
+            >
+              <option value="all">All channels</option>
+              <option value="WHATSAPP">WhatsApp</option>
+              <option value="WEBSITE">Website Chat</option>
+            </select>
+          </label>
           <label>
             <span className={styles.visuallyHidden}>Conversation status</span>
             <select
@@ -843,6 +860,11 @@ export function InboxExperience({
                     <span className={styles.rowBody}>
                       <span className={styles.rowTop}>
                         <strong>{displayName(conversation)}</strong>
+                        <span className={styles.channel}>
+                          {conversation.channel === 'WEBSITE'
+                            ? 'Website Chat'
+                            : 'WhatsApp'}
+                        </span>
                         <time dateTime={conversation.last_activity}>
                           {formatInboxTime(conversation.last_activity)}
                         </time>
@@ -955,9 +977,17 @@ export function InboxExperience({
                         : 'Loading conversation'}
                   </h2>
                   <p>
-                    {detail?.customer_whatsapp_id ??
-                      selectedConversation?.customer_whatsapp_id ??
-                      ''}
+                    {detail?.channel === 'WEBSITE'
+                      ? [
+                          detail.website_domain,
+                          detail.contact_email,
+                          detail.contact_phone,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'Website visitor'
+                      : (detail?.customer_whatsapp_id ??
+                        selectedConversation?.customer_whatsapp_id ??
+                        '')}
                   </p>
                 </div>
               </div>

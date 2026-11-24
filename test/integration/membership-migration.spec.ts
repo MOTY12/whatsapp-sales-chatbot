@@ -79,13 +79,13 @@ describe('tenant integrity migration', () => {
     const repo = repositories(source);
     await expect(
       repo.customers.findByPhoneAndBusiness(
-        first.customer.phone,
+        first.customer.phone!,
         first.business.id,
       ),
     ).resolves.toMatchObject({ id: first.customer.id });
     await expect(
       repo.customers.findByPhoneAndBusiness(
-        first.customer.phone,
+        first.customer.phone!,
         second.business.id,
       ),
     ).resolves.toMatchObject({ id: second.customer.id });

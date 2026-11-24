@@ -61,13 +61,13 @@ describe('PostgreSQL repository baseline', () => {
 
     await expect(
       repo.customers.findByPhoneAndBusiness(
-        first.customer.phone,
+        first.customer.phone!,
         first.business.id,
       ),
     ).resolves.toMatchObject({ id: first.customer.id });
     await expect(
       repo.customers.findByWhatsappIdAndBusiness(
-        first.customer.whatsappId,
+        first.customer.whatsappId!,
         second.business.id,
       ),
     ).resolves.toMatchObject({ id: second.customer.id });

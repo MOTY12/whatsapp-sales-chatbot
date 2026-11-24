@@ -27,6 +27,7 @@ import {
 import { repositories, seedTenant } from './fixtures';
 import { clientId, clientSecret, startIdentityProvider } from './oidc-fixture';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
+import { databaseMigrations } from '../../src/database/schema';
 
 function cookieHeader(response: Response, name: string) {
   const headers = response.headers['set-cookie'] as unknown as
@@ -2115,8 +2116,19 @@ describe('merchant OIDC and tenant isolation', () => {
       await admin.query('DELETE FROM public.merchant_onboarding_progress');
       await admin.query('DELETE FROM public.merchant_login_attempts');
       await clearEmailAuthenticationFixtures(admin);
-      // Unwind migrations 0026–0015 before exercising catalog migration 0014.
-      for (let i = 0; i < 12; i += 1) await admin.undoLastMigration();
+      // Unwind every migration after catalog migration 0014. Keep this fixture
+      // aligned as new additive migrations are appended to the registry.
+      const catalogMigrationIndex = databaseMigrations.findIndex(
+        ({ name }) => name === 'MerchantProductCatalog1760000000014',
+      );
+      expect(catalogMigrationIndex).toBeGreaterThanOrEqual(0);
+      for (
+        let i = catalogMigrationIndex + 1;
+        i < databaseMigrations.length;
+        i += 1
+      ) {
+        await admin.undoLastMigration();
+      }
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant product history exists',
       );
@@ -2717,13 +2729,19 @@ describe('merchant OIDC and tenant isolation', () => {
     it('blocks migration rollback once onboarding receipts exist', async () => {
       const merchant = await login('onboarding-rollback-guard');
       await create(merchant, randomUUID()).send(profile).expect(201);
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
-      // Migrations 0022-0024 add WhatsApp signup, operator activation and inbox state.
-      await admin.undoLastMigration();
-      await admin.undoLastMigration();
+      // Stop immediately after email-authentication migration 0020 so the next
+      // rollback exercises its data-loss guard as later migrations are added.
+      const emailAuthenticationMigrationIndex = databaseMigrations.findIndex(
+        ({ name }) => name === 'MerchantEmailAuthentication1760000000020',
+      );
+      expect(emailAuthenticationMigrationIndex).toBeGreaterThanOrEqual(0);
+      for (
+        let i = emailAuthenticationMigrationIndex + 1;
+        i < databaseMigrations.length;
+        i += 1
+      ) {
+        await admin.undoLastMigration();
+      }
       await expect(admin.undoLastMigration()).rejects.toThrow(
         'Merchant email authentication data exists',
       );

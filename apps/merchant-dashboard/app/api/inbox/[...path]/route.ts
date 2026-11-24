@@ -62,6 +62,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
           cursor,
           status,
           params.get('search') ?? undefined,
+          (params.get('channel') as 'all' | 'WHATSAPP' | 'WEBSITE' | null) ??
+            'all',
         ),
         { headers: { 'Cache-Control': 'no-store' } },
       );

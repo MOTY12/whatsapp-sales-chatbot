@@ -10,12 +10,15 @@ import { MerchantAccess } from './merchant-access.service';
 import { OutboundMessageService } from '../whatsapp/outbound-message.service';
 import { OutboundPolicyError } from '../whatsapp/outbound-message.service';
 import { UsageLimitExceededError } from '../metering/usage.service';
+import { WebsiteChatService } from '../website-chat/website-chat.service';
 
 type Cursor = { at: string; id: string };
 type InboxListRow = {
   id: string;
   customer_name: string;
-  customer_whatsapp_id: string;
+  customer_whatsapp_id: string | null;
+  channel: 'WHATSAPP' | 'WEBSITE';
+  website_domain: string | null;
   last_activity: Date | string;
   preview: string | null;
   status: string | null;
@@ -84,6 +87,7 @@ export class MerchantInboxService {
   constructor(
     private readonly access: MerchantAccess,
     private readonly outbound: OutboundMessageService,
+    private readonly websiteChat: WebsiteChatService,
   ) {}
 
   async list(
@@ -93,6 +97,7 @@ export class MerchantInboxService {
     rawCursor?: string,
     statusFilter?: string,
     searchText?: string,
+    channelFilter?: string,
   ) {
     const size = pageLimit(limit);
     const cursor = cursorDecode(rawCursor);
@@ -104,14 +109,24 @@ export class MerchantInboxService {
       throw new BadRequestException('Search must be 100 characters or fewer.');
     }
     const search = searchText?.trim() || null;
+    const channel = channelFilter?.trim().toUpperCase() || 'ALL';
+    if (!['ALL', 'WHATSAPP', 'WEBSITE'].includes(channel))
+      throw new BadRequestException('Choose a valid conversation channel.');
     return this.access.withBusiness(
       actor,
       businessId,
       'inbox.operate',
       async (manager) => {
         const rows = await manager.query<InboxListRow[]>(
-          'SELECT * FROM public.kleva_inbox_list_filtered($1,$2,$3,$4,$5)',
-          [size + 1, cursor?.at ?? null, cursor?.id ?? null, status, search],
+          'SELECT * FROM public.kleva_inbox_list_channel_filtered($1,$2,$3,$4,$5,$6)',
+          [
+            size + 1,
+            cursor?.at ?? null,
+            cursor?.id ?? null,
+            status,
+            search,
+            channel,
+          ],
         );
         const hasMore = rows.length > size;
         const items = rows.slice(0, size);
@@ -336,7 +351,24 @@ export class MerchantInboxService {
           [conversationId],
         );
         if (!row) throw new NotFoundException();
-        return row;
+        const [channel] = await manager.query<
+          Array<{
+            channel: 'WHATSAPP' | 'WEBSITE';
+            website_domain: string | null;
+            contact_email: string | null;
+            contact_phone: string | null;
+          }>
+        >(
+          'SELECT channel,website_domain,contact_email,contact_phone FROM public.kleva_inbox_channel_info($1)',
+          [conversationId],
+        );
+        return {
+          ...row,
+          channel: channel?.channel ?? 'WHATSAPP',
+          website_domain: channel?.website_domain ?? null,
+          contact_email: channel?.contact_email ?? null,
+          contact_phone: channel?.contact_phone ?? null,
+        };
       },
     );
   }
@@ -471,13 +503,18 @@ export class MerchantInboxService {
         'Reply text must contain 1 to 4096 characters.',
       );
     }
-    const recipient = await this.access.withBusiness(
+    const conversation = await this.access.withBusiness(
       actor,
       businessId,
       'inbox.operate',
       async (manager) => {
         const [result] = await manager.query<
-          { whatsapp_id: string; control_mode: string; status: string }[]
+          {
+            whatsapp_id: string;
+            control_mode: string;
+            status: string;
+            channel: string;
+          }[]
         >('SELECT * FROM public.kleva_inbox_recipient_v2($1)', [
           conversationId,
         ]);
@@ -490,14 +527,27 @@ export class MerchantInboxService {
           throw new BadRequestException(
             'Reopen this conversation before replying.',
           );
-        return result.whatsapp_id;
+        const [channel] = await manager.query<Array<{ channel: string }>>(
+          'SELECT channel FROM public.kleva_inbox_channel_info($1)',
+          [conversationId],
+        );
+        return { ...result, channel: channel?.channel ?? 'WHATSAPP' };
       },
     );
+    if (conversation.channel === 'WEBSITE') {
+      const outboundMessageId = await this.websiteChat.enqueueHumanReply(
+        businessId,
+        conversationId,
+        text.trim(),
+        key,
+      );
+      return { outboundMessageId, status: 'QUEUED' };
+    }
     let outboundId: string;
     try {
       outboundId = await this.outbound.enqueueTextMessage(
         businessId,
-        { to: recipient, message: text.trim() },
+        { to: conversation.whatsapp_id, message: text.trim() },
         key,
         undefined,
         { conversationId, kind: 'HUMAN' },

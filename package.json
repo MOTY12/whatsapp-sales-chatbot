@@ -34,7 +34,8 @@
     "dashboard:lint": "npm --prefix apps/merchant-dashboard run lint",
     "dashboard:typecheck": "npm --prefix apps/merchant-dashboard run typecheck",
     "dashboard:test": "npm --prefix apps/merchant-dashboard run test",
-    "dashboard:test:browser": "npm --prefix apps/merchant-dashboard run test:browser"
+    "dashboard:test:browser": "npm --prefix apps/merchant-dashboard run test:browser",
+    "widget-demo": "node apps/chat-widget-demo/server.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

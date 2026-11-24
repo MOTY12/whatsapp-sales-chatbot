@@ -315,6 +315,29 @@ export function aiResponsesEnabled(env = process.env) {
   return flag(env, 'AI_RESPONSES_ENABLED', false);
 }
 
+export function websiteWidgetConfig(env = process.env) {
+  const production = applicationEnvironment(env) === 'production';
+  const raw =
+    env.WEBSITE_WIDGET_PUBLIC_ORIGIN?.trim() || 'http://localhost:3000';
+  const url = validatedUrl(
+    raw,
+    'WEBSITE_WIDGET_PUBLIC_ORIGIN',
+    production ? ['https:'] : ['http:', 'https:'],
+  );
+  if (
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      'WEBSITE_WIDGET_PUBLIC_ORIGIN must be an origin without credentials, path, query or fragment.',
+    );
+  }
+  return { publicOrigin: url.origin };
+}
+
 function usageLimit(env: NodeJS.ProcessEnv, name: string, fallback: number) {
   const value = env[name]?.trim() ?? String(fallback);
   const parsed = Number(value);

@@ -14,6 +14,7 @@ import { GROUNDED_MODEL, OpenAiGroundedModel } from './grounded-model.provider';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
 import { SupportAgentModule } from '../support-agent/support-agent.module';
 import { LearningModule } from '../learning/learning.module';
+import { WebsiteChatModule } from '../website-chat/website-chat.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { LearningModule } from '../learning/learning.module';
     AgentToolsModule,
     SupportAgentModule,
     LearningModule,
+    WebsiteChatModule,
   ],
   providers: [
     AssistantService,

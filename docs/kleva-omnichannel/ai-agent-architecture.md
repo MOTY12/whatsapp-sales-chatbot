@@ -2,6 +2,8 @@
 
 ## Orchestration and state
 
+The website channel uses the shared `AiResponseService`, published-only retrieval, bounded conversation memory, controlled tool registry, usage reservations and durable outbox. Its authorization branch requires an active business and widget connection, enabled widget and website AI, published knowledge, saved assistant configuration, current AUTO control version, no newer visitor turn, and configured usage. A website connection is activated by the owner after an exact origin is registered; it does not fabricate a Meta `verifiedAt` value. Website AI does not require a WhatsApp credential or Meta pilot approval. WhatsApp keeps its existing verified-number and operator-approval checks. Website AI defaults off and is enabled by a business owner.
+
 - **AgentOrchestrator** processes one durably ordered customer turn at a time. It loads tenant policy, connection capability, current handoff version, recent turns, summary and published evidence. A generation adapter returns a validated proposal. The application decides whether to reply, clarify, abstain, hand off, or execute an authorized tool. It fences stale proposals after takeover, source unpublish or newer conversation turns.
 - **AgentConfig** is versioned per business. It includes disclosure, name, tone, locale, approved tool policy, business hours, escalation triggers, budgets, and permissioned configuration. Customer text cannot alter this configuration. Default live mode is off.
 - **AgentRun** stores logical turn, attempt, config and model versions, evidence IDs, outcome, latency and usage. Use safe reason codes. Sensitive debugging content has separate retention and access controls.

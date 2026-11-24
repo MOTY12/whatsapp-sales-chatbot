@@ -93,6 +93,8 @@ export const inboxFunctions = [
   'kleva_inbox_add_note(uuid,text)',
   'kleva_inbox_set_status(uuid,text)',
   'kleva_inbox_recipient_v2(uuid)',
+  'kleva_inbox_channel_info(uuid)',
+  'kleva_inbox_list_channel_filtered(integer,timestamp without time zone,uuid,text,text,text)',
 ];
 export const knowledgeFunctions = [
   'kleva_faq_list()',
@@ -139,6 +141,13 @@ export const learningFunctions = [
   'kleva_learning_gaps(integer,text)',
   'kleva_learning_gap_set_status(uuid,text)',
 ];
+export const websiteWidgetFunctions = [
+  'kleva_website_widget_list()',
+  'kleva_website_widget_create(text,text)',
+  'kleva_website_widget_domains_set(uuid,text[])',
+  'kleva_website_widget_update(uuid,text,boolean,boolean,jsonb)',
+  'kleva_website_widget_rotate(uuid,text)',
+];
 export const policyFunctions = [
   'kleva_current_account()',
   'kleva_current_role()',
@@ -171,7 +180,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...websiteWidgetFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

@@ -36,6 +36,12 @@ import {
   WhatsAppResponseIntentDispatcher,
   whatsappResponseOperation,
 } from '../whatsapp/response-intent.dispatcher';
+import { WebsiteChatModule } from '../website-chat/website-chat.module';
+import {
+  WebsiteChatService,
+  websiteAiResponseOperation,
+  websiteDeliveryOperation,
+} from '../website-chat/website-chat.service';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -141,6 +147,7 @@ export class WorkerRuntime
     WhatsAppModule,
     AssistantModule,
     EmailModule,
+    WebsiteChatModule,
   ],
   providers: [
     WorkerRuntime,
@@ -152,6 +159,7 @@ export class WorkerRuntime
         outbound: OutboundMessageService,
         ai: AiResponseService,
         email: EmailService,
+        website: WebsiteChatService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
@@ -171,12 +179,27 @@ export class WorkerRuntime
             whatsappAiResponseOperation,
             { execute: (operation) => ai.execute(operation) },
           ],
+          [
+            websiteAiResponseOperation,
+            { execute: (operation) => ai.execute(operation) },
+          ],
+          [
+            websiteDeliveryOperation,
+            {
+              execute: (operation) =>
+                website.executeDelivery(
+                  String(operation.metadata.messageId),
+                  operation.businessId!,
+                ),
+            },
+          ],
         ]),
       inject: [
         WhatsAppResponseIntentDispatcher,
         OutboundMessageService,
         AiResponseService,
         EmailService,
+        WebsiteChatService,
       ],
     },
   ],
