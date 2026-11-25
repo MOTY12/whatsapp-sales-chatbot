@@ -61,6 +61,9 @@ let internalNotes = [];
 let assignedAccountId = null;
 let conversationStatus = 'open';
 let unreadCount = 2;
+let teamMembers = [];
+let teamInvitations = [];
+let teamAudit = [];
 
 function reset(search = new URLSearchParams()) {
   created = false;
@@ -132,6 +135,9 @@ function reset(search = new URLSearchParams()) {
   assignedAccountId = null;
   conversationStatus = 'open';
   unreadCount = 2;
+  teamMembers = [];
+  teamInvitations = [];
+  teamAudit = [];
   const now = Date.now();
   messages = Array.from({ length: 31 }, (_, index) => {
     const inbound = index % 2 === 0;
@@ -340,6 +346,19 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) body += chunk;
     Object.assign(businesses, JSON.parse(body));
     created = true;
+    teamMembers = [
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        accountId: 'fixture-account',
+        name: 'Demo Merchant',
+        email: 'merchant@example.test',
+        role: 'owner',
+        status: 'active',
+        joinedAt: new Date().toISOString(),
+        revokedAt: null,
+        version: 1,
+      },
+    ];
     return json(201, businesses);
   }
   const businessMatch = url.pathname.match(
@@ -355,6 +374,79 @@ const server = createServer(async (req, res) => {
       multipleBusinesses
     )
       return json(200, SECOND_BUSINESS);
+    return json(404, { message: 'Not found.' });
+  }
+  const teamMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/team(?:\/([0-9a-f-]+|invitations|audit)(?:\/(resend|revoke))?)?$/i,
+  );
+  if (teamMatch) {
+    const [, businessId, resource, action] = teamMatch;
+    if (!hasSession || !created || businessId !== BUSINESS_ID)
+      return json(404, { message: 'Not found.' });
+    if (fixtureRole !== 'owner')
+      return json(403, { message: 'Team administration is for owners.' });
+    if (req.method === 'GET' && !resource) {
+      const requestedStatus = url.searchParams.get('status') ?? 'active';
+      const search = (url.searchParams.get('search') ?? '').toLowerCase();
+      const items = teamMembers.filter(
+        (member) =>
+          member.status === requestedStatus &&
+          (!search || `${member.name} ${member.email}`.toLowerCase().includes(search)),
+      );
+      return json(200, {
+        items,
+        total: items.length,
+        limit: Number(url.searchParams.get('limit') ?? 100),
+        offset: Number(url.searchParams.get('offset') ?? 0),
+      });
+    }
+    if (req.method === 'GET' && resource === 'invitations')
+      return json(200, { items: teamInvitations });
+    if (req.method === 'GET' && resource === 'audit')
+      return json(200, { items: teamAudit });
+    if (req.method === 'POST' && resource === 'invitations') {
+      if (!validCsrf) return json(403, { message: 'Invalid CSRF token.' });
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const input = JSON.parse(body || '{}');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email ?? '') || !['agent', 'editor'].includes(input.role))
+        return json(400, { message: 'Enter a valid email and role.' });
+      const id = '33333333-3333-4333-8333-333333333333';
+      const invitation = {
+        id,
+        recipient_email: input.email.toLowerCase(),
+        invited_role: input.role,
+        status: 'PENDING',
+        delivery_status: 'QUEUED',
+        invited_by: 'fixture-account',
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 3 * 86400000).toISOString(),
+        resend_count: 0,
+      };
+      teamInvitations = [invitation, ...teamInvitations.filter((item) => item.id !== id)];
+      teamAudit.unshift({
+        id,
+        actor_account_id: 'fixture-account',
+        target_account_id: null,
+        target_id: id,
+        event_kind: 'team.invitation.created',
+        previous_value: null,
+        next_value: { role: input.role },
+        correlation_id: 'fixture-request',
+        created_at: invitation.created_at,
+      });
+      return json(201, {
+        id,
+        email: invitation.recipient_email,
+        role: input.role,
+        expiresAt: invitation.expires_at,
+        deliveryStatus: 'QUEUED',
+      });
+    }
+    if (req.method === 'POST' && resource === 'invitations' && action === 'revoke')
+      return json(200, { revoked: true });
+    if (req.method === 'POST' && resource === 'invitations' && action === 'resend')
+      return json(200, { id: resource, deliveryStatus: 'QUEUED', expiresAt: new Date(Date.now() + 3 * 86400000).toISOString() });
     return json(404, { message: 'Not found.' });
   }
   if (

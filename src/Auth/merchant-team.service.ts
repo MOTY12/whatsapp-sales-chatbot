@@ -551,7 +551,11 @@ export class MerchantTeamService {
   }
   private search(value?: string): string | null {
     const normalized = value?.trim().toLowerCase() ?? '';
-    if (normalized.length > 100 || /[\u0000-\u001f\u007f]/.test(normalized))
+    const containsControlCharacter = [...normalized].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    });
+    if (normalized.length > 100 || containsControlCharacter)
       throw new BadRequestException('Search must be 100 characters or fewer.');
     return normalized || null;
   }

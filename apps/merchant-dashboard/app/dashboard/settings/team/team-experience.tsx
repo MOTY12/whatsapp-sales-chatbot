@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { TeamAuditEvent, TeamInvitation, TeamMember } from '@/lib/api';
 
@@ -62,7 +62,6 @@ export function TeamExperience({
       limit: '100',
     });
     if (query.trim()) params.set('search', query.trim());
-    setSearchBusy(true);
     void fetch(`/api/team/${businessId}?${params.toString()}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -87,7 +86,7 @@ export function TeamExperience({
       });
     return () => controller.abort();
   }, [businessId, query, status]);
-  const visible = useMemo(() => searchResults, [searchResults]);
+  const visible = searchResults;
   const active = members.filter((member) => member.status === 'active');
   const ownerCount = active.filter((member) => member.role === 'owner').length;
   async function action(task: () => Promise<unknown>, success: string) {
@@ -217,7 +216,10 @@ export function TeamExperience({
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchBusy(true);
+                setQuery(event.target.value);
+              }}
               placeholder="Name or email"
             />
           </label>
@@ -225,15 +227,21 @@ export function TeamExperience({
             Status
             <select
               value={status}
-              onChange={(event) =>
+              onChange={(event) => {
+                setSearchBusy(true);
                 setStatus(event.target.value as 'active' | 'inactive')
-              }
+              }}
             >
               <option value="active">Active</option>
               <option value="inactive">Revoked</option>
             </select>
           </label>
         </div>
+        <p className="muted" aria-live="polite">
+          {searchBusy
+            ? 'Searching team members…'
+            : `${visible.length} team members shown.`}
+        </p>
         <div className="team-table-wrap">
           <table className="team-table">
             <thead>

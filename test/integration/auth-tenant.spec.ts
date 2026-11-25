@@ -1041,8 +1041,13 @@ describe('merchant OIDC and tenant isolation', () => {
       .get(`${base}?search=team-invitation-recipient@example.test`)
       .set('Cookie', owner.session)
       .expect(200);
-    expect(memberSearch.body.items).toHaveLength(1);
-    expect(memberSearch.body.items[0]).toMatchObject({
+    const memberSearchItems = (
+      memberSearch.body as {
+        items: Array<{ accountId: string; email: string }>;
+      }
+    ).items;
+    expect(memberSearchItems).toHaveLength(1);
+    expect(memberSearchItems[0]).toMatchObject({
       accountId: recipient.accountId,
       email: 'team-invitation-recipient@example.test',
     });
