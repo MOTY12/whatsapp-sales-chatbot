@@ -18,11 +18,15 @@ import {
   type MerchantRequest,
 } from '../Auth/auth.guards';
 import { ProductService } from './product.service';
+import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.service';
 
 @Controller('merchant/businesses/:businessId/products')
 @UseGuards(MerchantSessionGuard)
 export class ProductController {
-  constructor(private readonly products: ProductService) {}
+  constructor(
+    private readonly products: ProductService,
+    private readonly indexing: KnowledgeIndexingService,
+  ) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -94,5 +98,38 @@ export class ProductController {
     @Param('productId') productId: string,
   ) {
     return this.products.unpublish(principal(request), businessId, productId);
+  }
+
+  @Get(':productId/index-status')
+  @Header('Cache-Control', 'no-store')
+  indexStatus(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('productId') productId: string,
+  ) {
+    return this.indexing.status(
+      principal(request),
+      businessId,
+      'PRODUCT',
+      productId,
+    );
+  }
+
+  @Post(':productId/reindex')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  reindex(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('productId') productId: string,
+    @Headers('idempotency-key') key: string | undefined,
+  ) {
+    return this.indexing.request(
+      principal(request),
+      businessId,
+      key,
+      'PRODUCT',
+      productId,
+    );
   }
 }

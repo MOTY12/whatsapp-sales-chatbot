@@ -53,6 +53,7 @@ describe('environment configuration', () => {
       monthlyWhatsAppMessages: 1000,
       monthlyAiInputTokens: 100000,
       monthlyAiOutputTokens: 50000,
+      monthlyEmbeddingTokens: 100000,
       aiTokensPerRequest: 4096,
     });
     expect(

@@ -17,11 +17,15 @@ import {
   type MerchantRequest,
 } from '../Auth/auth.guards';
 import { KnowledgeFaqService } from './knowledge-faq.service';
+import { KnowledgeIndexingService } from './knowledge-indexing-api.service';
 
 @Controller('merchant/businesses/:businessId/faqs')
 @UseGuards(MerchantSessionGuard)
 export class KnowledgeController {
-  constructor(private readonly faqs: KnowledgeFaqService) {}
+  constructor(
+    private readonly faqs: KnowledgeFaqService,
+    private readonly indexing: KnowledgeIndexingService,
+  ) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -86,5 +90,33 @@ export class KnowledgeController {
     @Param('faqId') faqId: string,
   ) {
     return this.faqs.unpublish(principal(request), businessId, faqId);
+  }
+
+  @Get(':faqId/index-status')
+  @Header('Cache-Control', 'no-store')
+  indexStatus(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('faqId') faqId: string,
+  ) {
+    return this.indexing.status(principal(request), businessId, 'FAQ', faqId);
+  }
+
+  @Post(':faqId/reindex')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  reindex(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('faqId') faqId: string,
+    @Headers('idempotency-key') key: string | undefined,
+  ) {
+    return this.indexing.request(
+      principal(request),
+      businessId,
+      key,
+      'FAQ',
+      faqId,
+    );
   }
 }

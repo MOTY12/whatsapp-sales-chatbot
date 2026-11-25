@@ -71,6 +71,9 @@ import { KnowledgeDocument } from './entities/knowledge-document.entity';
 import { KnowledgeDocumentRevision } from './entities/knowledge-document-revision.entity';
 import { KnowledgeDocumentPage } from './entities/knowledge-document-page.entity';
 import { KnowledgeDocumentUploads1760000000031 } from './migrations/1760000000031-KnowledgeDocumentUploads';
+import { KnowledgeIndexGeneration } from './entities/knowledge-index-generation.entity';
+import { KnowledgeChunk } from './entities/knowledge-chunk.entity';
+import { SemanticKnowledgeIndex1760000000032 } from './migrations/1760000000032-SemanticKnowledgeIndex';
 
 export const databaseEntities = [
   Business,
@@ -104,6 +107,8 @@ export const databaseEntities = [
   KnowledgeDocument,
   KnowledgeDocumentRevision,
   KnowledgeDocumentPage,
+  KnowledgeIndexGeneration,
+  KnowledgeChunk,
 ];
 
 export const databaseMigrations = [
@@ -140,4 +145,5 @@ export const databaseMigrations = [
   LearningKnowledgeGaps1760000000029,
   WebsiteChat1760000000030,
   KnowledgeDocumentUploads1760000000031,
+  SemanticKnowledgeIndex1760000000032,
 ];

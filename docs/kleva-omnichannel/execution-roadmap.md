@@ -289,15 +289,15 @@ V1 mapping and adaptation. First outbound adapter. Use common send/status models
 
 ### KNOWLEDGE-003 · Add chunking, embeddings and reindex jobs · Large
 
-V1 mapping and adaptation. Retain generation and reindex behavior with a stable embedding-provider port.
+Implementation underway: pgvector generations, a stable embedding-provider port, bounded token-aware chunks, metering and hybrid search are in the current slice; remaining validation and lifecycle features stay open.
 
-- **Objective.** Build searchable generations and retryable ingestion. Missing.
+- **Objective.** Build searchable generations and retryable ingestion. Existing lexical retrieval remains the baseline and fallback.
 - **Reuse and likely changes.** Knowledge module, data source and worker → src/knowledge/ingestion/, src/ai/providers/ and chunk migration.
-- **Implementation.** Configure pgvector, chunk text/FAQ with anchors, embed bounded batches, check dimensions, stage generation and switch pointer only when ready. Implement the PDF adapter after KNOWLEDGE-002. Reindex, archive and delete with retriable cleanup.
+- **Implementation.** Configure pgvector, chunk text/FAQ/PDF pages with anchors, embed bounded batches, check dimensions, stage generation and switch only when ready. Source-level status and reindex routes use the existing durable outbox. Business-wide operations, archive/delete cleanup, and retention policy remain follow-up work.
 - **Database and API.** **DB.** Extension, chunk and generation constraints, vector and text columns. **API.** Index and operation status.
 - **Dependencies.** KNOWLEDGE-001, KNOWLEDGE-002, FOUNDATION-004. **External services.** PostgreSQL with pgvector, embedding fixture and approved provider.
 - **Security.** Quotas and scoped writes.
-- **Acceptance and required tests.** Duplicate and partial retries preserve one generation, archive during indexing remains archived, prior revision stays active through failure.
+- **Acceptance and required tests.** Duplicate and partial retries preserve one generation, unpublish during indexing remains ineligible, prior active generation survives replacement failure, metering shares one tenant quota, and deterministic tenant-scoped hybrid plumbing is covered.
 - **Verify.** npm run test:integration -- knowledge-ingestion.
 - **Done.** All supported inputs index and can be safely retired.
 

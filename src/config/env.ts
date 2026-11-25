@@ -365,6 +365,90 @@ export function knowledgeStorageConfig(env = process.env) {
   };
 }
 
+export function knowledgeIndexConfig(env = process.env) {
+  const enabled = flag(env, 'KNOWLEDGE_SEMANTIC_SEARCH_ENABLED', false);
+  const provider = env.KNOWLEDGE_EMBEDDING_PROVIDER?.trim() || 'openai';
+  if (provider !== 'openai')
+    throw new Error('KNOWLEDGE_EMBEDDING_PROVIDER must be openai.');
+  const model =
+    env.KNOWLEDGE_EMBEDDING_MODEL?.trim() || 'text-embedding-3-small';
+  if (!/^[a-zA-Z0-9._:-]{1,100}$/.test(model))
+    throw new Error('KNOWLEDGE_EMBEDDING_MODEL has an invalid format.');
+  const dimensions = usageLimit(env, 'KNOWLEDGE_EMBEDDING_DIMENSIONS', 1536);
+  if (dimensions !== 1536)
+    throw new Error(
+      'KNOWLEDGE_EMBEDDING_DIMENSIONS must be 1536 for the installed vector schema.',
+    );
+  const batchSize = usageLimit(env, 'KNOWLEDGE_EMBEDDING_BATCH_SIZE', 32);
+  const timeoutMs = usageLimit(env, 'KNOWLEDGE_EMBEDDING_TIMEOUT_MS', 15000);
+  const targetTokens = usageLimit(env, 'KNOWLEDGE_CHUNK_TARGET_TOKENS', 500);
+  const maxTokens = usageLimit(env, 'KNOWLEDGE_CHUNK_MAX_TOKENS', 800);
+  const overlapTokens = usageLimit(env, 'KNOWLEDGE_CHUNK_OVERLAP_TOKENS', 80);
+  const concurrency = usageLimit(env, 'KNOWLEDGE_INDEXING_CONCURRENCY', 2);
+  const candidates = usageLimit(env, 'KNOWLEDGE_VECTOR_CANDIDATE_LIMIT', 20);
+  const minimumSimilarityValue =
+    env.KNOWLEDGE_SEMANTIC_MIN_SIMILARITY?.trim() || '0.35';
+  const minimumSimilarity = Number(minimumSimilarityValue);
+  if (
+    !Number.isFinite(minimumSimilarity) ||
+    minimumSimilarity < -1 ||
+    minimumSimilarity > 1
+  )
+    throw new Error(
+      'KNOWLEDGE_SEMANTIC_MIN_SIMILARITY must be between -1 and 1.',
+    );
+  const monthlyTokens = usageLimit(
+    env,
+    'USAGE_DEFAULT_MONTHLY_EMBEDDING_TOKENS',
+    100000,
+  );
+  const maxBatchTokens = usageLimit(
+    env,
+    'KNOWLEDGE_EMBEDDING_MAX_TOKENS_PER_BATCH',
+    25000,
+  );
+  if (batchSize < 1 || batchSize > 64)
+    throw new Error('KNOWLEDGE_EMBEDDING_BATCH_SIZE must be 1–64.');
+  if (timeoutMs < 1000 || timeoutMs > 60000)
+    throw new Error('KNOWLEDGE_EMBEDDING_TIMEOUT_MS must be 1000–60000.');
+  if (
+    targetTokens < 100 ||
+    targetTokens > 700 ||
+    maxTokens < targetTokens ||
+    maxTokens > 800 ||
+    overlapTokens >= targetTokens
+  )
+    throw new Error(
+      'Knowledge chunk token limits are inconsistent or out of range.',
+    );
+  if (concurrency < 1 || concurrency > 8)
+    throw new Error('KNOWLEDGE_INDEXING_CONCURRENCY must be 1–8.');
+  if (candidates < 1 || candidates > 100)
+    throw new Error('KNOWLEDGE_VECTOR_CANDIDATE_LIMIT must be 1–100.');
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (maxBatchTokens < 1 || maxBatchTokens > 25000)
+    throw new Error(
+      'KNOWLEDGE_EMBEDDING_MAX_TOKENS_PER_BATCH must be 1–25000.',
+    );
+  return {
+    enabled,
+    provider,
+    model,
+    dimensions,
+    batchSize,
+    timeoutMs,
+    targetTokens,
+    maxTokens,
+    overlapTokens,
+    concurrency,
+    candidates,
+    minimumSimilarity,
+    monthlyTokens,
+    maxBatchTokens,
+    apiKey: apiKey && !isPlaceholder(apiKey) ? apiKey : undefined,
+  };
+}
+
 export function aiConfig(env = process.env) {
   const enabled = aiResponsesEnabled(env);
   const apiKey = env.OPENAI_API_KEY?.trim();
@@ -460,6 +544,11 @@ export function usageConfig(env = process.env) {
       env,
       'USAGE_DEFAULT_MONTHLY_AI_OUTPUT_TOKENS',
       50000,
+    ),
+    monthlyEmbeddingTokens: usageLimit(
+      env,
+      'USAGE_DEFAULT_MONTHLY_EMBEDDING_TOKENS',
+      100000,
     ),
     aiTokensPerRequest: usageLimit(
       env,

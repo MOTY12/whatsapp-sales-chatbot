@@ -1,5 +1,7 @@
 # KNOWLEDGE-002: private PDF knowledge documents
 
+Semantic indexing and retrieval for published FAQ, product, and document revisions are described in [KNOWLEDGE-003](semantic-knowledge-index.md). Semantic search is disabled by default and does not change merchant publication state.
+
 Kleva accepts merchant-authorized, text-based PDF uploads up to 10 MiB. Upload URLs expire after 15 minutes. Each source is stored in a private, versioned S3-compatible bucket and is pinned to the exact version whose byte length and SHA-256 checksum were verified by the backend. Extracted pages retain page numbers and remain drafts until an owner or editor publishes them.
 
 Published pages join the existing PostgreSQL full-text retrieval used by both WhatsApp and website chat. This milestone does not perform OCR, create embeddings, re-chunk pages, or publish extracted content automatically. Unsupported, scanned, encrypted, or over-limit PDFs fail closed. Extraction runs in a child Node process with a 256 MiB heap cap, a 20-second parent timeout, and bounded page and text output. The parser receives only the uploaded byte buffer and does not fetch remote resources.

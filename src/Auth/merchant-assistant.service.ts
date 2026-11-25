@@ -335,6 +335,9 @@ export class MerchantAssistantService {
         businessId,
         query: input.message.slice(0, 256),
         limit: 5,
+        purpose: 'playground',
+        requestId,
+        semanticQuery: input.message,
       });
       if (!retrieval.sufficientEvidence) {
         outcome = 'INSUFFICIENT_EVIDENCE';
@@ -455,6 +458,7 @@ export class MerchantAssistantService {
                   id: item.sourceId,
                   revisionId: item.revisionId,
                   type: item.sourceType,
+                  retrievalMethod: item.retrievalMethod ?? 'LEXICAL',
                   title: item.title,
                   excerpt: item.content.slice(0, 400),
                   ...(item.pageNumber ? { pageNumber: item.pageNumber } : {}),

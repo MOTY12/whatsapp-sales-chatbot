@@ -45,11 +45,49 @@ describe('tenant usage metering with PostgreSQL', () => {
     monthlyAiInputTokens = 100,
     monthlyAiOutputTokens = 100,
     aiTokensPerRequest = 50,
+    monthlyEmbeddingTokens?: number | null,
   ) => ({
     monthlyWhatsAppMessages,
     monthlyAiInputTokens,
     monthlyAiOutputTokens,
     aiTokensPerRequest,
+    monthlyEmbeddingTokens,
+  });
+
+  it('meters indexing, live and playground embeddings against one tenant quota', async () => {
+    await usage.setBusinessLimits(businessA, limits(10, 100, 100, 50, 5));
+    const indexed = await usage.reserveKnowledgeEmbeddingTokens(
+      businessA,
+      'index-embedding',
+      2,
+    );
+    await usage.commitKnowledgeEmbeddingTokens(businessA, 'index-embedding', 2);
+    const live = await usage.reserveKnowledgeEmbeddingTokens(
+      businessA,
+      'live-embedding',
+      2,
+      'live_embedding_tokens',
+    );
+    await usage.commitKnowledgeEmbeddingTokens(
+      businessA,
+      'live-embedding',
+      2,
+      'live_embedding_tokens',
+    );
+    expect(indexed.category).toBe('knowledge_embedding_tokens');
+    expect(live.category).toBe('live_embedding_tokens');
+    await expect(
+      usage.reserveKnowledgeEmbeddingTokens(
+        businessA,
+        'playground-embedding',
+        2,
+        'playground_embedding_tokens',
+      ),
+    ).rejects.toThrow('Usage allowance exceeded');
+    const summary = await usage.getUsageSummary(businessA);
+    expect(summary.categories.knowledge_embedding_tokens.consumed).toBe(2);
+    expect(summary.categories.live_embedding_tokens.consumed).toBe(2);
+    expect(summary.categories.playground_embedding_tokens.remaining).toBe(1);
   });
 
   it('reserves inside quota, rejects excess, and serializes concurrent boundary requests', async () => {

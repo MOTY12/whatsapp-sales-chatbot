@@ -5,7 +5,12 @@ import { DataSource, EntityManager } from 'typeorm';
 import { usageConfig } from '../config/env';
 
 export type UsageCategory =
-  'whatsapp_outbound' | 'ai_input_tokens' | 'ai_output_tokens';
+  | 'whatsapp_outbound'
+  | 'ai_input_tokens'
+  | 'ai_output_tokens'
+  | 'knowledge_embedding_tokens'
+  | 'live_embedding_tokens'
+  | 'playground_embedding_tokens';
 export type UsageStatus =
   | 'RESERVED'
   | 'COMMITTED'
@@ -32,6 +37,7 @@ export interface UsageLimitOverrides {
   monthlyAiInputTokens: number | null;
   monthlyAiOutputTokens: number | null;
   aiTokensPerRequest: number | null;
+  monthlyEmbeddingTokens?: number | null;
 }
 
 export interface UsageBucketSummary {
@@ -65,12 +71,21 @@ type LimitRow = {
   monthly_ai_input_tokens: number | null;
   monthly_ai_output_tokens: number | null;
   ai_tokens_per_request: number | null;
+  monthly_embedding_tokens: number | null;
 };
 
 const categories: UsageCategory[] = [
   'ai_input_tokens',
   'ai_output_tokens',
   'whatsapp_outbound',
+  'knowledge_embedding_tokens',
+  'live_embedding_tokens',
+  'playground_embedding_tokens',
+];
+const embeddingCategories: UsageCategory[] = [
+  'knowledge_embedding_tokens',
+  'live_embedding_tokens',
+  'playground_embedding_tokens',
 ];
 const defaultReservationSeconds = 15 * 60;
 const maxReservationSeconds = 24 * 60 * 60;
@@ -143,6 +158,7 @@ export class UsageService {
       limits.monthlyAiInputTokens,
       limits.monthlyAiOutputTokens,
       limits.aiTokensPerRequest,
+      limits.monthlyEmbeddingTokens ?? null,
     ];
     for (const value of values) {
       if (value !== null) safeAmount(value, 'Usage limit');
@@ -162,6 +178,14 @@ export class UsageService {
       const used = new Map(
         currentUsage.map((row) => [row.category, numberOf(row.used)]),
       );
+      const embeddingUsed = embeddingCategories.reduce(
+        (total, category) => total + (used.get(category) ?? 0),
+        0,
+      );
+      const embeddingCap =
+        limits.monthlyEmbeddingTokens ?? this.defaults.monthlyEmbeddingTokens;
+      if (embeddingUsed > embeddingCap)
+        throw new UsageLimitExceededError('knowledge_embedding_tokens');
       const proposedCaps: Record<UsageCategory, number> = {
         whatsapp_outbound:
           limits.monthlyWhatsAppMessages ??
@@ -170,6 +194,9 @@ export class UsageService {
           limits.monthlyAiInputTokens ?? this.defaults.monthlyAiInputTokens,
         ai_output_tokens:
           limits.monthlyAiOutputTokens ?? this.defaults.monthlyAiOutputTokens,
+        knowledge_embedding_tokens: embeddingCap,
+        live_embedding_tokens: embeddingCap,
+        playground_embedding_tokens: embeddingCap,
       };
       for (const category of categories) {
         if ((used.get(category) ?? 0) > proposedCaps[category])
@@ -178,13 +205,14 @@ export class UsageService {
       await manager.query(
         `INSERT INTO public.business_usage_limits
            (business_id, monthly_whatsapp_messages, monthly_ai_input_tokens,
-            monthly_ai_output_tokens, ai_tokens_per_request, updated_at)
-         VALUES ($1, $2, $3, $4, $5, now())
+            monthly_ai_output_tokens, ai_tokens_per_request, monthly_embedding_tokens, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())
          ON CONFLICT (business_id) DO UPDATE SET
            monthly_whatsapp_messages = EXCLUDED.monthly_whatsapp_messages,
            monthly_ai_input_tokens = EXCLUDED.monthly_ai_input_tokens,
            monthly_ai_output_tokens = EXCLUDED.monthly_ai_output_tokens,
            ai_tokens_per_request = EXCLUDED.ai_tokens_per_request,
+           monthly_embedding_tokens = EXCLUDED.monthly_embedding_tokens,
            updated_at = now()`,
         [businessId, ...values],
       );
@@ -230,6 +258,74 @@ export class UsageService {
       reservationSeconds,
     );
     return { input, output };
+  }
+
+  async reserveKnowledgeEmbeddingTokens(
+    businessId: string,
+    idempotencyKey: string,
+    tokens: number,
+    category: UsageCategory = 'knowledge_embedding_tokens',
+  ): Promise<UsageReservation> {
+    safeAmount(tokens, 'Embedding token reservation', false);
+    this.assertEmbeddingCategory(category);
+    if (tokens > 25000) throw new UsageLimitExceededError(category);
+    const [reservation] = await this.reserve(
+      businessId,
+      idempotencyKey,
+      { [category]: tokens },
+      defaultReservationSeconds,
+    );
+    return reservation;
+  }
+
+  async commitKnowledgeEmbeddingTokens(
+    businessId: string,
+    idempotencyKey: string,
+    actualTokens: number,
+    category: UsageCategory = 'knowledge_embedding_tokens',
+  ): Promise<UsageReservation> {
+    this.assertEmbeddingCategory(category);
+    this.validateBusinessId(businessId);
+    const key = keyValue(idempotencyKey);
+    safeAmount(actualTokens, 'Embedding token usage');
+    return this.database.transaction(async (manager) => {
+      await this.lockLimitConfiguration(manager, businessId);
+      await this.lockCategories(manager, businessId, [category]);
+      const [row] = await this.findReservations(
+        manager,
+        businessId,
+        category,
+        key,
+        true,
+      );
+      if (!row || actualTokens > numberOf(row.reserved_amount))
+        throw new UsageReservationStateError();
+      if (row.status === 'COMMITTED') {
+        if (numberOf(row.consumed_amount) !== actualTokens)
+          throw new UsageIdempotencyConflictError();
+        return this.toReservation(row);
+      }
+      if (!['RESERVED', 'UNCERTAIN'].includes(row.status))
+        throw new UsageReservationStateError();
+      return this.toReservation(
+        await this.commitTokenRow(manager, row, actualTokens),
+      );
+    });
+  }
+
+  async markKnowledgeEmbeddingTokensUncertain(
+    businessId: string,
+    idempotencyKey: string,
+    category: UsageCategory = 'knowledge_embedding_tokens',
+  ): Promise<void> {
+    this.assertEmbeddingCategory(category);
+    this.validateBusinessId(businessId);
+    await this.database.query(
+      `UPDATE public.usage_reservations SET status='UNCERTAIN', consumed_amount=reserved_amount,
+        released_amount=0, updated_at=now() WHERE business_id=$1 AND category=$2
+        AND idempotency_key=$3 AND status='RESERVED'`,
+      [businessId, category, keyValue(idempotencyKey)],
+    );
   }
 
   async commitAiTokens(
@@ -425,10 +521,19 @@ export class UsageService {
       [businessId, period],
     );
     const byCategory = new Map(totals.map((row) => [row.category, row]));
+    const embeddingUsed = embeddingCategories.reduce((total, category) => {
+      const row = byCategory.get(category);
+      return (
+        total + (row ? numberOf(row.consumed) + numberOf(row.reserved) : 0)
+      );
+    }, 0);
     const caps: Record<UsageCategory, number> = {
       whatsapp_outbound: limits.monthlyWhatsAppMessages,
       ai_input_tokens: limits.monthlyAiInputTokens,
       ai_output_tokens: limits.monthlyAiOutputTokens,
+      knowledge_embedding_tokens: limits.monthlyEmbeddingTokens,
+      live_embedding_tokens: limits.monthlyEmbeddingTokens,
+      playground_embedding_tokens: limits.monthlyEmbeddingTokens,
     };
     const summaries = Object.fromEntries(
       categories.map((category) => {
@@ -442,7 +547,9 @@ export class UsageService {
             limit: caps[category],
             consumed,
             reserved,
-            remaining: Math.max(0, caps[category] - consumed - reserved),
+            remaining: embeddingCategories.includes(category)
+              ? Math.max(0, limits.monthlyEmbeddingTokens - embeddingUsed)
+              : Math.max(0, caps[category] - consumed - reserved),
           },
         ];
       }),
@@ -534,7 +641,25 @@ export class UsageService {
         whatsapp_outbound: limits.monthlyWhatsAppMessages,
         ai_input_tokens: limits.monthlyAiInputTokens,
         ai_output_tokens: limits.monthlyAiOutputTokens,
+        knowledge_embedding_tokens: limits.monthlyEmbeddingTokens,
+        live_embedding_tokens: limits.monthlyEmbeddingTokens,
+        playground_embedding_tokens: limits.monthlyEmbeddingTokens,
       };
+      const embeddingEntries = entries.filter(([category]) =>
+        embeddingCategories.includes(category),
+      );
+      if (embeddingEntries.length) {
+        const totalUsed = embeddingCategories.reduce(
+          (total, category) => total + (used.get(category) ?? 0),
+          0,
+        );
+        const requested = embeddingEntries.reduce(
+          (total, [, amount]) => total + amount,
+          0,
+        );
+        if (totalUsed + requested > limits.monthlyEmbeddingTokens)
+          throw new UsageLimitExceededError(embeddingEntries[0][0]);
+      }
       for (const [category, amount] of entries) {
         if ((used.get(category) ?? 0) + amount > caps[category])
           throw new UsageLimitExceededError(category);
@@ -558,7 +683,7 @@ export class UsageService {
 
   private async getLimits(businessId: string, manager?: EntityManager) {
     const sql = `SELECT monthly_whatsapp_messages, monthly_ai_input_tokens,
-                       monthly_ai_output_tokens, ai_tokens_per_request
+                       monthly_ai_output_tokens, ai_tokens_per_request, monthly_embedding_tokens
                   FROM public.business_usage_limits WHERE business_id = $1`;
     const rows = manager
       ? await manager.query<LimitRow[]>(sql, [businessId])
@@ -573,6 +698,8 @@ export class UsageService {
         row?.monthly_ai_output_tokens ?? this.defaults.monthlyAiOutputTokens,
       aiTokensPerRequest:
         row?.ai_tokens_per_request ?? this.defaults.aiTokensPerRequest,
+      monthlyEmbeddingTokens:
+        row?.monthly_embedding_tokens ?? this.defaults.monthlyEmbeddingTokens,
     };
   }
 
@@ -591,12 +718,23 @@ export class UsageService {
     businessId: string,
     values: UsageCategory[],
   ) {
+    if (values.some((category) => embeddingCategories.includes(category))) {
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`usage:${businessId}:embedding-total`],
+      );
+    }
     for (const category of [...new Set(values)].sort()) {
       await manager.query(
         'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
         [`usage:${businessId}:${category}`],
       );
     }
+  }
+
+  private assertEmbeddingCategory(category: UsageCategory): void {
+    if (!embeddingCategories.includes(category))
+      throw new Error('Invalid embedding usage category.');
   }
 
   private async findReservations(

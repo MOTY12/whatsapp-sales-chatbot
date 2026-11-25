@@ -436,6 +436,8 @@ export function AssistantExperience({
                                 ? 'Product'
                                 : 'PDF'}{' '}
                             · {source.title}
+                            {' · '}{(source.retrievalMethod ?? 'LEXICAL').toLocaleLowerCase().replace('_', ' ')}
+                            {' · Revision '}{source.revisionId}
                             {source.pageNumber
                               ? ` · Page ${source.pageNumber}`
                               : ''}

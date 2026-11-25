@@ -155,6 +155,11 @@ export async function createIntegrationDatabase() {
     );
 
     const admin = await connect({});
+    // The harness control role is the infrastructure role for disposable test
+    // databases; application migration/runtime roles never install extensions.
+    await admin.query(
+      'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public',
+    );
     await admin.query('REVOKE ALL ON SCHEMA public FROM PUBLIC');
     await admin.query(
       `GRANT USAGE, CREATE ON SCHEMA public TO "${migrationRole}"`,

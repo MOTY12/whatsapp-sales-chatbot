@@ -46,6 +46,7 @@ export type PlaygroundSource = {
   id: string;
   revisionId: string;
   type: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
+  retrievalMethod: 'LEXICAL' | 'SEMANTIC' | 'HYBRID' | 'EXACT_IDENTIFIER';
   pageNumber?: number;
   title: string;
   excerpt: string;

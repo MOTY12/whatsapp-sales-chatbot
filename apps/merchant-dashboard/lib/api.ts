@@ -189,6 +189,16 @@ export type KnowledgeDocument = {
   created_at: string;
   updated_at: string;
 };
+export type KnowledgeIndexStatus = {
+  generation_id: string;
+  status: 'PENDING' | 'INDEXING' | 'READY' | 'ACTIVE' | 'FAILED' | 'SUPERSEDED' | 'ARCHIVED';
+  chunk_count: number;
+  expected_chunks: number;
+  indexed_at: string | null;
+  failure_category: string | null;
+  semantic_ready: boolean;
+  semantic_search_enabled?: boolean;
+};
 export type KnowledgeUploadIntent = {
   documentId: string;
   revisionId: string;
@@ -325,6 +335,7 @@ export type PlaygroundResult = {
     id: string;
     revisionId: string;
     type: 'FAQ' | 'PRODUCT' | 'DOCUMENT';
+    retrievalMethod: 'LEXICAL' | 'SEMANTIC' | 'HYBRID' | 'EXACT_IDENTIFIER';
     pageNumber?: number;
     title: string;
     excerpt: string;
@@ -869,6 +880,24 @@ export const api = {
     request<KnowledgeDocument>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/unpublish`,
       { method: 'POST' },
+    ),
+  knowledgeDocumentIndexStatus: (businessId: string, documentId: string) =>
+    request<KnowledgeIndexStatus[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/index-status`,
+    ),
+  reindexKnowledgeDocument: (businessId: string, documentId: string, key: string) =>
+    request<{ generation_id: string; status: string; source_revision_id: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/reindex`,
+      { method: 'POST', headers: { 'Idempotency-Key': key } },
+    ),
+  knowledgeFaqIndexStatus: (businessId: string, faqId: string) =>
+    request<KnowledgeIndexStatus[]>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/index-status`,
+    ),
+  reindexKnowledgeFaq: (businessId: string, faqId: string, key: string) =>
+    request<{ generation_id: string; status: string; source_revision_id: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/reindex`,
+      { method: 'POST', headers: { 'Idempotency-Key': key } },
     ),
   knowledgeGaps: (businessId: string, status?: string) => {
     const query = new URLSearchParams({ limit: '50' });

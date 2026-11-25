@@ -16,11 +16,15 @@ import {
   type MerchantRequest,
 } from '../Auth/auth.guards';
 import { KnowledgeDocumentUploadService } from './knowledge-document-upload.service';
+import { KnowledgeIndexingService } from './knowledge-indexing-api.service';
 
 @Controller('merchant/businesses/:businessId/knowledge-documents')
 @UseGuards(MerchantSessionGuard)
 export class KnowledgeDocumentController {
-  constructor(private readonly documents: KnowledgeDocumentUploadService) {}
+  constructor(
+    private readonly documents: KnowledgeDocumentUploadService,
+    private readonly indexing: KnowledgeIndexingService,
+  ) {}
 
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -74,5 +78,38 @@ export class KnowledgeDocumentController {
     @Param('documentId') documentId: string,
   ) {
     return this.documents.unpublish(principal(request), businessId, documentId);
+  }
+
+  @Get(':documentId/index-status')
+  @Header('Cache-Control', 'no-store')
+  indexStatus(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('documentId') documentId: string,
+  ) {
+    return this.indexing.status(
+      principal(request),
+      businessId,
+      'DOCUMENT',
+      documentId,
+    );
+  }
+
+  @Post(':documentId/reindex')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(MerchantCsrfGuard)
+  reindex(
+    @Req() request: MerchantRequest,
+    @Param('businessId') businessId: string,
+    @Param('documentId') documentId: string,
+    @Headers('idempotency-key') key: string | undefined,
+  ) {
+    return this.indexing.request(
+      principal(request),
+      businessId,
+      key,
+      'DOCUMENT',
+      documentId,
+    );
   }
 }

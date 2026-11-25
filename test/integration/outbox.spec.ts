@@ -14,6 +14,7 @@ import {
 } from '../../src/jobs/outbox.store';
 import { createQueue, createWorker, enqueue } from '../../src/jobs/queue';
 import { WorkerRuntime } from '../../src/jobs/worker.module';
+import type { KnowledgeDocumentIngestionService } from '../../src/knowledge/knowledge-document-ingestion.service';
 import type { WebsiteChatService } from '../../src/website-chat/website-chat.service';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
@@ -381,6 +382,9 @@ describe('durable outbox with PostgreSQL and Redis', () => {
           dryRun: true,
         }),
       } as unknown as WebsiteChatService,
+      {
+        cleanupExpiredUploads: async () => 0,
+      } as unknown as KnowledgeDocumentIngestionService,
     );
     await runtime.onApplicationBootstrap();
     try {

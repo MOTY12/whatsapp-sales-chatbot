@@ -48,6 +48,7 @@ describe('AssistantExperience', () => {
           id: 'faq-1',
           revisionId: 'revision-1',
           type: 'FAQ',
+          retrievalMethod: 'LEXICAL',
           title: 'Delivery',
           excerpt: 'We deliver within Lagos.',
         },

@@ -40,6 +40,7 @@ import { MerchantWebsiteWidgetService } from './merchant-website-widget.service'
 import { WebsiteChatModule } from '../website-chat/website-chat.module';
 import { KnowledgeDocumentController } from '../knowledge/knowledge-document.controller';
 import { KnowledgeDocumentUploadService } from '../knowledge/knowledge-document-upload.service';
+import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.service';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { KnowledgeDocumentUploadService } from '../knowledge/knowledge-document-
     MerchantAssistantService,
     MerchantLearningService,
     MerchantWebsiteWidgetService,
+    KnowledgeIndexingService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,
     MerchantCsrfGuard,

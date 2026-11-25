@@ -503,6 +503,16 @@
   gap: 0.75rem;
   align-items: center;
 }
+
+.documentIndexStatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+  color: var(--muted-foreground, #566);
+  font-size: 0.875rem;
+}
 .documentActions span {
   color: var(--muted, #667085);
   font-size: 0.9rem;

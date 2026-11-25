@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KnowledgeFaq } from '@/lib/api';
+import type { KnowledgeFaq, KnowledgeIndexStatus } from '@/lib/api';
 import styles from './knowledge.module.css';
 
 type Props = {
@@ -76,6 +76,10 @@ export function KnowledgeExperience({
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<{
+    faqId: string;
+    value: KnowledgeIndexStatus;
+  } | null>(null);
   const [mobileEditorOpen, setMobileEditorOpen] = useState(
     Boolean(initialFaqs[0]),
   );
@@ -88,6 +92,33 @@ export function KnowledgeExperience({
   }, [router]);
   const createKey = useRef<{ text: string; key: string } | null>(null);
   const selected = faqs.find(({ id }) => id === selectedId) ?? null;
+  const selectedFaqId = selected?.id;
+  const selectedFaqStatus = selected?.status;
+  useEffect(() => {
+    let active = true;
+    if (!selectedFaqId || selectedFaqStatus !== 'PUBLISHED') return;
+    const load = async () => {
+      try {
+        const rows = await requestJson<KnowledgeIndexStatus[]>(
+          `/api/knowledge/${businessId}/${selectedFaqId}/index-status`,
+        );
+        if (active && rows[0])
+          setIndexStatus({ faqId: selectedFaqId, value: rows[0] });
+      } catch {
+        if (active) setIndexStatus(null);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [businessId, selectedFaqId, selectedFaqStatus]);
+  const selectedIndexStatus =
+    indexStatus && indexStatus.faqId === selectedFaqId
+      ? indexStatus.value
+      : null;
   const visible = useMemo(
     () =>
       faqs.filter((faq) => {
@@ -222,6 +253,30 @@ export function KnowledgeExperience({
         reason instanceof Error
           ? reason.message
           : 'Could not update publication.',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function reindexSelectedFaq() {
+    if (!selected || pending) return;
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await requestJson(`/api/knowledge/${businessId}/${selected.id}/reindex`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': window.crypto.randomUUID() },
+      });
+      setNotice(
+        'Semantic indexing queued. Keyword search remains available while it builds.',
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not queue FAQ indexing.',
       );
     } finally {
       setPending(false);
@@ -381,6 +436,38 @@ export function KnowledgeExperience({
               .
             </div>
           )}
+        {selected?.status === 'PUBLISHED' && (
+          <div className={styles.documentIndexStatus} aria-live="polite">
+            <strong>Semantic index:</strong>{' '}
+            {selectedIndexStatus?.semantic_ready &&
+            selectedIndexStatus.semantic_search_enabled
+              ? `Available · ${selectedIndexStatus.chunk_count} chunks`
+              : selectedIndexStatus?.semantic_ready
+                ? 'Indexed · semantic search disabled · keyword fallback active'
+                : selectedIndexStatus?.status === 'PENDING' ||
+                    selectedIndexStatus?.status === 'INDEXING'
+                  ? `Indexing · ${selectedIndexStatus.chunk_count}/${selectedIndexStatus.expected_chunks} chunks`
+                  : selectedIndexStatus?.status === 'FAILED'
+                    ? `Failed (${selectedIndexStatus.failure_category ?? 'INDEXING_FAILED'}) · keyword fallback active`
+                    : 'Not indexed · keyword fallback active'}
+            {selectedIndexStatus?.semantic_ready &&
+            selectedIndexStatus.indexed_at
+              ? ` · Updated ${timestamp(selectedIndexStatus.indexed_at)}`
+              : null}
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => void reindexSelectedFaq()}
+              disabled={pending}
+            >
+              {selectedIndexStatus?.status === 'FAILED'
+                ? 'Retry indexing'
+                : selectedIndexStatus?.semantic_ready
+                  ? 'Reindex'
+                  : 'Build semantic index'}
+            </button>
+          </div>
+        )}
         {notice && (
           <p className={styles.success} role="status">
             {notice}

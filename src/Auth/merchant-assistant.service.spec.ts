@@ -185,6 +185,7 @@ describe('MerchantAssistantService', () => {
         type: 'PRODUCT',
         title: evidence.title,
         excerpt: evidence.content,
+        retrievalMethod: 'LEXICAL',
       },
     ]);
     expect(modelGenerate).toHaveBeenCalledWith(

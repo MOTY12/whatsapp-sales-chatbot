@@ -487,6 +487,50 @@ const server = createServer(async (req, res) => {
     return json(404, { message: 'Not found.' });
   }
 
+  const documentCollectionMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/knowledge-documents$/i,
+  );
+  if (documentCollectionMatch) {
+    const [, businessId] = documentCollectionMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    if (req.method === 'GET') return json(200, []);
+  }
+
+  const faqIndexMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/faqs\/([0-9a-f-]+)\/(index-status|reindex)$/i,
+  );
+  if (faqIndexMatch) {
+    const [, businessId, faqId, action] = faqIndexMatch;
+    if (!hasSession || !created) return json(401, { message: 'Unauthorized' });
+    if (
+      businessId !== BUSINESS_ID &&
+      !(businessId === SECOND_BUSINESS_ID && multipleBusinesses)
+    )
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Forbidden' });
+    const faq = businessId === BUSINESS_ID
+      ? faqs.find((item) => item.id === faqId)
+      : undefined;
+    if (!faq) return json(404, { message: 'Not found.' });
+    if (req.method === 'GET' && action === 'index-status') return json(200, []);
+    if (req.method === 'POST' && action === 'reindex') {
+      if (!validCsrf) return json(403, { message: 'Forbidden' });
+      return json(202, {
+        generation_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        status: 'PENDING',
+        source_revision_id: `faq-revision-${faq.revision}`,
+      });
+    }
+  }
+
   const faqMatch = url.pathname.match(
     /^\/merchant\/businesses\/([0-9a-f-]+)\/faqs(?:\/([0-9a-f-]+)(?:\/(publish|unpublish))?)?$/i,
   );

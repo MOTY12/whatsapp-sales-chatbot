@@ -22,6 +22,16 @@ type UploadIntent = {
   headers: Record<string, string>;
 };
 type Props = { businessId: string };
+type IndexStatus = {
+  generation_id: string;
+  status: string;
+  chunk_count: number;
+  expected_chunks: number;
+  indexed_at: string | null;
+  failure_category: string | null;
+  semantic_ready: boolean;
+  semantic_search_enabled?: boolean;
+};
 
 function csrfHeaders() {
   const headers = new Headers({ Accept: 'application/json' });
@@ -58,6 +68,9 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function KnowledgeDocuments({ businessId }: Props) {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [indexes, setIndexes] = useState<
+    Record<string, IndexStatus | undefined>
+  >({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,6 +80,21 @@ export function KnowledgeDocuments({ businessId }: Props) {
       `/api/knowledge/${businessId}/documents`,
     );
     setDocuments(result);
+    const statuses = await Promise.all(
+      result.map(async (document) => {
+        if (document.status !== 'PUBLISHED')
+          return [document.id, undefined] as const;
+        try {
+          const rows = await apiJson<IndexStatus[]>(
+            `/api/knowledge/${businessId}/documents/${document.id}/index-status`,
+          );
+          return [document.id, rows[0]] as const;
+        } catch {
+          return [document.id, undefined] as const;
+        }
+      }),
+    );
+    setIndexes(Object.fromEntries(statuses));
   }, [businessId]);
 
   useEffect(() => {
@@ -76,7 +104,24 @@ export function KnowledgeDocuments({ businessId }: Props) {
         const result = await apiJson<DocumentItem[]>(
           `/api/knowledge/${businessId}/documents`,
         );
-        if (active) setDocuments(result);
+        if (active) {
+          setDocuments(result);
+          const statuses = await Promise.all(
+            result.map(async (document) => {
+              if (document.status !== 'PUBLISHED')
+                return [document.id, undefined] as const;
+              try {
+                const rows = await apiJson<IndexStatus[]>(
+                  `/api/knowledge/${businessId}/documents/${document.id}/index-status`,
+                );
+                return [document.id, rows[0]] as const;
+              } catch {
+                return [document.id, undefined] as const;
+              }
+            }),
+          );
+          if (active) setIndexes(Object.fromEntries(statuses));
+        }
       } catch (reason) {
         if (active)
           setError(
@@ -198,6 +243,30 @@ export function KnowledgeDocuments({ businessId }: Props) {
     }
   }
 
+  async function reindex(document: DocumentItem) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiJson(
+        `/api/knowledge/${businessId}/documents/${document.id}/reindex`,
+        { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      );
+      setNotice(
+        'Semantic indexing queued. Keyword search remains available while it builds.',
+      );
+      await refresh();
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Could not queue semantic indexing.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section
       className={styles.documentPanel}
@@ -277,6 +346,44 @@ export function KnowledgeDocuments({ businessId }: Props) {
                 <p className={styles.documentPreview}>
                   <strong>Page 1 preview:</strong> {document.preview}
                 </p>
+              )}
+              {document.status === 'PUBLISHED' && (
+                <div className={styles.documentIndexStatus} aria-live="polite">
+                  <strong>Semantic index:</strong>{' '}
+                  {indexes[document.id]?.semantic_ready &&
+                  indexes[document.id]?.semantic_search_enabled
+                    ? `Available · ${indexes[document.id]?.chunk_count ?? 0} chunks`
+                    : indexes[document.id]?.semantic_ready
+                      ? `Indexed · semantic search disabled · keyword fallback active`
+                      : indexes[document.id]?.status === 'PENDING' ||
+                          indexes[document.id]?.status === 'INDEXING'
+                        ? `Indexing · ${indexes[document.id]?.chunk_count ?? 0}/${indexes[document.id]?.expected_chunks ?? 0} chunks`
+                        : indexes[document.id]?.status === 'FAILED'
+                          ? `Failed (${indexes[document.id]?.failure_category ?? 'INDEXING_FAILED'}) · keyword fallback active`
+                          : 'Not indexed · keyword fallback active'}
+                  {indexes[document.id]?.indexed_at &&
+                    indexes[document.id]?.semantic_ready && (
+                      <span>
+                        {' '}
+                        · Updated{' '}
+                        {new Date(
+                          indexes[document.id]!.indexed_at!,
+                        ).toLocaleString()}
+                      </span>
+                    )}
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => void reindex(document)}
+                    disabled={busy}
+                  >
+                    {indexes[document.id]?.status === 'FAILED'
+                      ? 'Retry indexing'
+                      : indexes[document.id]?.semantic_ready
+                        ? 'Reindex'
+                        : 'Build semantic index'}
+                  </button>
+                </div>
               )}
               {document.status === 'FAILED' && (
                 <p className={styles.inlineError}>

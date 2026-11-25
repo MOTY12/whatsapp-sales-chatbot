@@ -32,7 +32,7 @@ function validPath(path: string[]) {
       (path.length === 3 && ['uploads'].includes(path[2])) ||
       (path.length === 4 &&
         uuid.test(path[2]) &&
-        ['complete', 'publish', 'unpublish'].includes(path[3]))
+        ['complete', 'publish', 'unpublish', 'index-status', 'reindex'].includes(path[3]))
     );
   }
   return (
@@ -40,7 +40,7 @@ function validPath(path: string[]) {
     path.length <= 3 &&
     (path.length === 1 ||
       (uuid.test(path[1]) &&
-        (path.length === 2 || ['publish', 'unpublish'].includes(path[2]))))
+        (path.length === 2 || ['publish', 'unpublish', 'index-status', 'reindex'].includes(path[2]))))
   );
 }
 
@@ -59,7 +59,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           ? path[1] === 'documents'
             ? await api.knowledgeDocuments(path[0])
             : await api.faq(path[0], path[1])
-          : null;
+          : path.length === 4 && path[1] === 'documents' && path[3] === 'index-status'
+            ? await api.knowledgeDocumentIndexStatus(path[0], path[2])
+            : path.length === 3 && path[2] === 'index-status'
+              ? await api.knowledgeFaqIndexStatus(path[0], path[1])
+              : null;
     if (!result)
       return NextResponse.json(
         { error: { code: 'not_found', message: 'Not found.' } },
@@ -140,6 +144,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
             : api.unpublishKnowledgeDocument(path[0], path[2])),
           { headers: { 'Cache-Control': 'no-store' } },
         );
+      if (path.length === 4 && path[3] === 'reindex')
+        return NextResponse.json(
+          await api.reindexKnowledgeDocument(path[0], path[2], request.headers.get('idempotency-key') ?? ''),
+          { status: 202, headers: { 'Cache-Control': 'no-store' } },
+        );
       return NextResponse.json(
         { error: { code: 'not_found', message: 'Not found.' } },
         { status: 404 },
@@ -184,6 +193,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     if (path.length === 3 && path[2] === 'unpublish')
       return NextResponse.json(await api.unpublishFaq(path[0], path[1]), {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    if (path.length === 3 && path[2] === 'reindex')
+      return NextResponse.json(await api.reindexKnowledgeFaq(path[0], path[1], request.headers.get('idempotency-key') ?? ''), {
+        status: 202,
         headers: { 'Cache-Control': 'no-store' },
       });
     return NextResponse.json(

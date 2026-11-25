@@ -184,6 +184,9 @@ export class AiResponseService {
         businessId: row.business_id,
         query: retrievalQuery,
         limit: 5,
+        purpose: 'live',
+        requestId: runId,
+        semanticQuery: row.customer_message,
       });
       evidence = retrieval.evidence;
       this.log(

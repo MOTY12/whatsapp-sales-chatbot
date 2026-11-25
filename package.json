@@ -55,6 +55,7 @@
     "class-validator": "^0.15.1",
     "dayjs": "^1.11.21",
     "dotenv": "^17.4.2",
+    "gpt-tokenizer": "^4.1.2",
     "ioredis": "^5.11.1",
     "openid-client": "^6.8.9",
     "passport": "^0.7.0",
