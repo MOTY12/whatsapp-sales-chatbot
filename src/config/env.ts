@@ -866,6 +866,42 @@ export function merchantEmailAuthConfig(env = process.env) {
   };
 }
 
+export function merchantTeamConfig(env = process.env) {
+  const integer = (
+    name: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ) => {
+    const raw = env[name]?.trim();
+    if (!raw) return fallback;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max)
+      throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+    return value;
+  };
+  return {
+    invitationTtlSeconds: integer(
+      'MERCHANT_INVITATION_TTL_SECONDS',
+      259200,
+      300,
+      1209600,
+    ),
+    invitationResendCooldownSeconds: integer(
+      'MERCHANT_INVITATION_RESEND_COOLDOWN_SECONDS',
+      300,
+      60,
+      86400,
+    ),
+    invitationMaxAttempts: integer(
+      'MERCHANT_INVITATION_MAX_ATTEMPTS',
+      5,
+      1,
+      20,
+    ),
+  };
+}
+
 export function whatsappCredentialConfig(env = process.env) {
   const current = env.WHATSAPP_CREDENTIAL_KEY_ID?.trim() ?? '';
   const raw = env.WHATSAPP_CREDENTIAL_KEYS?.trim();

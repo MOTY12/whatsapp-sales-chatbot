@@ -31,16 +31,24 @@ import {
   passwordResetEmail,
   verificationEmail,
   welcomeEmail,
+  teamInvitationEmail,
   type TransactionalEmail,
 } from './templates/transactional-email';
 
 type EmailKind =
-  'verification' | 'password_reset' | 'password_changed' | 'welcome';
+  | 'verification'
+  | 'password_reset'
+  | 'password_changed'
+  | 'welcome'
+  | 'team_invitation';
 type EmailPayload = {
   kind: EmailKind;
   to: string;
   name: string;
   token?: string;
+  businessName?: string;
+  role?: 'editor' | 'agent';
+  expiresAt?: string;
 };
 type StoredPayload = { iv: string; tag: string; data: string };
 
@@ -71,6 +79,20 @@ export class EmailService {
 
   sendWelcome(to: string, name: string) {
     return this.enqueue('welcome', to, name);
+  }
+
+  sendTeamInvitation(
+    to: string,
+    businessName: string,
+    role: 'editor' | 'agent',
+    token: string,
+    expiresAt: Date,
+  ) {
+    return this.enqueue('team_invitation', to, 'there', token, {
+      businessName,
+      role,
+      expiresAt: expiresAt.toISOString(),
+    });
   }
 
   async execute(operation: Readonly<OutboxOperation>): Promise<void> {
@@ -149,6 +171,7 @@ export class EmailService {
     to: string,
     name: string,
     token?: string,
+    extra: Pick<EmailPayload, 'businessName' | 'role' | 'expiresAt'> = {},
   ) {
     if (!this.config.enabled)
       throw new ServiceUnavailableException(
@@ -177,6 +200,7 @@ export class EmailService {
       to: email,
       name: safeName,
       ...(token ? { token } : {}),
+      ...extra,
     });
     try {
       await this.database.transaction(async (manager) => {
@@ -230,6 +254,13 @@ export class EmailService {
         payload.name,
         new URL('/onboarding', this.config.frontendUrl).href,
       );
+    if (payload.kind === 'team_invitation')
+      return teamInvitationEmail(
+        payload.businessName!,
+        payload.role!,
+        this.link('/invite/consume', payload.token!),
+        new Date(payload.expiresAt!),
+      );
     return passwordChangedEmail(payload.name);
   }
 
@@ -277,11 +308,17 @@ export class EmailService {
         'password_reset',
         'password_changed',
         'welcome',
+        'team_invitation',
       ].includes(payload.kind) ||
       typeof payload.to !== 'string' ||
       typeof payload.name !== 'string' ||
       ((payload.kind === 'verification' || payload.kind === 'password_reset') &&
-        typeof payload.token !== 'string')
+        typeof payload.token !== 'string') ||
+      (payload.kind === 'team_invitation' &&
+        (typeof payload.token !== 'string' ||
+          typeof payload.businessName !== 'string' ||
+          !['editor', 'agent'].includes(payload.role ?? '') ||
+          typeof payload.expiresAt !== 'string'))
     )
       throw new Error('Invalid encrypted email payload.');
   }

@@ -5,6 +5,8 @@ import { EmbeddedSignupConnection } from '../meta-embedded-signup/types/meta-emb
 import { Business, BusinessOwner } from '../whatsapp/types/whatsapp.types';
 import { BusinessRepository } from '../database/repositories/business.repository';
 import { UserRepository } from '../database/repositories/user.repository';
+import { InjectDataSource } from '@nestjs/typeorm';
+import type { DataSource } from 'typeorm';
 
 interface RegisterBusinessInput {
   ownerWhatsappId: string;
@@ -20,78 +22,83 @@ export class BusinessRegistrationService {
     private readonly embeddedSignupConnectionService: EmbeddedSignupConnectionService,
     private readonly businessRepository: BusinessRepository,
     private readonly userRepository: UserRepository,
+    @InjectDataSource() private readonly database: DataSource,
   ) {}
 
   async registerBusiness(input: RegisterBusinessInput): Promise<{
     owner: BusinessOwner;
     business: Business;
   }> {
-    const existingOwner = await this.userRepository.findByWhatsappId(
-      input.ownerWhatsappId,
-    );
-    if (existingOwner) {
-      const existingBusiness = await this.businessRepository.findById(
-        existingOwner.businessId,
-      );
-      if (existingBusiness) {
-        return {
-          owner: {
-            id: existingOwner.id,
-            whatsapp_id: input.ownerWhatsappId,
-            business_ids: [existingBusiness.id],
-            created_at: existingOwner.createdAt.toISOString(),
-          },
-          business: this.toLegacyBusiness(
-            existingBusiness,
-            input.ownerWhatsappId,
-          ),
-        };
-      }
-    }
-
-    const businessId = randomUUID();
-    const ownerId = randomUUID();
-    const createdAt = new Date().toISOString();
-
-    // Create Business in database
-    const dbBusiness = await this.businessRepository.create({
-      id: businessId,
-      name: input.draftBusiness.name,
-      industry: input.draftBusiness.industry,
-      phone: input.draftBusiness.phone,
-      whatsappNumber: input.draftBusiness.whatsapp_number,
-      phoneNumberId: null,
-      accessToken: null,
-      timezone: input.draftBusiness.timezone,
-      status: 'active',
-      config: { ownerWhatsappId: input.ownerWhatsappId },
-    });
-
-    // Create User (owner) in database
     const ownerEmail = `owner_${input.ownerWhatsappId}@kleva.local`;
-    const dbUser = await this.userRepository.create({
-      id: ownerId,
-      email: ownerEmail,
-      password: '', // Can be set later
-      firstName: 'Owner',
-      whatsappId: input.ownerWhatsappId,
-      businessId: businessId,
-      status: 'active',
-      roles: ['owner'],
-      metadata: { whatsappId: input.ownerWhatsappId },
+    return this.database.transaction(async (manager) => {
+      // Serialize duplicate legacy onboarding requests for this WhatsApp identity.
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [input.ownerWhatsappId],
+      );
+      const existingOwner = await this.userRepository.findByWhatsappId(
+        input.ownerWhatsappId,
+        manager,
+      );
+      if (existingOwner) {
+        const existingBusiness = await this.businessRepository.findById(
+          existingOwner.businessId,
+          manager,
+        );
+        if (existingBusiness) {
+          return {
+            owner: {
+              id: existingOwner.id,
+              whatsapp_id: input.ownerWhatsappId,
+              business_ids: [existingBusiness.id],
+              created_at: existingOwner.createdAt.toISOString(),
+            },
+            business: this.toLegacyBusiness(
+              existingBusiness,
+              input.ownerWhatsappId,
+            ),
+          };
+        }
+      }
+      const businessId = randomUUID();
+      const dbBusiness = await this.businessRepository.create(
+        {
+          id: businessId,
+          name: input.draftBusiness.name,
+          industry: input.draftBusiness.industry,
+          phone: input.draftBusiness.phone,
+          whatsappNumber: input.draftBusiness.whatsapp_number,
+          phoneNumberId: null,
+          accessToken: null,
+          timezone: input.draftBusiness.timezone,
+          status: 'active',
+          config: { ownerWhatsappId: input.ownerWhatsappId },
+        },
+        manager,
+      );
+      const dbUser = await this.userRepository.create(
+        {
+          id: randomUUID(),
+          email: ownerEmail,
+          password: '',
+          firstName: 'Owner',
+          whatsappId: input.ownerWhatsappId,
+          businessId,
+          status: 'active',
+          roles: ['owner'],
+          metadata: { whatsappId: input.ownerWhatsappId },
+        },
+        manager,
+      );
+      const business = this.toLegacyBusiness(dbBusiness, input.ownerWhatsappId);
+      const owner: BusinessOwner = {
+        id: dbUser.id,
+        whatsapp_id: input.ownerWhatsappId,
+        business_ids: [businessId],
+        created_at: dbUser.createdAt.toISOString(),
+      };
+      return { owner, business };
     });
-
-    // Return in legacy format for backward compatibility
-    const business = this.toLegacyBusiness(dbBusiness, input.ownerWhatsappId);
-
-    const owner: BusinessOwner = {
-      id: dbUser.id,
-      whatsapp_id: input.ownerWhatsappId,
-      business_ids: [businessId],
-      created_at: createdAt,
-    };
-
-    return { owner, business };
   }
 
   async getBusinessById(businessId: string): Promise<Business | undefined> {

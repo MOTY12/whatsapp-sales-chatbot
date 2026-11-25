@@ -80,6 +80,10 @@ import { LearningSuggestionVersion } from './entities/learning-suggestion-versio
 import { LearningSuggestionDecision } from './entities/learning-suggestion-decision.entity';
 import { LearningEvaluationRun } from './entities/learning-evaluation-run.entity';
 import { LearningEvaluationResult } from './entities/learning-evaluation-result.entity';
+import { MerchantBusinessInvitation } from './entities/merchant-business-invitation.entity';
+import { MerchantTeamAudit } from './entities/merchant-team-audit.entity';
+import { MerchantTeamInvitationAttempt } from './entities/merchant-team-invitation-attempt.entity';
+import { MerchantTeamManagement1760000000034 } from './migrations/1760000000034-MerchantTeamManagement';
 
 export const databaseEntities = [
   Business,
@@ -120,6 +124,9 @@ export const databaseEntities = [
   LearningSuggestionDecision,
   LearningEvaluationRun,
   LearningEvaluationResult,
+  MerchantBusinessInvitation,
+  MerchantTeamAudit,
+  MerchantTeamInvitationAttempt,
 ];
 
 export const databaseMigrations = [
@@ -158,4 +165,5 @@ export const databaseMigrations = [
   KnowledgeDocumentUploads1760000000031,
   SemanticKnowledgeIndex1760000000032,
   LearningApprovalWorkflow1760000000033,
+  MerchantTeamManagement1760000000034,
 ];

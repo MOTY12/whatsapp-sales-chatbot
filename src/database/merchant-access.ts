@@ -31,6 +31,9 @@ export const merchantPolicyTables = [
   'assistant_configuration_audit',
   'ai_playground_rate_limits',
   'ai_playground_usage',
+  'merchant_business_invitations',
+  'merchant_team_audit',
+  'merchant_team_invitation_attempts',
 ];
 
 const identityFunctions = [
@@ -149,6 +152,19 @@ export const learningFunctions = [
   'kleva_learning_suggestion_dismiss(uuid,text)',
   'kleva_learning_suggestion_retry(uuid,integer,uuid,text,text,integer,text)',
 ];
+export const teamFunctions = [
+  'kleva_team_members(integer,integer,text,text,text)',
+  'kleva_team_member(uuid)',
+  'kleva_team_audit(integer,integer)',
+  'kleva_team_invitation_create(uuid,bytea,text,text,text,integer)',
+  'kleva_team_invitation_delivery(uuid,text)',
+  'kleva_team_invitation_accept(text,text,integer)',
+  'kleva_team_invitations(integer,integer)',
+  'kleva_team_invitation_resend(uuid,text,integer,integer,integer)',
+  'kleva_team_invitation_revoke(uuid)',
+  'kleva_team_member_role(uuid,text,integer)',
+  'kleva_team_member_revoke(uuid,integer)',
+];
 export const websiteWidgetFunctions = [
   'kleva_website_widget_list()',
   'kleva_website_widget_create(text,text)',
@@ -188,7 +204,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...websiteWidgetFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...teamFunctions, ...websiteWidgetFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

@@ -5,6 +5,9 @@ import type { RequestHandler } from 'express';
 import type { Logger as TypeOrmLogger } from 'typeorm';
 
 const requestContext = new AsyncLocalStorage<string>();
+export function currentRequestId() {
+  return requestContext.getStore();
+}
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const privateKey =

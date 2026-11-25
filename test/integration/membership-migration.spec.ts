@@ -257,6 +257,7 @@ describe('tenant integrity migration', () => {
       {} as EmbeddedSignupConnectionService,
       new BusinessRepository(runtime.getRepository(Business)),
       users,
+      runtime,
     );
     const draft = {
       ownerWhatsappId: '2348288888888',

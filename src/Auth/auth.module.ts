@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { merchantAuthConfig } from '../config/env';
+import { merchantAuthConfig, merchantTeamConfig } from '../config/env';
 import { MerchantAuthController } from './auth.controller';
 import { MerchantCsrfGuard, MerchantSessionGuard } from './auth.guards';
 import { MerchantAuthService } from './auth.service';
@@ -44,6 +44,14 @@ import { WebsiteChatModule } from '../website-chat/website-chat.module';
 import { KnowledgeDocumentController } from '../knowledge/knowledge-document.controller';
 import { KnowledgeDocumentUploadService } from '../knowledge/knowledge-document-upload.service';
 import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.service';
+import {
+  MerchantTeamController,
+  MerchantInvitationController,
+} from './merchant-team.controller';
+import {
+  MERCHANT_TEAM_CONFIG,
+  MerchantTeamService,
+} from './merchant-team.service';
 
 @Module({
   imports: [
@@ -71,6 +79,8 @@ import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.se
     MerchantLearningSuggestionsController,
     MerchantWebsiteWidgetController,
     KnowledgeDocumentController,
+    MerchantTeamController,
+    MerchantInvitationController,
   ],
   providers: [
     { provide: MERCHANT_AUTH_CONFIG, useFactory: () => merchantAuthConfig() },
@@ -90,6 +100,8 @@ import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.se
     MerchantAssistantService,
     MerchantLearningService,
     MerchantWebsiteWidgetService,
+    MerchantTeamService,
+    { provide: MERCHANT_TEAM_CONFIG, useFactory: () => merchantTeamConfig() },
     KnowledgeIndexingService,
     MetaWhatsAppVerifier,
     MerchantSessionGuard,

@@ -1,5 +1,7 @@
 # Merchant business API
 
+For owner-controlled membership and invitation routes, see the [merchant team management API](./merchant-team-api.md).
+
 Use the existing OIDC browser session cookie. For POST and PATCH, send the configured merchant `Origin` and the CSRF cookie value in `X-CSRF-Token`. All requests and responses use JSON. The API sends `Cache-Control: no-store`.
 
 | Method and path | Permission | Result |

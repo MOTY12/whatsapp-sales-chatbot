@@ -52,10 +52,29 @@ describe('public website chat sessions and messages', () => {
   let realtimeB: WebsiteRealtimeService;
   let conversationId: string;
   let browserDemo: ChildProcess | undefined;
+  let previousRedisUrl: string | undefined;
   const publicId = randomBytes(24).toString('base64url');
   const origin = 'https://store.example.test';
 
   beforeAll(async () => {
+    const redisUrl = process.env.KLEVA_TEST_REDIS_URL;
+    if (!redisUrl) {
+      throw new Error(
+        'Set KLEVA_TEST_REDIS_URL to the disposable loopback Redis service.',
+      );
+    }
+    const parsedRedisUrl = new URL(redisUrl);
+    if (
+      parsedRedisUrl.protocol !== 'redis:' ||
+      parsedRedisUrl.hostname !== '127.0.0.1' ||
+      !parsedRedisUrl.port
+    ) {
+      throw new Error(
+        'KLEVA_TEST_REDIS_URL must be a redis://127.0.0.1 URL with an explicit port.',
+      );
+    }
+    previousRedisUrl = process.env.REDIS_URL;
+    process.env.REDIS_URL = redisUrl;
     database = await createIntegrationDatabase();
     admin = await database.migrator();
     await applyMigrations(admin);
@@ -89,6 +108,8 @@ describe('public website chat sessions and messages', () => {
     realtimeA?.beforeApplicationShutdown();
     realtimeB?.beforeApplicationShutdown();
     await database?.close();
+    if (previousRedisUrl === undefined) delete process.env.REDIS_URL;
+    else process.env.REDIS_URL = previousRedisUrl;
   });
 
   it('renders the real demo widget and persists a visitor message through the live API', async () => {

@@ -20,3 +20,6 @@ export { MerchantLeadQualification } from './merchant-lead-qualification.entity'
 export { MerchantLeadConversion } from './merchant-lead-conversion.entity';
 export { AgentToolExecution } from './agent-tool-execution.entity';
 export { AgentToolHandoffEvent } from './agent-tool-handoff-event.entity';
+export { MerchantBusinessInvitation } from './merchant-business-invitation.entity';
+export { MerchantTeamAudit } from './merchant-team-audit.entity';
+export { MerchantTeamInvitationAttempt } from './merchant-team-invitation-attempt.entity';

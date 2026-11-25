@@ -67,3 +67,17 @@ export const passwordChangedEmail = (name: string) =>
     undefined,
     'If you did not make this change, contact Kleva support immediately.',
   );
+
+export const teamInvitationEmail = (
+  businessName: string,
+  role: 'editor' | 'agent',
+  url: string,
+  expiresAt: Date,
+) =>
+  render(
+    `Invitation to join ${businessName} on Kleva`,
+    'You have been invited to join a business on Kleva.',
+    `${businessName} invited you as a ${role}. Sign in using the email address that received this invitation, then accept it.`,
+    { label: 'Review invitation', url },
+    `This invitation expires ${expiresAt.toISOString()}. It can only be used once.`,
+  );

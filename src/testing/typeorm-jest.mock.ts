@@ -6,6 +6,14 @@ export function getRepositoryToken(entity: Entity): string {
   return `${entity.name ?? 'Entity'}Repository`;
 }
 
+export function getDataSourceToken(): string {
+  return 'DataSource';
+}
+
+export function InjectDataSource(): ParameterDecorator {
+  return Inject(getDataSourceToken());
+}
+
 export function InjectRepository(entity: Entity): ParameterDecorator {
   return Inject(getRepositoryToken(entity));
 }
@@ -37,5 +45,3 @@ export class TypeOrmModule {
     return { module: TypeOrmModule, providers, exports: providers };
   }
 }
-
-export const InjectDataSource = () => () => undefined;

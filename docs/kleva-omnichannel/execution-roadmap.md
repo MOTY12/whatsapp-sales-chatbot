@@ -157,8 +157,8 @@ V1 mapping and adaptation. Business and team workflows serve all channels. Prese
 
 - **Objective.** Provide self-serve onboarding. WhatsApp registration exists with separate business and owner writes.
 - **Reuse and likely changes.** src/onboarding/business-registration.service.ts, src/onboarding/conversation-state.service.ts, src/database/repositories/user.repository.ts → business/member services, checklist and audit writer.
-- **Implementation.** Atomic business/owner create for both entry points, verified legacy owner claim, editable profile, invite acceptance, revocation and last-owner guard.
-- **Database and API.** **DB.** Invite/challenge tables and actor audit link. **API.** Business, profile, claim, onboarding and team routes.
+- **Implementation.** Browser business/owner creation remains atomic and idempotent. Legacy WhatsApp onboarding now serializes duplicate identity requests and commits business, legacy user and owner membership atomically. Owner-scoped invitations, verified-email acceptance, role/revoke/version checks, inbox unassignment and team audit are implemented. Legacy claims remain disabled until an approved ownership challenge channel is available.
+- **Database and API.** Additive invite, audit and attempt-limit tables; narrow SECURITY DEFINER team functions; business-scoped last-owner locking. See [team API, permissions and recovery](../kleva-mvp-30d/merchant-team-api.md).
 - **Dependencies.** TENANT-001, TENANT-002. **External services.** Local fixtures or the services already provisioned by dependencies.
 - **Security.** Use hashed one-time challenges, attempt limits and verified invitation email. Deliver claims on approved onboarding channel.
 - **Acceptance and required tests.** Concurrent create, expired/replayed challenge, role changes and legacy owner access covered.

@@ -6,6 +6,39 @@ export type Membership = {
   role: 'owner' | 'editor' | 'agent';
 };
 export type Identity = { accountId: string; memberships: Membership[] };
+export type TeamMember = {
+  id: string;
+  accountId: string;
+  name: string | null;
+  email: string | null;
+  role: 'owner' | 'editor' | 'agent' | 'staff';
+  status: 'active' | 'inactive';
+  joinedAt: string;
+  revokedAt: string | null;
+  version: number;
+};
+export type TeamInvitation = {
+  id: string;
+  recipient_email: string;
+  invited_role: 'editor' | 'agent';
+  status: string;
+  delivery_status: 'PENDING' | 'QUEUED' | 'FAILED';
+  invited_by: string;
+  created_at: string;
+  expires_at: string;
+  resend_count: number;
+};
+export type TeamAuditEvent = {
+  id: string;
+  actor_account_id: string | null;
+  target_account_id: string | null;
+  target_id: string | null;
+  event_kind: string;
+  previous_value: Record<string, unknown> | null;
+  next_value: Record<string, unknown> | null;
+  correlation_id: string | null;
+  created_at: string;
+};
 export type OnboardingStep =
   | 'business_profile'
   | 'whatsapp'
@@ -603,6 +636,94 @@ export const api = {
     }),
   business: (id: string) =>
     request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`),
+  team: (
+    id: string,
+    status = 'active',
+    options: { search?: string; limit?: number; offset?: number } = {},
+  ) => {
+    const query = new URLSearchParams({
+      status,
+      limit: String(options.limit ?? 100),
+      offset: String(options.offset ?? 0),
+    });
+    if (options.search?.trim()) query.set('search', options.search.trim());
+    return request<{
+      items: TeamMember[];
+      limit: number;
+      offset: number;
+      total: number;
+    }>(
+      `/merchant/businesses/${encodeURIComponent(id)}/team?${query.toString()}`,
+    );
+  },
+  teamMember: (businessId: string, membershipId: string) =>
+    request<TeamMember>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/team/${encodeURIComponent(membershipId)}`,
+    ),
+  teamInvitations: (id: string) =>
+    request<{ items: TeamInvitation[] }>(
+      `/merchant/businesses/${encodeURIComponent(id)}/team/invitations`,
+    ),
+  teamAudit: (id: string) =>
+    request<{ items: TeamAuditEvent[] }>(
+      `/merchant/businesses/${encodeURIComponent(id)}/team/audit`,
+    ),
+  createTeamInvitation: (
+    id: string,
+    email: string,
+    role: 'editor' | 'agent',
+    key: string,
+  ) =>
+    request<{
+      id: string;
+      email: string;
+      role: string;
+      expiresAt: string;
+      deliveryStatus: string;
+    }>(`/merchant/businesses/${encodeURIComponent(id)}/team/invitations`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({ email, role }),
+    }),
+  resendTeamInvitation: (businessId: string, invitationId: string) =>
+    request<{ id: string; deliveryStatus: string; expiresAt: string }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/team/invitations/${encodeURIComponent(invitationId)}/resend`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+  revokeTeamInvitation: (businessId: string, invitationId: string) =>
+    request<{ revoked: boolean }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/team/invitations/${encodeURIComponent(invitationId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+  updateTeamRole: (
+    businessId: string,
+    membershipId: string,
+    role: 'editor' | 'agent',
+    version: number,
+  ) =>
+    request<{ changed: boolean; version: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/team/${encodeURIComponent(membershipId)}`,
+      { method: 'PATCH', body: JSON.stringify({ role, version }) },
+    ),
+  revokeTeamMember: (
+    businessId: string,
+    membershipId: string,
+    version: number,
+  ) =>
+    request<{ revoked: boolean; version: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/team/${encodeURIComponent(membershipId)}/revoke`,
+      { method: 'POST', body: JSON.stringify({ version }) },
+    ),
+  acceptTeamInvitation: (token: string) =>
+    request<{
+      businessId: string;
+      businessName: string;
+      role: string;
+      accepted: boolean;
+    }>('/merchant/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
   createBusiness: (
     body: Omit<Business, 'id' | 'status' | 'role'>,
     key: string,

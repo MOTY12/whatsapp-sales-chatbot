@@ -84,6 +84,29 @@ export default async function Settings({
         )}
       </section>
       <AuthMethods error={error} />
+      {business.role === 'owner' && (
+        <section className="settings-section">
+          <div className="section-title">
+            <div>
+              <h2>Team access</h2>
+              <p className="muted">
+                Invite agents and editors and review business membership.
+              </p>
+            </div>
+          </div>
+          <Link
+            className="settings-link-card"
+            href={`/dashboard/settings/team?businessId=${business.id}`}
+          >
+            <span className="settings-icon">♙</span>
+            <span>
+              <strong>Manage team</strong>
+              <small>Members, invitations and business access</small>
+            </span>
+            <span className="chevron">→</span>
+          </Link>
+        </section>
+      )}
       <section className="settings-section">
         <div className="section-title">
           <div>

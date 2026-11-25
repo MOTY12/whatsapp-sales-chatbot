@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import { EmbeddedSignupConnectionService } from '../meta-embedded-signup/embedded-signup-connection.service';
 import { BusinessRepository } from '../database/repositories/business.repository';
 import { OnboardingSessionRepository } from '../database/repositories/onboarding-session.repository';
@@ -34,6 +35,18 @@ describe('OnboardingService', () => {
         ConversationStateService,
         EmbeddedSignupConnectionService,
         BusinessRegistrationService,
+        {
+          provide: getDataSourceToken(),
+          useValue: {
+            transaction: (operation: (manager: unknown) => Promise<unknown>) =>
+              operation({
+                query: jest.fn().mockResolvedValue([]),
+                getRepository: jest.fn(() => ({
+                  insert: jest.fn().mockResolvedValue(undefined),
+                })),
+              }),
+          },
+        },
         OnboardingService,
         {
           provide: BusinessRepository,

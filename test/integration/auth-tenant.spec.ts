@@ -952,6 +952,180 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(404);
   });
 
+  it('invites verified staff once and immediately enforces versioned team changes', async () => {
+    const owner = await login('team-invitation-owner');
+    const recipient = await login('team-invitation-recipient');
+    const agent = await login('team-invitation-agent');
+    const members = admin.getRepository(BusinessMember);
+    await members.insert([
+      {
+        businessId: first.business.id,
+        accountId: owner.accountId,
+        role: 'owner',
+      },
+      {
+        businessId: first.business.id,
+        accountId: agent.accountId,
+        role: 'agent',
+      },
+      {
+        businessId: second.business.id,
+        accountId: agent.accountId,
+        role: 'owner',
+      },
+    ]);
+    const base = `/merchant/businesses/${first.business.id}/team`;
+    await request(server).get(base).set('Cookie', agent.session).expect(403);
+    await request(server)
+      .post(`${base}/invitations`)
+      .set('Cookie', agent.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', agent.csrf)
+      .set('Idempotency-Key', randomUUID())
+      .send({ email: 'should-not-invite@example.test', role: 'agent' })
+      .expect(403);
+    const inviteMail = mailjet.messages.length;
+    const invitation = await request(server)
+      .post(`${base}/invitations`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .set('Idempotency-Key', randomUUID())
+      .send({ email: 'team-invitation-recipient@example.test', role: 'agent' })
+      .expect(201)
+      .expect('Cache-Control', 'no-store');
+    expect(invitation.body).toMatchObject({
+      email: 'team-invitation-recipient@example.test',
+      role: 'agent',
+      deliveryStatus: 'QUEUED',
+    });
+    const message = await waitForMail(mailjet, inviteMail);
+    const credential = mailToken(message);
+    expect(credential).toBeDefined();
+    expect(message).toContain(first.business.name);
+    expect(message).toContain('agent');
+
+    await request(server)
+      .post('/merchant/invitations/accept')
+      .set('Cookie', recipient.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', recipient.csrf)
+      .send({ token: credential })
+      .expect(201)
+      .expect(({ body }: Response) => {
+        expect(body).toMatchObject({
+          businessId: first.business.id,
+          businessName: first.business.name,
+          role: 'agent',
+          accepted: true,
+        });
+      });
+    await request(server)
+      .post('/merchant/invitations/accept')
+      .set('Cookie', recipient.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', recipient.csrf)
+      .send({ token: credential })
+      .expect(201, {
+        businessId: first.business.id,
+        businessName: first.business.name,
+        role: 'agent',
+        accepted: false,
+      });
+
+    const team = await request(server)
+      .get(base)
+      .set('Cookie', owner.session)
+      .expect(200);
+    const memberSearch = await request(server)
+      .get(`${base}?search=team-invitation-recipient@example.test`)
+      .set('Cookie', owner.session)
+      .expect(200);
+    expect(memberSearch.body.items).toHaveLength(1);
+    expect(memberSearch.body.items[0]).toMatchObject({
+      accountId: recipient.accountId,
+      email: 'team-invitation-recipient@example.test',
+    });
+    const teamItems = (
+      team.body as { items: Array<{ accountId: string; id: string }> }
+    ).items;
+    const invited = teamItems.find(
+      (item) => item.accountId === recipient.accountId,
+    );
+    if (!invited) throw new Error('Expected the invited membership record.');
+    expect(invited).toMatchObject({
+      role: 'agent',
+      status: 'active',
+      version: 1,
+    });
+    await request(server)
+      .patch(`${base}/${invited.id}`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ role: 'editor', version: 1 })
+      .expect(200, { changed: true, version: 2 });
+    await request(server)
+      .post(`${base}/${invited.id}/revoke`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ version: 2 })
+      .expect(201, { revoked: true, version: 3 });
+    await request(server)
+      .get(`/merchant/businesses/${first.business.id}`)
+      .set('Cookie', recipient.session)
+      .expect(404);
+    const stillOwnsOtherBusiness = await request(server)
+      .get('/auth/businesses')
+      .set('Cookie', agent.session)
+      .expect(200);
+    expect(stillOwnsOtherBusiness.body as unknown[]).toEqual(
+      expect.arrayContaining([
+        { businessId: first.business.id, role: 'agent' },
+        { businessId: second.business.id, role: 'owner' },
+      ]),
+    );
+    const ownerOnlyBusiness = await admin.getRepository(Business).save({
+      name: 'Last Owner Guard Fixture',
+      phone: randomUUID(),
+      whatsappNumber: randomUUID(),
+      timezone: 'Africa/Lagos',
+    });
+    const ownerMembership = await members.save({
+      businessId: ownerOnlyBusiness.id,
+      accountId: owner.accountId,
+      role: 'owner',
+      status: 'active',
+    });
+    const ownerOnlyBase = `/merchant/businesses/${ownerOnlyBusiness.id}/team`;
+    await request(server)
+      .patch(`${ownerOnlyBase}/${ownerMembership.id}`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ role: 'agent', version: 1 })
+      .expect(409);
+    await request(server)
+      .post(`${ownerOnlyBase}/${ownerMembership.id}/revoke`)
+      .set('Cookie', owner.session)
+      .set('Origin', origin)
+      .set('X-CSRF-Token', owner.csrf)
+      .send({ version: 1 })
+      .expect(409);
+
+    // Keep this shared disposable fixture free of team data so later migration
+    // rollback guards exercise the migration under test, not TENANT-003 data.
+    await admin.query('DELETE FROM public.merchant_team_audit');
+    await admin.query('DELETE FROM public.merchant_business_invitations');
+    await admin.query('DELETE FROM public.merchant_team_invitation_attempts');
+    await members.delete({
+      businessId: first.business.id,
+      accountId: recipient.accountId,
+    });
+    await admin.getRepository(Business).delete(ownerOnlyBusiness.id);
+  });
+
   it('serves tenant-scoped inbox pages and serializes idempotent takeover changes', async () => {
     const owner = await login('inbox-owner');
     const staff = await login('inbox-staff');

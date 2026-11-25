@@ -1,6 +1,7 @@
 import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { OutboxOperation } from '../database/entities/outbox-operation.entity';
 import { EmailService, PermanentEmailFailure } from './email.service';
+import type { TransactionalEmail } from './templates/transactional-email';
 import { maxExecutionAttempts } from '../jobs/outbox.store';
 
 describe('EmailService durable enqueue', () => {
@@ -70,6 +71,71 @@ describe('EmailService durable enqueue', () => {
       deliveryId,
       deliveryId,
     ]);
+  });
+
+  it('queues a tenant invitation in the encrypted email outbox with the configured dashboard URL', async () => {
+    const deliveryId = 'a1bd6ef2-7e67-42ae-a8d6-82bd8e90fb4a';
+    let encryptedPayload: Buffer | undefined;
+    const manager = {
+      query: jest.fn(async (sql: string, params?: unknown[]) => {
+        if (sql.includes('SELECT id FROM public.merchant_email_deliveries'))
+          return [{ id: deliveryId }];
+        if (params) encryptedPayload = params[2] as Buffer;
+        return [];
+      }),
+    };
+    const database = {
+      transaction: (callback: (manager: typeof manager) => Promise<unknown>) =>
+        callback(manager),
+      query: jest.fn(async (sql: string) =>
+        sql.startsWith('SELECT encrypted_payload')
+          ? [{ encrypted_payload: encryptedPayload, status: 'PENDING' }]
+          : [],
+      ),
+    };
+    let submittedEmail: TransactionalEmail | undefined;
+    const send = jest.fn(
+      async (_id: string, _to: string, email: TransactionalEmail) => {
+        submittedEmail = email;
+        return 'fixture-provider-id';
+      },
+    );
+    const service = new EmailService(
+      config,
+      database as never,
+      { write: jest.fn() } as never,
+      { send } as never,
+    );
+    const invitationToken = 'Q'.repeat(43);
+    await expect(
+      service.sendTeamInvitation(
+        'agent@example.test',
+        'Northside Hotel',
+        'agent',
+        invitationToken,
+        new Date('2026-11-28T10:00:00.000Z'),
+      ),
+    ).resolves.toEqual({ queued: true, status: 'queued' });
+    expect(Buffer.from(encryptedPayload!).toString()).not.toContain(
+      invitationToken,
+    );
+    await service.execute({
+      id: deliveryId,
+      operation: 'merchant.email',
+      attempts: 1,
+      metadata: { deliveryId },
+    } as unknown as Readonly<OutboxOperation>);
+    expect(send).toHaveBeenCalledWith(
+      deliveryId,
+      'agent@example.test',
+      expect.objectContaining({
+        subject: expect.stringContaining('Northside Hotel'),
+        text: expect.stringContaining('agent'),
+      }),
+    );
+    expect(submittedEmail?.text).toContain(
+      'https://merchant.example.test/invite/consume?token=',
+    );
   });
 
   it('reports a missing email outbox relation safely and rejects enqueue', async () => {

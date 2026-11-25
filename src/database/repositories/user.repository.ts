@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 
 @Injectable()
@@ -10,9 +10,10 @@ export class UserRepository {
     private repository: Repository<User>,
   ) {}
 
-  async create(data: Partial<User>): Promise<User> {
-    const user = this.repository.create(data);
-    return this.repository.save(user);
+  async create(data: Partial<User>, manager?: EntityManager): Promise<User> {
+    const repository = manager?.getRepository(User) ?? this.repository;
+    const user = repository.create(data);
+    return repository.save(user);
   }
 
   async findById(id: string): Promise<User | null> {
@@ -23,8 +24,13 @@ export class UserRepository {
     return this.repository.findOne({ where: { email } });
   }
 
-  async findByWhatsappId(whatsappId: string): Promise<User | null> {
-    return this.repository.findOne({ where: { whatsappId } });
+  async findByWhatsappId(
+    whatsappId: string,
+    manager?: EntityManager,
+  ): Promise<User | null> {
+    return (manager?.getRepository(User) ?? this.repository).findOne({
+      where: { whatsappId },
+    });
   }
 
   async findByBusinessId(businessId: string): Promise<User[]> {

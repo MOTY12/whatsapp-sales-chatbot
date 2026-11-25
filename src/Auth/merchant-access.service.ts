@@ -7,6 +7,7 @@ import type { EntityManager } from 'typeorm';
 import type { BusinessMemberRole } from '../database/entities/business-member.entity';
 import type { MerchantPrincipal } from './auth.service';
 import { MerchantDatabase } from './merchant-database';
+import { currentRequestId } from '../config/logging';
 
 type Permission =
   | 'business.read'
@@ -73,8 +74,8 @@ export class MerchantAccess {
     if (!uuidPattern.test(businessId)) throw new NotFoundException();
     return this.database.connection().transaction(async (manager) => {
       await manager.query(
-        "SELECT set_config('kleva.business_id', $1, true), set_config('kleva.session_digest', $2, true)",
-        [businessId, principal.sessionDigest],
+        "SELECT set_config('kleva.business_id', $1, true), set_config('kleva.session_digest', $2, true), set_config('kleva.request_id', $3, true)",
+        [businessId, principal.sessionDigest, currentRequestId() ?? ''],
       );
       const [result] = await manager.query<
         { role: BusinessMemberRole | null }[]
