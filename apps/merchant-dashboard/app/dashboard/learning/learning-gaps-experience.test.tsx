@@ -31,11 +31,18 @@ const gap: KnowledgeGap = {
 
 describe('LearningGapsExperience', () => {
   it('shows grouped redacted topics and lets the merchant mark a topic reviewed', async () => {
-    const fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ id: gap.id, status: 'REVIEWED' }),
-    });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: gap.id, status: 'REVIEWED' }),
+      });
     vi.stubGlobal('fetch', fetch);
     render(
       <LearningGapsExperience
@@ -48,9 +55,12 @@ describe('LearningGapsExperience', () => {
     expect(screen.getByText(/3\s+occurrences/)).toBeTruthy();
     expect(screen.getByText(gap.sample_question!)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Mark reviewed' }));
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(fetch.mock.calls[0][0]).toContain(`/gaps/${gap.id}`);
-    expect(JSON.parse(fetch.mock.calls[0][1].body as string)).toEqual({
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    const updateCall = fetch.mock.calls.find(([url]) =>
+      String(url).includes(`/gaps/${gap.id}`),
+    );
+    expect(updateCall?.[0]).toContain(`/gaps/${gap.id}`);
+    expect(JSON.parse(updateCall?.[1].body as string)).toEqual({
       status: 'REVIEWED',
     });
     expect(await screen.findByText(/Marked as reviewed/)).toBeTruthy();

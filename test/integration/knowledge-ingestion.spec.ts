@@ -20,6 +20,9 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
   let retrieval: UnifiedKnowledgeRetrievalService;
   let originalEnabled: string | undefined;
   let originalApiKey: string | undefined;
+  let originalBatchSize: string | undefined;
+  let originalTargetTokens: string | undefined;
+  let originalOverlapTokens: string | undefined;
   let businessA: string;
   let businessB: string;
   let faqA: { id: string; revisionId: string };
@@ -28,6 +31,9 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
   beforeAll(async () => {
     originalEnabled = process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED;
     originalApiKey = process.env.OPENAI_API_KEY;
+    originalBatchSize = process.env.KNOWLEDGE_EMBEDDING_BATCH_SIZE;
+    originalTargetTokens = process.env.KNOWLEDGE_CHUNK_TARGET_TOKENS;
+    originalOverlapTokens = process.env.KNOWLEDGE_CHUNK_OVERLAP_TOKENS;
     process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED = 'true';
     process.env.OPENAI_API_KEY = 'fixture-only-not-a-real-key';
     database = await createIntegrationDatabase();
@@ -65,6 +71,15 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
     else process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED = originalEnabled;
     if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalApiKey;
+    if (originalBatchSize === undefined)
+      delete process.env.KNOWLEDGE_EMBEDDING_BATCH_SIZE;
+    else process.env.KNOWLEDGE_EMBEDDING_BATCH_SIZE = originalBatchSize;
+    if (originalTargetTokens === undefined)
+      delete process.env.KNOWLEDGE_CHUNK_TARGET_TOKENS;
+    else process.env.KNOWLEDGE_CHUNK_TARGET_TOKENS = originalTargetTokens;
+    if (originalOverlapTokens === undefined)
+      delete process.env.KNOWLEDGE_CHUNK_OVERLAP_TOKENS;
+    else process.env.KNOWLEDGE_CHUNK_OVERLAP_TOKENS = originalOverlapTokens;
     if (runtime?.isInitialized) await runtime.destroy();
     await database?.close();
   });
@@ -110,11 +125,16 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
     return id;
   }
 
-  async function execute(generationId: string, service = indexing) {
+  async function execute(
+    generationId: string,
+    service = indexing,
+    attempts = 0,
+  ) {
     await service.execute({
       id: generationId,
       operation: 'knowledge.index.requested',
       metadata: { generationId },
+      attempts,
     } as unknown as OutboxOperation);
   }
 
@@ -231,5 +251,75 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
       sufficientEvidence: false,
       reason: 'NO_PUBLISHED_CONTENT',
     });
+  });
+
+  it('resumes a partially embedded generation without duplicating saved chunks', async () => {
+    process.env.KNOWLEDGE_EMBEDDING_BATCH_SIZE = '1';
+    process.env.KNOWLEDGE_CHUNK_TARGET_TOKENS = '100';
+    process.env.KNOWLEDGE_CHUNK_OVERLAP_TOKENS = '20';
+    const longAnswer = Array.from(
+      { length: 80 },
+      (_, index) => `Policy sentence ${index} describes delivery and returns.`,
+    ).join(' ');
+    const faq = await createFaq(businessA, 'Long policy', longAnswer);
+    const generation = await createGeneration(businessA, faq);
+    const fixture = new DeterministicEmbeddingProvider();
+    let calls = 0;
+    const retryingProvider = {
+      name: 'fixture',
+      embed: async (input: Parameters<typeof fixture.embed>[0]) => {
+        calls += 1;
+        if (calls === 2) throw new EmbeddingProviderError('UNAVAILABLE', true);
+        return fixture.embed(input);
+      },
+    };
+    const retryingIndexing = new KnowledgeIndexingWorkerService(
+      runtime,
+      usage,
+      retryingProvider,
+    );
+    await expect(execute(generation, retryingIndexing)).rejects.toThrow(
+      'UNAVAILABLE',
+    );
+    const [partial] = await admin.query<
+      Array<{
+        status: string;
+        indexed_chunk_count: number;
+        expected_chunk_count: number;
+      }>
+    >(
+      `SELECT status,indexed_chunk_count,expected_chunk_count
+       FROM public.knowledge_index_generations WHERE id=$1`,
+      [generation],
+    );
+    expect(partial.status).toBe('INDEXING');
+    expect(partial.indexed_chunk_count).toBeGreaterThan(0);
+    expect(partial.indexed_chunk_count).toBeLessThan(
+      partial.expected_chunk_count,
+    );
+
+    await execute(generation, retryingIndexing, 1);
+    const [complete] = await admin.query<
+      Array<{
+        status: string;
+        indexed_chunk_count: number;
+        expected_chunk_count: number;
+      }>
+    >(
+      `SELECT status,indexed_chunk_count,expected_chunk_count
+       FROM public.knowledge_index_generations WHERE id=$1`,
+      [generation],
+    );
+    const [saved] = await admin.query<
+      Array<{ count: number; distinct_count: number }>
+    >(
+      `SELECT count(*)::integer AS count,count(DISTINCT chunk_index)::integer AS distinct_count
+       FROM public.knowledge_chunks WHERE generation_id=$1`,
+      [generation],
+    );
+    expect(complete).toMatchObject({ status: 'ACTIVE' });
+    expect(complete.indexed_chunk_count).toBe(complete.expected_chunk_count);
+    expect(saved.count).toBe(complete.expected_chunk_count);
+    expect(saved.distinct_count).toBe(complete.expected_chunk_count);
   });
 });

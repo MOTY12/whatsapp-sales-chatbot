@@ -184,6 +184,53 @@
   font-size: 11px;
   line-height: 1.5;
 }
+.suggestionDialog {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border: 1px solid #dce8df;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fbfdfb;
+}
+.suggestionDialog h2,
+.suggestionDialog p {
+  margin: 0;
+}
+.suggestionDialog label {
+  display: grid;
+  gap: 6px;
+  color: #294437;
+  font-size: 13px;
+  font-weight: 600;
+}
+.suggestionDialog input,
+.suggestionDialog textarea {
+  width: 100%;
+  border: 1px solid #cbd8cf;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+.suggestionDraft {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.suggestionDraft label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.suggestionDraft input,
+.suggestionDraft textarea {
+  width: 100%;
+  border: 1px solid #cbd8cf;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
 @media (max-width: 650px) {
   .panel {
     padding: 14px;

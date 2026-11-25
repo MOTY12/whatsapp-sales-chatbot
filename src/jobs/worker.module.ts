@@ -45,6 +45,7 @@ import {
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { KnowledgeDocumentIngestionService } from '../knowledge/knowledge-document-ingestion.service';
 import { KnowledgeIndexingWorkerService } from '../knowledge/knowledge-indexing.service';
+import { LearningEvaluationWorkerService } from '../learning/learning-evaluation-worker.service';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -200,6 +201,7 @@ export class WorkerRuntime
         website: WebsiteChatService,
         knowledgeDocuments: KnowledgeDocumentIngestionService,
         knowledgeIndexing: KnowledgeIndexingWorkerService,
+        learningEvaluation: LearningEvaluationWorkerService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
@@ -241,6 +243,10 @@ export class WorkerRuntime
             'knowledge.index.requested',
             { execute: (operation) => knowledgeIndexing.execute(operation) },
           ],
+          [
+            'knowledge.learning.evaluate',
+            { execute: (operation) => learningEvaluation.execute(operation) },
+          ],
         ]),
       inject: [
         WhatsAppResponseIntentDispatcher,
@@ -250,6 +256,7 @@ export class WorkerRuntime
         WebsiteChatService,
         KnowledgeDocumentIngestionService,
         KnowledgeIndexingWorkerService,
+        LearningEvaluationWorkerService,
       ],
     },
   ],

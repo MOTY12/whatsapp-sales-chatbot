@@ -74,6 +74,12 @@ import { KnowledgeDocumentUploads1760000000031 } from './migrations/176000000003
 import { KnowledgeIndexGeneration } from './entities/knowledge-index-generation.entity';
 import { KnowledgeChunk } from './entities/knowledge-chunk.entity';
 import { SemanticKnowledgeIndex1760000000032 } from './migrations/1760000000032-SemanticKnowledgeIndex';
+import { LearningApprovalWorkflow1760000000033 } from './migrations/1760000000033-LearningApprovalWorkflow';
+import { LearningSuggestion } from './entities/learning-suggestion.entity';
+import { LearningSuggestionVersion } from './entities/learning-suggestion-version.entity';
+import { LearningSuggestionDecision } from './entities/learning-suggestion-decision.entity';
+import { LearningEvaluationRun } from './entities/learning-evaluation-run.entity';
+import { LearningEvaluationResult } from './entities/learning-evaluation-result.entity';
 
 export const databaseEntities = [
   Business,
@@ -109,6 +115,11 @@ export const databaseEntities = [
   KnowledgeDocumentPage,
   KnowledgeIndexGeneration,
   KnowledgeChunk,
+  LearningSuggestion,
+  LearningSuggestionVersion,
+  LearningSuggestionDecision,
+  LearningEvaluationRun,
+  LearningEvaluationResult,
 ];
 
 export const databaseMigrations = [
@@ -146,4 +157,5 @@ export const databaseMigrations = [
   WebsiteChat1760000000030,
   KnowledgeDocumentUploads1760000000031,
   SemanticKnowledgeIndex1760000000032,
+  LearningApprovalWorkflow1760000000033,
 ];

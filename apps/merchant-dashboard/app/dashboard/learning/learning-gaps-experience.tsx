@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KnowledgeGap } from '@/lib/api';
+import type { KnowledgeGap, LearningSuggestion } from '@/lib/api';
 import styles from './learning.module.css';
 
 type Props = {
@@ -72,6 +72,15 @@ export function LearningGapsExperience({
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<LearningSuggestion[]>([]);
+  const [editingGap, setEditingGap] = useState<KnowledgeGap | null>(null);
+  const [draftQuestion, setDraftQuestion] = useState('');
+  const [draftAnswer, setDraftAnswer] = useState('');
+  const [evaluationStatus, setEvaluationStatus] = useState<string | null>(null);
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
+  const [draftQuestions, setDraftQuestions] = useState<Record<string, string>>(
+    {},
+  );
   useEffect(() => {
     const onSessionExpired = () => router.push('/login?error=session');
     window.addEventListener('kleva-session-expired', onSessionExpired);
@@ -83,6 +92,163 @@ export function LearningGapsExperience({
     () => gaps.filter((gap) => filter === 'ALL' || gap.status === filter),
     [filter, gaps],
   );
+
+  useEffect(() => {
+    void request<{ items: LearningSuggestion[] }>(
+      `/api/learning/${businessId}/suggestions`,
+    )
+      .then((result) => setSuggestions(result.items ?? []))
+      .catch(() => undefined);
+  }, [businessId]);
+
+  async function createSuggestion() {
+    if (!editingGap) return;
+    setPendingId(editingGap.id);
+    setError(null);
+    try {
+      const created = await request<{ id: string; version: number }>(
+        `/api/learning/${businessId}/gaps/${editingGap.id}/suggestions`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            question: draftQuestion,
+            answer: draftAnswer,
+          }),
+        },
+      );
+      await request(
+        `/api/learning/${businessId}/suggestions/${created.id}/submit`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ expectedVersion: created.version }),
+        },
+      );
+      const result = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(result.items ?? []);
+      setEditingGap(null);
+      setDraftAnswer('');
+      setNotice(
+        'Suggestion submitted for review. It is not live until you approve it and indexing succeeds.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'Suggestion could not be saved.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function approveSuggestion(suggestion: LearningSuggestion) {
+    setPendingId(suggestion.id);
+    setError(null);
+    try {
+      await request(
+        `/api/learning/${businessId}/suggestions/${suggestion.id}/approve`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            expectedVersion: suggestion.version,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        },
+      );
+      const result = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(result.items ?? []);
+      setNotice(
+        'Approved. The FAQ will become live only after indexing and publication complete.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'Approval could not be completed.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function createAiDraft(gap: KnowledgeGap) {
+    setPendingId(gap.id);
+    setError(null);
+    try {
+      const draft = await request<LearningSuggestion>(
+        `/api/learning/${businessId}/gaps/${gap.id}/suggestions/ai-draft`,
+        { method: 'POST', body: '{}' },
+      );
+      const list = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(list.items ?? []);
+      setDraftAnswers((current) => ({
+        ...current,
+        [draft.id]: draft.proposed_answer,
+      }));
+      setDraftQuestions((current) => ({
+        ...current,
+        [draft.id]: draft.proposed_question,
+      }));
+      setNotice(
+        'AI created a draft from published knowledge. Review and edit it before submitting for approval.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'AI could not prepare a safe draft.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function submitAiDraft(suggestion: LearningSuggestion) {
+    setPendingId(suggestion.id);
+    setError(null);
+    try {
+      const edited = await request<{ version: number }>(
+        `/api/learning/${businessId}/suggestions/${suggestion.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            expectedVersion: suggestion.version,
+            question:
+              draftQuestions[suggestion.id] ?? suggestion.proposed_question,
+            answer: draftAnswers[suggestion.id] ?? suggestion.proposed_answer,
+          }),
+        },
+      );
+      await request(
+        `/api/learning/${businessId}/suggestions/${suggestion.id}/submit`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ expectedVersion: edited.version }),
+        },
+      );
+      const list = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(list.items ?? []);
+      setNotice(
+        'Reviewed suggestion submitted. It remains a draft for live knowledge until you approve it and indexing succeeds.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'Draft could not be submitted.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   async function reload(nextFilter: Filter) {
     setFilter(nextFilter);
@@ -178,6 +344,125 @@ export function LearningGapsExperience({
         </p>
       )}
 
+      <section aria-label="Learning suggestions">
+        <h2>Knowledge improvement suggestions</h2>
+        {suggestions.length === 0 ? (
+          <p>No suggestions yet. Create one from a reviewed question.</p>
+        ) : (
+          suggestions.map((suggestion) => (
+            <article className={styles.gap} key={suggestion.id}>
+              <span className={styles.status}>
+                {suggestion.status.replaceAll('_', ' ').toLowerCase()}
+              </span>
+              <h3>{suggestion.proposed_question}</h3>
+              <p>{suggestion.proposed_answer}</p>
+              {suggestion.status === 'PENDING_REVIEW' && (
+                <button
+                  type="button"
+                  disabled={pendingId === suggestion.id}
+                  onClick={() => void approveSuggestion(suggestion)}
+                >
+                  {pendingId === suggestion.id
+                    ? 'Approving…'
+                    : 'Approve and index'}
+                </button>
+              )}
+              {suggestion.status === 'INDEXING' && (
+                <p role="status">
+                  Approved; indexing in progress. This answer is not live yet.
+                </p>
+              )}
+              {suggestion.status === 'PUBLISHED' && (
+                <>
+                  <p role="status">Published and available to the assistant.</p>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() =>
+                      void request<{ items: Array<{ status: string }> }>(
+                        `/api/learning/${businessId}/suggestions/${suggestion.id}/evaluations`,
+                      )
+                        .then((result) =>
+                          setEvaluationStatus(
+                            result.items[0]?.status ?? 'PENDING',
+                          ),
+                        )
+                        .catch((failure) =>
+                          setError(
+                            failure instanceof Error
+                              ? failure.message
+                              : 'Evaluation could not be loaded.',
+                          ),
+                        )
+                    }
+                  >
+                    View retrieval evaluation
+                  </button>
+                </>
+              )}
+              {evaluationStatus && (
+                <p role="status">
+                  Retrieval replay status: {evaluationStatus}. This replay does
+                  not generate an answer or validate grounding/citations.
+                </p>
+              )}
+              {suggestion.status === 'INDEXING_FAILED' && (
+                <p role="alert">
+                  Indexing failed. Existing published knowledge remains active.
+                </p>
+              )}
+              {suggestion.status === 'DRAFT' &&
+                suggestion.origin === 'AI_ASSISTED' && (
+                  <div className={styles.suggestionDraft}>
+                    <label>
+                      Review question
+                      <input
+                        value={
+                          draftQuestions[suggestion.id] ??
+                          suggestion.proposed_question
+                        }
+                        onChange={(event) =>
+                          setDraftQuestions((current) => ({
+                            ...current,
+                            [suggestion.id]: event.target.value,
+                          }))
+                        }
+                        maxLength={500}
+                      />
+                    </label>
+                    <label>
+                      Review answer
+                      <textarea
+                        value={
+                          draftAnswers[suggestion.id] ??
+                          suggestion.proposed_answer
+                        }
+                        onChange={(event) =>
+                          setDraftAnswers((current) => ({
+                            ...current,
+                            [suggestion.id]: event.target.value,
+                          }))
+                        }
+                        maxLength={5000}
+                        rows={4}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={pendingId === suggestion.id}
+                      onClick={() => void submitAiDraft(suggestion)}
+                    >
+                      {pendingId === suggestion.id
+                        ? 'Submitting…'
+                        : 'Submit reviewed draft'}
+                    </button>
+                  </div>
+                )}
+            </article>
+          ))
+        )}
+      </section>
+
       {loading ? (
         <p className={styles.empty} role="status">
           Loading learning gaps…
@@ -224,6 +509,27 @@ export function LearningGapsExperience({
                 </p>
               )}
               <div className={styles.actions}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => {
+                    setEditingGap(gap);
+                    setDraftQuestion(gap.sample_question ?? gap.topic_label);
+                    setDraftAnswer('');
+                  }}
+                >
+                  Add answer suggestion
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={pendingId === gap.id}
+                  onClick={() => void createAiDraft(gap)}
+                >
+                  {pendingId === gap.id
+                    ? 'Drafting…'
+                    : 'Draft with published knowledge'}
+                </button>
                 <Link
                   className={styles.knowledgeLink}
                   href={`/dashboard/knowledge?businessId=${businessId}`}
@@ -262,6 +568,57 @@ export function LearningGapsExperience({
               </div>
             </article>
           ))}
+        </div>
+      )}
+      {editingGap && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="suggestion-title"
+          className={styles.suggestionDialog}
+        >
+          <h2 id="suggestion-title">Suggest a business answer</h2>
+          <p>
+            Use confirmed business information only. This stays a draft until
+            you approve it.
+          </p>
+          <label>
+            Customer question
+            <input
+              value={draftQuestion}
+              maxLength={500}
+              onChange={(event) => setDraftQuestion(event.target.value)}
+            />
+          </label>
+          <label>
+            Approved answer
+            <textarea
+              value={draftAnswer}
+              maxLength={5000}
+              rows={5}
+              onChange={(event) => setDraftAnswer(event.target.value)}
+            />
+          </label>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              disabled={
+                pendingId === editingGap.id ||
+                !draftQuestion.trim() ||
+                !draftAnswer.trim()
+              }
+              onClick={() => void createSuggestion()}
+            >
+              {pendingId === editingGap.id ? 'Saving…' : 'Submit for approval'}
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => setEditingGap(null)}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       <p className={styles.privacy}>

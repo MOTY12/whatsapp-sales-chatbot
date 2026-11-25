@@ -23,3 +23,20 @@ Body: `{ "status": "REVIEWED" }`, `{ "status": "DISMISSED" }`, or `{ "status": "
 Only persisted eligible AI outcomes are captured. Explicit customer-requested human help and operational failures are excluded. Each source AI run can create at most one occurrence per business. Email, phone, street address and URL text is redacted before persistence; credential/payment/secret-like messages retain no free text. Samples are limited to 280 characters and occurrences expire after 90 days. Cluster counts and latest-seen metadata are recalculated by the scheduled worker retention task.
 
 See [AI agent architecture](../kleva-omnichannel/ai-agent-architecture.md#learning-001-feedback-and-knowledge-gaps) and [migration strategy](../kleva-omnichannel/migration-strategy.md#learning-001-feedback-and-knowledge-gaps).
+
+## LEARNING-002 merchant approval routes (in progress)
+
+Mutations use the merchant session, CSRF validation, `knowledge.manage`, tenant context and no-store responses.
+
+- `GET /merchant/businesses/:businessId/learning/suggestions?status=PENDING_REVIEW`
+- `GET /merchant/businesses/:businessId/learning/suggestions/:suggestionId`
+- `POST /merchant/businesses/:businessId/learning/gaps/:clusterId/suggestions` with a merchant supplied `{ "question": "...", "answer": "..." }`.
+- `POST /merchant/businesses/:businessId/learning/gaps/:clusterId/suggestions/ai-draft` reuses the metered assistant playground against the redacted gap question and published tenant knowledge. It creates an `AI_ASSISTED` draft only when grounded playground evidence supports an answer. The merchant must review/edit and submit it.
+- `PATCH /merchant/businesses/:businessId/learning/suggestions/:suggestionId` with `expectedVersion`, question and answer.
+- `POST /merchant/businesses/:businessId/learning/suggestions/:suggestionId/submit` with `expectedVersion`.
+- `POST /merchant/businesses/:businessId/learning/suggestions/:suggestionId/approve` with `expectedVersion` and UUIDv4 `idempotencyKey`.
+- `POST /merchant/businesses/:businessId/learning/suggestions/:suggestionId/retry` after a failed index; the approved FAQ revision is reused.
+- `POST /merchant/businesses/:businessId/learning/suggestions/:suggestionId/dismiss` with an optional safe reason code.
+- `GET /merchant/businesses/:businessId/learning/suggestions/:suggestionId/evaluations`.
+
+Approval creates the immutable FAQ revision, generation and durable outbox intent in one transaction. The index worker permits that exact approved revision through a private staging guard. Existing published revision remains live until complete indexing is atomically activated and published. Evaluation compares prior-revision lexical overlap with post-publication retrieval evidence; it does not generate a model answer, so grounding/citation result fields remain null. Related FAQ conflict UX, evaluation worker tests, separate evaluation embedding attribution, and dashboard browser tests remain incomplete. LEARNING-002 is not verified.

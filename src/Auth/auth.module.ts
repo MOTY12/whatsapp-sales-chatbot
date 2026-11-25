@@ -33,7 +33,10 @@ import { UsageModule } from '../metering/usage.module';
 import { MerchantAssistantController } from './merchant-assistant.controller';
 import { MerchantAssistantService } from './merchant-assistant.service';
 import { AgentToolsModule } from '../agent-tools/agent-tools.module';
-import { MerchantLearningController } from './merchant-learning.controller';
+import {
+  MerchantLearningController,
+  MerchantLearningSuggestionsController,
+} from './merchant-learning.controller';
 import { MerchantLearningService } from './merchant-learning.service';
 import { MerchantWebsiteWidgetController } from './merchant-website-widget.controller';
 import { MerchantWebsiteWidgetService } from './merchant-website-widget.service';
@@ -65,6 +68,7 @@ import { KnowledgeIndexingService } from '../knowledge/knowledge-indexing-api.se
     MerchantPilotController,
     MerchantAssistantController,
     MerchantLearningController,
+    MerchantLearningSuggestionsController,
     MerchantWebsiteWidgetController,
     KnowledgeDocumentController,
   ],

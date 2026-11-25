@@ -191,7 +191,14 @@ export type KnowledgeDocument = {
 };
 export type KnowledgeIndexStatus = {
   generation_id: string;
-  status: 'PENDING' | 'INDEXING' | 'READY' | 'ACTIVE' | 'FAILED' | 'SUPERSEDED' | 'ARCHIVED';
+  status:
+    | 'PENDING'
+    | 'INDEXING'
+    | 'READY'
+    | 'ACTIVE'
+    | 'FAILED'
+    | 'SUPERSEDED'
+    | 'ARCHIVED';
   chunk_count: number;
   expected_chunks: number;
   indexed_at: string | null;
@@ -224,6 +231,21 @@ export type KnowledgeGap = {
   sample_question: string | null;
 };
 export type KnowledgeGapList = { items: KnowledgeGap[]; limit: number };
+export type LearningSuggestion = {
+  id: string;
+  gap_cluster_id: string;
+  status: string;
+  origin: string;
+  version: number;
+  proposed_question: string;
+  proposed_answer: string;
+  approved_faq_id: string | null;
+  approved_revision_id: string | null;
+  generation_id: string | null;
+  evaluation_status: string;
+  created_at: string;
+  updated_at: string;
+};
 export type MerchantProduct = {
   id: string;
   status: 'DRAFT' | 'PUBLISHED';
@@ -885,8 +907,16 @@ export const api = {
     request<KnowledgeIndexStatus[]>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/index-status`,
     ),
-  reindexKnowledgeDocument: (businessId: string, documentId: string, key: string) =>
-    request<{ generation_id: string; status: string; source_revision_id: string }>(
+  reindexKnowledgeDocument: (
+    businessId: string,
+    documentId: string,
+    key: string,
+  ) =>
+    request<{
+      generation_id: string;
+      status: string;
+      source_revision_id: string;
+    }>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/knowledge-documents/${encodeURIComponent(documentId)}/reindex`,
       { method: 'POST', headers: { 'Idempotency-Key': key } },
     ),
@@ -895,7 +925,11 @@ export const api = {
       `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/index-status`,
     ),
   reindexKnowledgeFaq: (businessId: string, faqId: string, key: string) =>
-    request<{ generation_id: string; status: string; source_revision_id: string }>(
+    request<{
+      generation_id: string;
+      status: string;
+      source_revision_id: string;
+    }>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/faqs/${encodeURIComponent(faqId)}/reindex`,
       { method: 'POST', headers: { 'Idempotency-Key': key } },
     ),
@@ -914,6 +948,61 @@ export const api = {
     request<{ id: string; status: KnowledgeGap['status']; updated_at: string }>(
       `/merchant/businesses/${encodeURIComponent(businessId)}/learning/gaps/${encodeURIComponent(gapId)}`,
       { method: 'PATCH', body: JSON.stringify({ status }) },
+    ),
+  learningSuggestions: (businessId: string, status?: string) => {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<{ items: LearningSuggestion[] }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/suggestions${query}`,
+    );
+  },
+  learningEvaluations: (businessId: string, id: string) =>
+    request<{ items: Array<Record<string, unknown>> }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/suggestions/${encodeURIComponent(id)}/evaluations`,
+    ),
+  createLearningSuggestion: (
+    businessId: string,
+    gapId: string,
+    body: { question: string; answer: string },
+  ) =>
+    request<{ id: string; status: string; version: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/gaps/${encodeURIComponent(gapId)}/suggestions`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  draftLearningSuggestion: (businessId: string, gapId: string) =>
+    request<{ id: string; status: string; version: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/gaps/${encodeURIComponent(gapId)}/suggestions/ai-draft`,
+      { method: 'POST', body: '{}' },
+    ),
+  updateLearningSuggestion: (
+    businessId: string,
+    id: string,
+    body: { expectedVersion: number; question: string; answer: string },
+  ) =>
+    request<{ id: string; status: string; version: number }>(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/suggestions/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+  submitLearningSuggestion: (
+    businessId: string,
+    id: string,
+    expectedVersion: number,
+  ) =>
+    request(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/suggestions/${encodeURIComponent(id)}/submit`,
+      { method: 'POST', body: JSON.stringify({ expectedVersion }) },
+    ),
+  approveLearningSuggestion: (
+    businessId: string,
+    id: string,
+    expectedVersion: number,
+    idempotencyKey: string,
+  ) =>
+    request(
+      `/merchant/businesses/${encodeURIComponent(businessId)}/learning/suggestions/${encodeURIComponent(id)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ expectedVersion, idempotencyKey }),
+      },
     ),
   products: (businessId: string, limit = 50, offset = 0) =>
     request<ProductPage>(

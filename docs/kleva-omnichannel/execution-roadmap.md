@@ -463,15 +463,15 @@ V1 mapping and adaptation. Use common retry, connection, cost, queue and kill-sw
 
 V1 mapping and adaptation. Use the same merchant-approved publishing workflow. Learning never changes live price, stock or payment facts.
 
-- **Objective.** Turn merchant-confirmed answers into traceable revisions. Missing.
-- **Reuse and likely changes.** Knowledge publication/worker, gap service and dashboard → src/learning/suggestions/ and merchant review screens.
+- **Objective.** Turn merchant-confirmed answers into traceable revisions. Core manual/AI-assisted draft, explicit approval and staged FAQ publication is implemented; the milestone remains in progress pending evaluation and release evidence.
+- **Reuse and likely changes.** Existing knowledge publication/index worker, gap service, MerchantAccess and dashboard learning experience.
 - **Implementation.** Draft suggestions, require edited or confirmed answer, audit approve/dismiss, version guard and enqueue revision indexing in one transaction. Auto-publish only the explicitly approved revision after successful indexing and compare-and-set on source/version. Evaluate redacted/synthetic examples on the old and new revision.
-- **Database and API.** **DB.** LearningSuggestion with unique active cluster suggestion and approved revision link. **API.** List, edit and decision routes.
+- **Database and API.** Additive suggestion, immutable version/decision and evaluation run/result tables; tenant-scoped list/detail/create/edit/submit/approve/dismiss/retry routes.
 - **Dependencies.** LEARNING-001, KNOWLEDGE-003. **External services.** Local fixtures or the services already provisioned by dependencies.
 - **Security.** No customer input becomes authoritative without explicit review and publisher provenance.
-- **Acceptance and required tests.** Replay approval creates one revision, competing publish preserves new pointer, failed indexing leaves previous knowledge active.
+- **Acceptance and required tests.** Disposable migration rollback/reapply, staged approval exclusion, failure preservation, retry and atomic publish tests pass. Competing publication, AI/evaluation worker, quota and dashboard browser acceptance remain open.
 - **Verify.** npm run test:integration -- learning-approval and npm --prefix apps/dashboard test -- learning.
-- **Done.** Reviewed improvement is attributable, indexed and measurable from dashboard.
+- **Done.** Not complete. Keep LEARNING-002 IN_PROGRESS until all listed acceptance tests and release checks pass.
 
 ### PILOT-001 · Prepare paid pilot and manual collection · Small
 

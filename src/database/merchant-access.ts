@@ -140,6 +140,14 @@ export const assistantFunctions = [
 export const learningFunctions = [
   'kleva_learning_gaps(integer,text)',
   'kleva_learning_gap_set_status(uuid,text)',
+  'kleva_learning_suggestions_list(text)',
+  'kleva_learning_suggestion_detail(uuid)',
+  'kleva_learning_suggestion_create(uuid,uuid,text,text,uuid,uuid,jsonb,text)',
+  'kleva_learning_suggestion_edit(uuid,integer,text,text,uuid,uuid)',
+  'kleva_learning_suggestion_submit(uuid,integer)',
+  'kleva_learning_suggestion_approve(uuid,integer,uuid,text,text,integer,text)',
+  'kleva_learning_suggestion_dismiss(uuid,text)',
+  'kleva_learning_suggestion_retry(uuid,integer,uuid,text,text,integer,text)',
 ];
 export const websiteWidgetFunctions = [
   'kleva_website_widget_list()',
