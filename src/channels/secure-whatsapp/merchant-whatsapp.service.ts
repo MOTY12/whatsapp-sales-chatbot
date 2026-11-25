@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
-import { metaConfig } from '../../config/env';
+import { metaConfig, whatsappSignupRuntimeConfig } from '../../config/env';
 import { errorCode } from '../../config/logging';
 import { MerchantAccess } from '../../Auth/merchant-access.service';
 import type { MerchantPrincipal } from '../../Auth/auth.service';
@@ -28,6 +28,8 @@ export interface Status {
     'not_connected' | 'connecting' | 'action_required' | 'failed' | 'connected';
   signupFailure?: string | null;
   signupExpiresAt?: string | null;
+  provisioningStage?: string | null;
+  signupVersion?: number | null;
 }
 
 type SignupInput = {
@@ -135,6 +137,7 @@ function isMetaId(value: unknown): value is string {
 @Injectable()
 export class MerchantWhatsAppService {
   private readonly platformAsset = metaConfig().phoneNumberId;
+  private readonly signupConfig = whatsappSignupRuntimeConfig();
   private readonly logger = new Logger(MerchantWhatsAppService.name);
 
   constructor(
@@ -155,16 +158,17 @@ export class MerchantWhatsAppService {
             status: string;
             failure_class: string | null;
             expires_at: string;
+            processing_stage: string;
+            attempt_version: number;
           }[]
-        >(manager, 'SELECT * FROM public.kleva_whatsapp_signup_status()');
+        >(manager, 'SELECT * FROM public.kleva_whatsapp_signup_status_v2()');
         const connectionState =
           connection?.status === 'active'
             ? 'connected'
-            : connection?.status === 'inactive'
-              ? 'action_required'
-              : signup?.status === 'CONNECTING' ||
-                  signup?.status === 'PROCESSING'
-                ? 'connecting'
+            : signup?.status === 'CONNECTING' || signup?.status === 'PROCESSING'
+              ? 'connecting'
+              : connection?.status === 'inactive'
+                ? 'action_required'
                 : signup?.status === 'ACTION_REQUIRED'
                   ? 'action_required'
                   : signup?.status === 'FAILED'
@@ -175,6 +179,8 @@ export class MerchantWhatsAppService {
           connectionState,
           signupFailure: signup?.failure_class ?? null,
           signupExpiresAt: signup?.expires_at ?? null,
+          provisioningStage: signup?.processing_stage ?? null,
+          signupVersion: signup?.attempt_version ?? null,
         };
       },
     );
@@ -191,8 +197,8 @@ export class MerchantWhatsAppService {
       (manager) =>
         query<{ id: string }[]>(
           manager,
-          "SELECT public.kleva_whatsapp_signup_start($1, now() + interval '15 minutes') AS id",
-          [attemptId],
+          "SELECT public.kleva_whatsapp_signup_start_v2($1, now() + ($2 * interval '1 second')) AS id",
+          [attemptId, this.signupConfig.attemptTtlSeconds],
         ),
     );
     if (!created?.id)
@@ -245,7 +251,7 @@ export class MerchantWhatsAppService {
       async (manager) => {
         const [claimed] = await query<{ ok: boolean }[]>(
           manager,
-          'SELECT public.kleva_whatsapp_signup_claim($1) AS ok',
+          'SELECT public.kleva_whatsapp_signup_claim_v2($1) AS ok',
           [value.attemptId],
         );
         if (!claimed?.ok)
@@ -270,6 +276,7 @@ export class MerchantWhatsAppService {
         return {
           current,
           connectionId: current?.id ?? candidate?.id ?? randomUUID(),
+          expectedRevision: current?.revision ?? null,
         };
       },
     );
@@ -281,73 +288,55 @@ export class MerchantWhatsAppService {
           'This phone number is reserved for platform onboarding.',
         );
       const exchanged = await this.meta.exchangeCode(value.code);
-      stage = 'WEBHOOK_SUBSCRIPTION_FAILED';
-      await this.meta.subscribeToWebhooks(exchanged.accessToken, value.wabaId);
-      stage = 'PHONE_REGISTRATION_FAILED';
-      await this.meta.registerPhoneNumber(
-        exchanged.accessToken,
-        value.phoneNumberId,
-        value.registrationPin,
-      );
-      stage = 'ASSET_VERIFICATION_FAILED';
-      const verified = await this.meta.verify(
-        exchanged.accessToken,
-        value.wabaId,
-        value.phoneNumberId,
-      );
-      if (!verified.displayPhoneNumber)
-        throw new BadRequestException(
-          'Meta did not return a verified display phone number.',
-        );
-      const expirationTimes = [exchanged.expiresAt, verified.expiresAt]
-        .filter((value): value is string => value !== null)
-        .map((value) => Date.parse(value));
-      const expiresAt = expirationTimes.length
-        ? new Date(Math.min(...expirationTimes)).toISOString()
-        : null;
-      if (expiresAt && Date.parse(expiresAt) <= Date.now())
-        throw new BadRequestException(
-          'Meta returned an expired WhatsApp authorization.',
-        );
-      const envelope = this.cipher.encrypt(
+      const envelope = await this.cipher.encrypt(
         exchanged.accessToken,
         businessId.toLowerCase(),
         snapshot.connectionId,
       );
+      const pinEnvelope = await this.cipher.encrypt(
+        value.registrationPin,
+        businessId.toLowerCase(),
+        snapshot.connectionId,
+      );
+      const operationId = randomUUID();
       stage = 'CONNECTION_PERSIST_FAILED';
-      const saved = await this.access.withBusiness(
+      const staged = await this.access.withBusiness(
         actor,
         businessId,
         'whatsapp.manage',
         async (manager) => {
-          await this.writeEmbedded(manager, [
-            snapshot.current ? 'rotate' : 'connect',
-            snapshot.current?.revision ?? null,
-            snapshot.connectionId,
-            value.phoneNumberId,
-            value.wabaId,
-            verified.displayName,
-            verified.displayPhoneNumber,
-            JSON.stringify(envelope),
-            expiresAt,
-          ]);
-          const [finished] = await query<{ ok: boolean }[]>(
+          const [result] = await query<{ ok: boolean }[]>(
             manager,
-            'SELECT public.kleva_whatsapp_signup_finish($1) AS ok',
-            [value.attemptId],
+            'SELECT public.kleva_whatsapp_stage_provisioning($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS ok',
+            [
+              value.attemptId,
+              operationId,
+              snapshot.connectionId,
+              value.wabaId,
+              value.phoneNumberId,
+              JSON.stringify(envelope),
+              JSON.stringify(pinEnvelope),
+              exchanged.expiresAt,
+              snapshot.expectedRevision,
+              Boolean(snapshot.current),
+            ],
           );
-          if (!finished?.ok)
+          if (!result?.ok)
             throw new ConflictException(
-              'WhatsApp signup attempt is no longer available.',
+              'WhatsApp signup attempt changed. Start a new connection attempt.',
             );
-          return this.read(manager);
+          return true;
         },
       );
-      if (!saved)
-        throw new ConflictException(
-          'Meta verified the account but the connection could not be saved.',
-        );
-      return saved;
+      if (!staged)
+        throw new ConflictException('WhatsApp connection could not be queued.');
+      return {
+        ...(snapshot.current ?? { status: 'pending' as const }),
+        connectionState: 'connecting' as const,
+        signupFailure: null,
+        signupExpiresAt: null,
+        provisioningStage: 'CREDENTIAL_STAGED',
+      };
     } catch (error) {
       const failureClass = safeFailureClasses.includes(
         stage as (typeof safeFailureClasses)[number],
@@ -428,7 +417,7 @@ export class MerchantWhatsAppService {
       wabaId,
       phoneId,
     );
-    const envelope = this.cipher.encrypt(
+    const envelope = await this.cipher.encrypt(
       values.accessToken,
       businessId.toLowerCase(),
       snapshot.connectionId,

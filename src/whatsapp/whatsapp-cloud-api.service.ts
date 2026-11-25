@@ -132,7 +132,7 @@ export class WhatsAppCloudApiService implements WhatsAppCloudApiClient {
           throw new Error('Secure WhatsApp connection is unavailable.');
         }
         return {
-          accessToken: this.cipher.decrypt(
+          accessToken: await this.cipher.decrypt(
             secure.envelope,
             businessId,
             secure.id,

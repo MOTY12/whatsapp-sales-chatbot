@@ -27,6 +27,7 @@ export const merchantPolicyTables = [
   'agent_tool_handoff_events',
   'ai_response_runs',
   'whatsapp_signup_attempts',
+  'whatsapp_pending_credentials',
   'assistant_configurations',
   'assistant_configuration_audit',
   'ai_playground_rate_limits',
@@ -79,6 +80,10 @@ export const embeddedWhatsAppFunctions = [
   'kleva_whatsapp_signup_update(uuid,text,text)',
   'kleva_whatsapp_signup_finish(uuid)',
   'kleva_whatsapp_signup_status()',
+  'kleva_whatsapp_signup_start_v2(uuid,timestamptz)',
+  'kleva_whatsapp_signup_claim_v2(uuid)',
+  'kleva_whatsapp_signup_status_v2()',
+  'kleva_whatsapp_stage_provisioning(uuid,uuid,uuid,text,text,jsonb,jsonb,timestamptz,integer,boolean)',
   'kleva_write_whatsapp_v2(text,integer,uuid,text,text,text,text,jsonb,timestamptz)',
 ];
 export const inboxFunctions = [

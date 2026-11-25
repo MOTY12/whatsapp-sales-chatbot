@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import axios from 'axios';
-import { metaConfig } from '../../config/env';
+import { metaConfig, whatsappSignupRuntimeConfig } from '../../config/env';
 
 interface DebugData {
   app_id?: string;
@@ -35,6 +35,7 @@ export interface ExchangedBusinessToken {
 @Injectable()
 export class MetaWhatsAppVerifier {
   private readonly config = metaConfig();
+  private readonly signupConfig = whatsappSignupRuntimeConfig();
   private readonly appId = process.env.META_APP_ID?.trim();
   private readonly appSecret = process.env.META_APP_SECRET?.trim();
   private readonly configId = process.env.WHATSAPP_BUSINESS_CONFIG_ID?.trim();
@@ -78,7 +79,7 @@ export class MetaWhatsAppVerifier {
             code,
           },
           maxRedirects: 0,
-          timeout: 5000,
+          timeout: this.signupConfig.codeExchangeTimeoutMs,
           maxContentLength: 64 * 1024,
         },
       );
@@ -191,6 +192,24 @@ export class MetaWhatsAppVerifier {
     wabaId: string,
     phoneId: string,
   ): Promise<VerifiedWhatsAppAsset> {
+    return this.verifyAssets(token, wabaId, phoneId, true);
+  }
+
+  /** Read-only authorization check used before subscription or registration calls. */
+  async verifyAuthorizedAssets(
+    token: string,
+    wabaId: string,
+    phoneId: string,
+  ): Promise<VerifiedWhatsAppAsset> {
+    return this.verifyAssets(token, wabaId, phoneId, false);
+  }
+
+  private async verifyAssets(
+    token: string,
+    wabaId: string,
+    phoneId: string,
+    requireSubscription: boolean,
+  ): Promise<VerifiedWhatsAppAsset> {
     const { appSecret, graphBaseUrl } = this.config;
     const appId = this.appId;
     if (
@@ -250,18 +269,19 @@ export class MetaWhatsAppVerifier {
           fields: 'id,verified_name,display_phone_number',
           limit: '100',
         }),
-        this.get<{ data?: { whatsapp_business_api_data?: { id: string } }[] }>(
-          '/' + wabaId + '/subscribed_apps',
-          token,
-          { limit: '100' },
-        ),
+        requireSubscription
+          ? this.get<{
+              data?: { whatsapp_business_api_data?: { id: string } }[];
+            }>('/' + wabaId + '/subscribed_apps', token, { limit: '100' })
+          : Promise.resolve({ data: [] }),
       ]);
       const phone = phones.data?.find(({ id }) => id === phoneId);
       if (
         !phone ||
-        !subscriptions.data?.some(
-          (app) => app.whatsapp_business_api_data?.id === appId,
-        )
+        (requireSubscription &&
+          !subscriptions.data?.some(
+            (app) => app.whatsapp_business_api_data?.id === appId,
+          ))
       ) {
         throw new BadRequestException(
           'Meta did not verify the selected phone and app subscription.',

@@ -3220,17 +3220,27 @@ describe('merchant OIDC and tenant isolation', () => {
           signupFailure: 'META_CODE_EXCHANGE_FAILED',
         });
       });
-    const started = await request(server)
-      .post(`${path}/embedded-signup/start`)
-      .set(headers(owner))
-      .send({})
-      .expect(201);
-    const startedBody = started.body as {
+    const concurrentStarts = await Promise.all([
+      request(server)
+        .post(`${path}/embedded-signup/start`)
+        .set(headers(owner))
+        .send({})
+        .expect(201),
+      request(server)
+        .post(`${path}/embedded-signup/start`)
+        .set(headers(owner))
+        .send({})
+        .expect(201),
+    ]);
+    const startedBody = concurrentStarts[0].body as {
       attemptId: string;
       appId: string;
       configId: string;
       apiVersion: string;
     };
+    expect((concurrentStarts[1].body as { attemptId: string }).attemptId).toBe(
+      startedBody.attemptId,
+    );
     expect(startedBody).toMatchObject({
       attemptId: expect.any(String),
       appId: '123',
@@ -3263,18 +3273,33 @@ describe('merchant OIDC and tenant isolation', () => {
       .send(completionBody)
       .expect(201);
     expect(completion.body).toMatchObject({
-      wabaId: '456',
-      phoneNumberId: '789',
-      displayPhoneNumber: '+1 555 010 0100',
-      status: 'active',
+      connectionState: 'connecting',
+      provisioningStage: 'CREDENTIAL_STAGED',
+      status: 'inactive',
     });
     expect(completion.text).not.toContain('embedded-fixture-token');
     expect(completion.text).not.toContain('123456');
-    const [stored] = await admin.query<{ envelope: unknown }[]>(
-      'SELECT envelope FROM public.whatsapp_credentials WHERE business_id = $1',
+    const [stored] = await admin.query<
+      { credential_envelope: unknown; registration_pin_envelope: unknown }[]
+    >(
+      'SELECT credential_envelope,registration_pin_envelope FROM public.whatsapp_pending_credentials WHERE business_id = $1',
       [first.business.id],
     );
-    expect(JSON.stringify(stored.envelope)).not.toContain(
+    expect(JSON.stringify(stored.credential_envelope)).not.toContain(
+      'embedded-fixture-token',
+    );
+    expect(JSON.stringify(stored.registration_pin_envelope)).not.toContain(
+      '123456',
+    );
+    const [queued] = await admin.query<
+      { operation: string; metadata: Record<string, string> }[]
+    >(
+      `SELECT operation,metadata FROM public.outbox_operations WHERE operation='whatsapp.connection.provision' AND "businessId"=$1`,
+      [first.business.id],
+    );
+    expect(queued.operation).toBe('whatsapp.connection.provision');
+    expect(queued.metadata).toEqual({ attemptId: startedBody.attemptId });
+    expect(JSON.stringify(queued.metadata)).not.toContain(
       'embedded-fixture-token',
     );
     await request(server)
@@ -3288,10 +3313,9 @@ describe('merchant OIDC and tenant isolation', () => {
       .expect(200)
       .expect(({ body }) =>
         expect(body).toMatchObject({
-          connectionState: 'connected',
-          displayPhoneNumber: '+1 555 010 0100',
+          connectionState: 'connecting',
+          provisioningStage: 'CREDENTIAL_STAGED',
         }),
       );
-    await request(server).delete(path).set(headers(owner)).expect(200);
   });
 });

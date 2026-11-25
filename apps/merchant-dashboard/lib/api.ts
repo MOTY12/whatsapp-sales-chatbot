@@ -72,6 +72,8 @@ export type WhatsAppStatus = {
   wabaId?: string;
   signupFailure?: string | null;
   signupExpiresAt?: string | null;
+  provisioningStage?: string | null;
+  signupVersion?: number | null;
 };
 export type WebsiteWidget = {
   id: string;
@@ -787,6 +789,10 @@ export const api = {
     request<WhatsAppStatus>(
       `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
       { method: 'DELETE' },
+    ),
+  getWhatsAppStatus: (id: string) =>
+    request<WhatsAppStatus>(
+      `/merchant/businesses/${encodeURIComponent(id)}/whatsapp`,
     ),
   startWhatsAppSignup: (id: string) =>
     request<EmbeddedWhatsAppSignup>(

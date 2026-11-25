@@ -169,13 +169,13 @@ V1 mapping and adaptation. Business and team workflows serve all channels. Prese
 
 V1 mapping and adaptation. Implement verified Embedded Signup against ChannelConnection for provider whatsapp. Keep legacy read compatibility during encrypted cutover.
 
-- **Objective.** Support tenant-safe Meta connection, recovery and disconnect. Current signed callback chooses first assets and persists plaintext.
+- **Objective.** Support tenant-safe Meta connection, recovery and disconnect. The old signed callback is now retired with HTTP 410 rather than allowed to select assets or persist credentials.
 - **Reuse and likely changes.** src/meta-embedded-signup/, src/whatsapp/whatsapp-cloud-api.service.ts, src/database/entities/business.entity.ts → connection lifecycle, encryption adapter and migration.
-- **Implementation.** Bind returned WABA/phone to expiring attempt, active owner/session and live provider permissions. Exchange code synchronously with deadline and store encrypted pending credential. Worker verifies applicable registration/subscription by attempt ID. Preserve prior connection on failed reconnect and keep business status separate.
+- **Implementation.** Bind returned WABA/phone to owner/session-bound attempt, active membership and provider permissions. Exchange code synchronously under a bounded timeout and atomically store encrypted pending credential plus the PostgreSQL outbox operation. A lease-fenced worker verifies exact assets and active owner/session before webhook subscription/phone registration, checkpoints progress, and atomically activates only after final verification. Dashboard polls persisted status; preserve the old active credential until reconnect cutover. Local AES-GCM and opt-in AWS KMS envelope encryption are supported, including old local-envelope reads during a planned key migration.
 - **Database and API.** Extend the ChannelConnection schema from CHANNEL-001 with encrypted credential and attempt fields. Preserve the signup, status, completion and disconnect API requirements.
 - **Dependencies.** FOUNDATION-003, FOUNDATION-004, TENANT-002, TENANT-003, CHANNEL-001. **External services.** Meta approved test assets and KMS. Start approval lead time early.
 - **Security.** No tokens or codes in queues, logs or merchant responses.
-- **Acceptance and required tests.** Wrong tenant/asset, replay, expiry, partial Meta failure and disconnect covered.
+- **Acceptance and required tests.** Migration reapply/rollback on an empty disposable database, provider ordering, stale lease rejection, no secrets in queue metadata, wrong tenant/asset, replay, expiry, partial Meta failure and disconnect. Local fixture KMS tests and tenant worker-grant checks pass. Real AWS key/IAM validation, legacy dry run/cutover, uncertain Meta registration reconciliation, provider lifecycle integration tests and live provider proof remain required.
 - **Verify.** npm test -- meta-embedded-signup and npm run test:integration -- connections.
 - **Done.** Ciphertext cutover rehearsed and legacy callback uses the verified lifecycle. Live delivery remains a QA-002 gate.
 

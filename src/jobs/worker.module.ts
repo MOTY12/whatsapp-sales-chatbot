@@ -46,6 +46,10 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { KnowledgeDocumentIngestionService } from '../knowledge/knowledge-document-ingestion.service';
 import { KnowledgeIndexingWorkerService } from '../knowledge/knowledge-indexing.service';
 import { LearningEvaluationWorkerService } from '../learning/learning-evaluation-worker.service';
+import { WhatsAppProvisioningService } from '../channels/secure-whatsapp/whatsapp-provisioning.service';
+import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
+import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier';
+import { DatabaseModule } from '../database/database.module';
 
 export const OUTBOX_HANDLERS = Symbol('OUTBOX_HANDLERS');
 
@@ -180,17 +184,21 @@ export class WorkerRuntime
 @Module({
   imports: [
     OutboxModule,
+    DatabaseModule,
     UsageModule,
     WhatsAppModule,
     AssistantModule,
     EmailModule,
     WebsiteChatModule,
     KnowledgeModule,
+    CredentialCipherModule,
   ],
   providers: [
     WorkerRuntime,
     WhatsAppResponseIntentDispatcher,
     KnowledgeDocumentIngestionService,
+    WhatsAppProvisioningService,
+    MetaWhatsAppVerifier,
     {
       provide: OUTBOX_HANDLERS,
       useFactory: (
@@ -202,9 +210,14 @@ export class WorkerRuntime
         knowledgeDocuments: KnowledgeDocumentIngestionService,
         knowledgeIndexing: KnowledgeIndexingWorkerService,
         learningEvaluation: LearningEvaluationWorkerService,
+        whatsappProvisioning: WhatsAppProvisioningService,
       ) =>
         new Map<string, OutboxHandler>([
           [whatsappReceiptOperation, handoffWhatsAppReceipt],
+          [
+            'whatsapp.connection.provision',
+            { execute: (operation) => whatsappProvisioning.execute(operation) },
+          ],
           [
             'merchant.email',
             { execute: (operation) => email.execute(operation) },
@@ -257,6 +270,7 @@ export class WorkerRuntime
         KnowledgeDocumentIngestionService,
         KnowledgeIndexingWorkerService,
         LearningEvaluationWorkerService,
+        WhatsAppProvisioningService,
       ],
     },
   ],

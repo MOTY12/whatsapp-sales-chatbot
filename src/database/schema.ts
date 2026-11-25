@@ -84,6 +84,7 @@ import { MerchantBusinessInvitation } from './entities/merchant-business-invitat
 import { MerchantTeamAudit } from './entities/merchant-team-audit.entity';
 import { MerchantTeamInvitationAttempt } from './entities/merchant-team-invitation-attempt.entity';
 import { MerchantTeamManagement1760000000034 } from './migrations/1760000000034-MerchantTeamManagement';
+import { DurableWhatsAppProvisioning1760000000035 } from './migrations/1760000000035-DurableWhatsAppProvisioning';
 
 export const databaseEntities = [
   Business,
@@ -166,4 +167,5 @@ export const databaseMigrations = [
   SemanticKnowledgeIndex1760000000032,
   LearningApprovalWorkflow1760000000033,
   MerchantTeamManagement1760000000034,
+  DurableWhatsAppProvisioning1760000000035,
 ];

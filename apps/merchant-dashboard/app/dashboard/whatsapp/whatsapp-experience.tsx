@@ -259,9 +259,11 @@ export function WhatsAppExperience({
           registrationPin: pinRef.current,
         },
       );
-      setConnection({ ...updated, connectionState: 'connected' });
+      setConnection(updated);
       setReconnectOpen(false);
-      setNotice('WhatsApp Business is connected and verified.');
+      setNotice(
+        'Authorization received. Kleva is verifying and configuring your WhatsApp connection.',
+      );
       router.refresh();
     } catch (cause) {
       setError(
@@ -280,6 +282,36 @@ export function WhatsAppExperience({
       setPending(false);
     }
   }
+
+  useEffect(() => {
+    if (state !== 'connecting') return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(path, { cache: 'no-store' });
+        if (!response.ok) return;
+        const updated = (await response.json()) as WhatsAppStatus;
+        setConnection(updated);
+        if (updated.connectionState === 'connected') {
+          setNotice('WhatsApp Business is connected and verified.');
+          window.clearInterval(timer);
+          router.refresh();
+        } else if (
+          updated.connectionState === 'failed' ||
+          updated.connectionState === 'action_required'
+        ) {
+          setError(
+            updated.signupFailure
+              ? `WhatsApp setup needs attention (${updated.signupFailure.toLowerCase().replaceAll('_', ' ')}). Start a new connection attempt to retry.`
+              : 'WhatsApp setup needs attention. Review the provider requirements and try again.',
+          );
+          window.clearInterval(timer);
+        }
+      } catch {
+        // Keep polling; transient dashboard requests do not alter provider state.
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [path, router, state]);
 
   async function connect() {
     setError(null);
@@ -492,8 +524,13 @@ export function WhatsAppExperience({
           <div className={styles.body}>
             {state === 'connecting' && (
               <p className={styles.info}>
-                A setup attempt is already active. Continue it here or return to
-                this page within 15 minutes to resume.
+                {connection.provisioningStage === 'CREDENTIAL_STAGED'
+                  ? 'Authorization received. Verifying the selected account and phone number with Meta.'
+                  : connection.provisioningStage === 'REGISTERING_PHONE'
+                    ? 'Meta has accepted webhook subscription. Registering the business phone number.'
+                    : connection.provisioningStage === 'VERIFYING_READINESS'
+                      ? 'Checking that the connection is ready to receive messages.'
+                      : 'WhatsApp setup is being verified and configured. This page will update when it finishes.'}
               </p>
             )}
             {state === 'action_required' && (

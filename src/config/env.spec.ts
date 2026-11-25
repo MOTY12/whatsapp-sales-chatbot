@@ -9,6 +9,7 @@ import {
   redisConfig,
   usageConfig,
   whatsappCredentialConfig,
+  whatsappSignupRuntimeConfig,
 } from './env';
 
 const database = {
@@ -319,6 +320,37 @@ describe('environment configuration', () => {
     expect(() => whatsappCredentialConfig({ NODE_ENV: 'production' })).toThrow(
       'WHATSAPP_CREDENTIAL_KEY_ID',
     );
+    expect(() =>
+      whatsappCredentialConfig({
+        WHATSAPP_KEY_PROVIDER: 'aws_kms',
+      }),
+    ).toThrow('WHATSAPP_KMS_KEY_ARN');
+    expect(
+      whatsappCredentialConfig({
+        WHATSAPP_KEY_PROVIDER: 'aws_kms',
+        WHATSAPP_KMS_KEY_ARN:
+          'arn:aws:kms:eu-west-1:123456789012:key/11111111-1111-4111-8111-111111111111',
+        AWS_REGION: 'eu-west-1',
+      }),
+    ).toMatchObject({ provider: 'aws_kms', region: 'eu-west-1' });
+  });
+
+  it('bounds signup attempt lifetime and authorization-code exchange deadlines', () => {
+    expect(whatsappSignupRuntimeConfig({})).toEqual({
+      attemptTtlSeconds: 900,
+      codeExchangeTimeoutMs: 5000,
+    });
+    expect(
+      whatsappSignupRuntimeConfig({
+        WHATSAPP_SIGNUP_ATTEMPT_TTL_SECONDS: '600',
+        WHATSAPP_CODE_EXCHANGE_TIMEOUT_MS: '7000',
+      }),
+    ).toEqual({ attemptTtlSeconds: 600, codeExchangeTimeoutMs: 7000 });
+    expect(() =>
+      whatsappSignupRuntimeConfig({
+        WHATSAPP_CODE_EXCHANGE_TIMEOUT_MS: '30000',
+      }),
+    ).toThrow('WHATSAPP_CODE_EXCHANGE_TIMEOUT_MS');
   });
 
   it('requires an authenticated Redis connection in production', () => {

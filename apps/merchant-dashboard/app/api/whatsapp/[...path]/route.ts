@@ -104,6 +104,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 }
 
+export async function GET(_request: NextRequest, context: RouteContext) {
+  const { path } = await context.params;
+  if (path.length !== 1 || !validPath(path))
+    return NextResponse.json(
+      { error: { code: 'not_found', message: 'Not found.' } },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } },
+    );
+  try {
+    return NextResponse.json(await api.getWhatsAppStatus(path[0]), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function DELETE(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
   if (path.length !== 1 || !validPath(path))

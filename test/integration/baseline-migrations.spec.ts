@@ -81,6 +81,7 @@ const expectedTables = [
   'website_widgets',
   'whatsapp_credentials',
   'whatsapp_outbound_messages',
+  'whatsapp_pending_credentials',
   'whatsapp_response_intents',
   'whatsapp_signup_attempts',
   'whatsapp_unmatched_statuses',
@@ -116,6 +117,20 @@ describe('PostgreSQL migration baseline', () => {
       expectedMigrations,
     );
     expect(await tableNames()).toEqual(expectedTables);
+    const runtime = await database.runtime();
+    const workerFunctions = await runtime.query<
+      { name: string; allowed: boolean }[]
+    >(`
+      SELECT p.proname AS name, has_function_privilege(current_user, p.oid, 'EXECUTE') AS allowed
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.proname IN (
+        'kleva_whatsapp_provision_read','kleva_whatsapp_provision_checkpoint',
+        'kleva_whatsapp_provision_finish','kleva_whatsapp_provision_fail'
+      )
+      ORDER BY p.proname
+    `);
+    expect(workerFunctions).toHaveLength(4);
+    expect(workerFunctions.every(({ allowed }) => allowed)).toBe(true);
 
     const foreignKeys = await source.query<{ constraint_name: string }[]>(`
       SELECT constraint_name FROM information_schema.table_constraints
@@ -256,6 +271,10 @@ describe('PostgreSQL migration baseline', () => {
         'merchant_password_credentials_account_id_fkey',
         'whatsapp_signup_attempts_business_id_fkey',
         'whatsapp_signup_attempts_account_id_fkey',
+        'fk_whatsapp_pending_attempt_tenant',
+        'fk_whatsapp_pending_operation_tenant',
+        'whatsapp_pending_credentials_business_id_fkey',
+        'whatsapp_pending_credentials_operation_id_fkey',
         'FK_merchant_product_business',
         'FK_merchant_product_created_by',
         'FK_merchant_product_updated_by',

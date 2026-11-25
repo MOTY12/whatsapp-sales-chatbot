@@ -189,6 +189,37 @@ export function metaConfig(env = process.env) {
   };
 }
 
+export function whatsappSignupRuntimeConfig(env = process.env) {
+  const boundedInteger = (
+    name: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ) => {
+    const raw = env[name]?.trim();
+    if (!raw) return fallback;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+    }
+    return value;
+  };
+  return {
+    attemptTtlSeconds: boundedInteger(
+      'WHATSAPP_SIGNUP_ATTEMPT_TTL_SECONDS',
+      900,
+      60,
+      1200,
+    ),
+    codeExchangeTimeoutMs: boundedInteger(
+      'WHATSAPP_CODE_EXCHANGE_TIMEOUT_MS',
+      5000,
+      1000,
+      10000,
+    ),
+  };
+}
+
 export function signupConfig(env = process.env) {
   const production = applicationEnvironment(env) === 'production';
   const values = required(
@@ -903,17 +934,38 @@ export function merchantTeamConfig(env = process.env) {
 }
 
 export function whatsappCredentialConfig(env = process.env) {
+  const provider = env.WHATSAPP_KEY_PROVIDER?.trim() || 'local';
+  if (provider !== 'local' && provider !== 'aws_kms') {
+    throw new Error('WHATSAPP_KEY_PROVIDER must be local or aws_kms.');
+  }
+  const keyArn = env.WHATSAPP_KMS_KEY_ARN?.trim() ?? '';
+  const region = env.AWS_REGION?.trim() ?? '';
+  if (
+    provider === 'aws_kms' &&
+    (!/^arn:aws[a-z-]*:kms:[a-z0-9-]+:\d{12}:(?:key|alias)\/[A-Za-z0-9/_-]+$/.test(
+      keyArn,
+    ) ||
+      !region ||
+      keyArn.split(':')[3] !== region)
+  ) {
+    throw new Error(
+      'WHATSAPP_KMS_KEY_ARN and matching AWS_REGION are required for aws_kms.',
+    );
+  }
   const current = env.WHATSAPP_CREDENTIAL_KEY_ID?.trim() ?? '';
   const raw = env.WHATSAPP_CREDENTIAL_KEYS?.trim();
   const keys = new Map<string, Buffer>();
-  if (!current && !raw) {
+  if (provider === 'local' && !current && !raw) {
     if (applicationEnvironment(env) === 'production') {
       throw new Error(
         'WHATSAPP_CREDENTIAL_KEY_ID and WHATSAPP_CREDENTIAL_KEYS are required in production.',
       );
     }
-    return { current, keys };
+    return { provider, current, keys, keyArn, region };
   }
+
+  if (provider === 'aws_kms' && !current && !raw)
+    return { provider, current: keyArn, keys, keyArn, region };
 
   try {
     const parsed: unknown = JSON.parse(raw ?? '');
@@ -931,11 +983,21 @@ export function whatsappCredentialConfig(env = process.env) {
         throw new Error();
       keys.set(id, key);
     }
-    if (!keys.has(current)) throw new Error();
-    return { current, keys };
+    if (provider === 'local' && !keys.has(current)) throw new Error();
+    if (provider === 'aws_kms' && current && !keys.has(current))
+      throw new Error();
+    return {
+      provider,
+      current: provider === 'aws_kms' ? keyArn : current,
+      keys,
+      keyArn,
+      region,
+    };
   } catch {
     throw new Error(
-      'Invalid WHATSAPP_CREDENTIAL_KEY_ID or WHATSAPP_CREDENTIAL_KEYS.',
+      provider === 'aws_kms'
+        ? 'Invalid legacy WHATSAPP_CREDENTIAL_KEY_ID or WHATSAPP_CREDENTIAL_KEYS.'
+        : 'Invalid WHATSAPP_CREDENTIAL_KEY_ID or WHATSAPP_CREDENTIAL_KEYS.',
     );
   }
 }
