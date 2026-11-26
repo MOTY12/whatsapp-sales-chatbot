@@ -433,17 +433,14 @@ V1 mapping and adaptation. Retain gap and feedback evidence per tenant with reda
 
 ### ANALYTICS-001 · Ship tenant-scoped support analytics · Medium
 
-V1 mapping and adaptation. Retain support metrics and add qualified lead, opportunity and recorded conversion denominators.
-
-- **Objective.** Report support performance and model usage. Legacy sales summaries exist, support analytics missing.
-- **Reuse and likely changes.** src/assistant/business-date-range.ts, messages/handoff/usage schema and overview → src/analytics/ and dashboard charts.
-- **Implementation.** Use local date buckets with half-open UTC bounds. Count distinct inbound conversations, evidence-backed sent answers, handoff starts and resolves. Report median first accepted response minus first inbound for answered conversations, denominator for response rates, and model tokens/cost by purpose. Aggregate in SQL.
-- **Database and API.** **DB.** Scoped date indexes from query plans. **API.** GET /analytics with bounded range and timezone.
-- **Dependencies.** AGENT-001. **External services.** Local fixtures or the services already provisioned by dependencies.
-- **Security.** Aggregate only, no content or foreign IDs. Preserve seller CRM measures.
-- **Acceptance and required tests.** Empty, duplicate status, timezone boundary and tenant fixtures.
-- **Verify.** npm run test:integration -- support-analytics and npm --prefix apps/dashboard test -- analytics.
-- **Done.** Dashboard and API share documented metric definitions.
+- **Objective.** Report customer engagement, support, evidence-backed AI acceptance, CRM outcomes, channel results, knowledge-gap activity and usage without inventing revenue or model costs.
+- **Reuse and implementation.** Reuse `messages`, `conversations`, `ai_response_runs`, `whatsapp_outbound_messages`, website messages, CRM conversions, handoff events, Learning records, UsageService, `MerchantAccess`, and the existing overview/dashboard shell. Aggregate in one bounded SQL function; do not add a warehouse or cache without measured need.
+- **Database and API.** Additive `MerchantAnalytics1760000000036` adds SQL indexes, WhatsApp manual reply actor attribution and `usage_purpose`; `GET /merchant/businesses/:businessId/analytics` accepts a bounded date preset or custom dates, an IANA timezone and `ALL|WHATSAPP|WEBSITE` channel. The SQL function accepts only an authorized tenant GUC and owner/editor role.
+- **Date behavior.** Local business date boundaries are converted to half-open UTC intervals. The maximum custom range is 90 days. The usage quota month remains UTC. Trends are daily through 30 days and weekly for longer selections.
+- **Security.** No raw text or contact identifiers appear in analytics responses. There are no direct merchant grants to operational tables. Individual agent outcomes require stored actors; assignment is not used to infer historical activity. Costs remain unavailable until model-specific prices are configured.
+- **Tests.** Date unit tests cover Lagos/UTC/DST/month/year/leap behavior. Disposable PostgreSQL tests cover empty aggregates, tenant denial, raw-content denial, membership revocation, failed AI exclusion, distinct conversation counts, purpose attribution, migration rollback/reapply and EXPLAIN ANALYZE on a 1,000-message fixture.
+- **Documentation.** See [analytics API, definitions, architecture and performance notes](analytics.md).
+- **Status.** Implemented incrementally; remains IN_PROGRESS until cross-feature regression and dashboard browser acceptance pass. Do not mark PILOT-001 or QA-002 complete.
 
 ### OPS-001 · Monitor, throttle and recover API and workers · Medium
 

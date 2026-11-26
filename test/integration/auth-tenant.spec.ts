@@ -2914,6 +2914,15 @@ describe('merchant OIDC and tenant isolation', () => {
         ({ name }) => name === 'MerchantEmailAuthentication1760000000020',
       );
       expect(emailAuthenticationMigrationIndex).toBeGreaterThanOrEqual(0);
+      // Later migrations add optional analytics attribution. Clear those values
+      // in this disposable fixture so this test still reaches the email-auth
+      // rollback guard it is intended to exercise.
+      await admin.query(
+        'UPDATE public.whatsapp_outbound_messages SET actor_account_id = NULL WHERE actor_account_id IS NOT NULL',
+      );
+      await admin.query(
+        'UPDATE public.usage_reservations SET usage_purpose = NULL WHERE usage_purpose IS NOT NULL',
+      );
       for (
         let i = emailAuthenticationMigrationIndex + 1;
         i < databaseMigrations.length;

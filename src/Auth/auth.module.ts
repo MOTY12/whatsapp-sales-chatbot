@@ -107,6 +107,11 @@ import {
     MerchantSessionGuard,
     MerchantCsrfGuard,
   ],
-  exports: [MerchantAccess, MerchantSessionGuard, MerchantCsrfGuard],
+  exports: [
+    MerchantAccess,
+    MerchantAuthService,
+    MerchantSessionGuard,
+    MerchantCsrfGuard,
+  ],
 })
 export class AuthModule {}

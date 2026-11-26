@@ -19,6 +19,8 @@ export type UsageStatus =
   | 'UNCERTAIN'
   | 'PROVIDER_ACCEPTED'
   | 'DELIVERED';
+export type UsagePurpose =
+  'LIVE_CUSTOMER' | 'PLAYGROUND' | 'KNOWLEDGE_INDEXING' | 'EVALUATION';
 
 export interface UsageReservation {
   id: string;
@@ -239,6 +241,7 @@ export class UsageService {
     inputTokens: number,
     outputTokens: number,
     reservationSeconds = defaultReservationSeconds,
+    purpose: UsagePurpose = 'LIVE_CUSTOMER',
   ): Promise<{ input: UsageReservation; output: UsageReservation }> {
     safeAmount(inputTokens, 'Input token reservation');
     safeAmount(outputTokens, 'Output token reservation');
@@ -256,6 +259,7 @@ export class UsageService {
         ai_output_tokens: outputTokens,
       },
       reservationSeconds,
+      purpose,
     );
     return { input, output };
   }
@@ -576,6 +580,7 @@ export class UsageService {
     idempotencyKey: string,
     amounts: Partial<Record<UsageCategory, number>>,
     reservationSeconds: number,
+    usagePurpose?: UsagePurpose,
   ): Promise<UsageReservation[]> {
     this.validateBusinessId(businessId);
     const key = keyValue(idempotencyKey);
@@ -670,10 +675,19 @@ export class UsageService {
         const [row] = await manager.query<ReservationRow[]>(
           `INSERT INTO public.usage_reservations
              (id, business_id, category, period_start, idempotency_key,
-              reserved_amount, expires_at)
-           VALUES ($1, $2, $3, $4::date, $5, $6, $7)
+             reserved_amount, expires_at, usage_purpose)
+           VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8)
            RETURNING *, period_start::text AS period_start`,
-          [randomUUID(), businessId, category, current, key, amount, expiresAt],
+          [
+            randomUUID(),
+            businessId,
+            category,
+            current,
+            key,
+            amount,
+            expiresAt,
+            usagePurpose ?? null,
+          ],
         );
         rows.push(row);
       }

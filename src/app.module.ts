@@ -13,6 +13,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { WebsiteChatModule } from './website-chat/website-chat.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { WebsiteChatModule } from './website-chat/website-chat.module';
     KnowledgeModule,
     CatalogModule,
     WebsiteChatModule,
+    AnalyticsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, DatabaseReadiness],

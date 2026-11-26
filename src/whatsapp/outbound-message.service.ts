@@ -42,6 +42,7 @@ export interface OutboundAuthorization {
   conversationId?: string;
   kind?: 'AI' | 'HUMAN' | 'SYSTEM';
   controlVersion?: number | string;
+  actorAccountId?: string;
 }
 
 @Injectable()
@@ -225,8 +226,8 @@ export class OutboundMessageService {
           `INSERT INTO public.whatsapp_outbound_messages
           (id, business_id, connection_id, conversation_id, message_id, recipient_whatsapp_id,
            content, idempotency_key, usage_idempotency_key, status, response_intent_id,
-           authorization_kind, control_version)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'RESERVED',$10,$11,$12)
+           authorization_kind, control_version, actor_account_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'RESERVED',$10,$11,$12,$13)
          ON CONFLICT (business_id, idempotency_key) DO NOTHING`,
           [
             id,
@@ -241,6 +242,7 @@ export class OutboundMessageService {
             responseIntentId ?? null,
             authorization.kind ?? (responseIntentId ? 'AI' : 'SYSTEM'),
             authorization.controlVersion ?? null,
+            authorization.actorAccountId ?? null,
           ],
         );
         if (!messageRow) {

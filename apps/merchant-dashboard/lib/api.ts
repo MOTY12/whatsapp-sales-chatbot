@@ -6,6 +6,102 @@ export type Membership = {
   role: 'owner' | 'editor' | 'agent';
 };
 export type Identity = { accountId: string; memberships: Membership[] };
+export type MerchantAnalyticsReport = {
+  generatedAt: string;
+  range: { from: string; to: string; toExclusive: string; timezone: string };
+  engagement: {
+    inboundConversations: number;
+    inboundMessages: number;
+    acceptedReplies: number;
+    activeConversations: number;
+    awaitingResponse: number;
+    resolvedEvents: number;
+    reopenedEvents: number;
+    trend: Array<{ date: string; conversations: number }>;
+  };
+  responses: {
+    aiOnly: number;
+    humanOnly: number;
+    mixed: number;
+    unanswered: number;
+    answered: number;
+    medianFirstResponseSeconds: number | null;
+    medianAiFirstResponseSeconds: number | null;
+    medianHumanFirstResponseSeconds: number | null;
+  };
+  ai: {
+    failedGenerations: number;
+    insufficientEvidence: number;
+    suppressed: number;
+    eligible?: number;
+    accepted?: number;
+    acceptanceRate?: number | null;
+  };
+  handoffs: {
+    recordedEvents: number;
+    conversations: number;
+    awaitingHuman: number;
+    reasons: Array<{ reason: string; count: number }>;
+  };
+  sales: {
+    leadsCreated: number;
+    qualifiedLeads: number;
+    qualificationRate: number | null;
+    cohortWon: number;
+    cohortConversionRate: number | null;
+    openOpportunities: number;
+    won: number;
+    lost: number;
+    recordedValuesByCurrency: Array<{ currency: string; value: string }>;
+    leadTrend: Array<{ date: string; leads: number }>;
+    revenueAvailability: string;
+  };
+  knowledge: {
+    occurrences: number;
+    topics: number;
+    openTopics: number;
+    reviewedTopics: number;
+    topTopics: Array<{ topic: string; count: number }>;
+    publishedImprovements: number;
+    failedIndexing: number;
+    completedEvaluations: number;
+    evaluationCases: number;
+    groundedValidCases: number;
+  };
+  usage: Array<{
+    category: string;
+    purpose: string;
+    consumed: number;
+    reserved: number;
+    uncertain: number;
+  }>;
+  team: {
+    canView: boolean;
+    agents: Array<{
+      name: string;
+      conversationsHandled: number;
+      acceptedReplies: number;
+      resolvedConversations: number;
+      medianResponseSeconds: number | null;
+    }>;
+  };
+  channels: Array<{
+    channel: 'WHATSAPP' | 'WEBSITE';
+    inboundConversations: number;
+    acceptedAiResponses: number;
+    humanResponses: number;
+    medianFirstResponseSeconds: number | null;
+    leadsCreated: number;
+    qualifiedLeads: number;
+    recordedConversions: number;
+  }>;
+  monthlyAllowances: Record<
+    string,
+    { limit: number | null; quotaCounted: number; remaining: number | null }
+  >;
+  trendGrouping?: 'daily' | 'weekly';
+  availability: Record<string, string>;
+};
 export type TeamMember = {
   id: string;
   accountId: string;
@@ -638,6 +734,15 @@ export const api = {
     }),
   business: (id: string) =>
     request<Business>(`/merchant/businesses/${encodeURIComponent(id)}`),
+  analytics: (id: string, query: Record<string, string | undefined> = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query))
+      if (value) params.set(key, value);
+    const suffix = params.size ? `?${params.toString()}` : '';
+    return request<MerchantAnalyticsReport>(
+      `/merchant/businesses/${encodeURIComponent(id)}/analytics${suffix}`,
+    );
+  },
   team: (
     id: string,
     status = 'active',

@@ -39,6 +39,15 @@ export default async function Overview({
     throw error;
   }
   const whatsapp = await safeWhatsApp(business.id);
+  let analytics = null;
+  if (membership.role === 'owner' || membership.role === 'editor') {
+    try {
+      analytics = await api.analytics(business.id, { preset: 'today' });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401)
+        redirect('/login?error=session');
+    }
+  }
   const isConnected = whatsapp?.status === 'active';
   const status = whatsapp?.status ?? 'unknown';
   return (
@@ -66,6 +75,29 @@ export default async function Overview({
             <span>Next, connect WhatsApp to start setting up Kleva.</span>
           </div>
         </div>
+      )}
+      {analytics && (
+        <section className="conversation-teaser" aria-label="Today's analytics">
+          <div>
+            <span className="panel-kicker">TODAY SO FAR</span>
+            <h3>
+              {analytics.engagement.inboundConversations} conversations ·{' '}
+              {analytics.engagement.awaitingResponse} awaiting response
+            </h3>
+            <p>
+              {analytics.responses.aiOnly + analytics.responses.mixed}{' '}
+              conversations have an accepted AI response ·{' '}
+              {analytics.sales.qualifiedLeads} qualified leads from today’s lead
+              cohort.
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/analytics?businessId=${business.id}`}
+            className="button button-secondary"
+          >
+            View analytics <span aria-hidden="true">→</span>
+          </Link>
+        </section>
       )}
       {identity.memberships.length > 1 && (
         <BusinessPicker

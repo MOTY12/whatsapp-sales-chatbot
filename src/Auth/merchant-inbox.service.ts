@@ -586,6 +586,7 @@ export class MerchantInboxService {
         conversationId,
         text.trim(),
         key,
+        actor.accountId,
       );
       await this.websiteChat.publishConversationEvent(
         businessId,
@@ -602,7 +603,7 @@ export class MerchantInboxService {
         { to: conversation.whatsapp_id, message: text.trim() },
         key,
         undefined,
-        { conversationId, kind: 'HUMAN' },
+        { conversationId, kind: 'HUMAN', actorAccountId: actor.accountId },
       );
     } catch (error) {
       if (error instanceof OutboundPolicyError) {

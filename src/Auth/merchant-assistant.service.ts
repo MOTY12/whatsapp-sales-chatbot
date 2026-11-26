@@ -366,6 +366,8 @@ export class MerchantAssistantService {
           requestKey,
           estimatedInput,
           300,
+          undefined,
+          'PLAYGROUND',
         );
         reserved = true;
         reservationEstimate = { input: estimatedInput, output: 300 };

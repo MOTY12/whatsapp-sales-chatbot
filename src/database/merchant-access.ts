@@ -170,6 +170,9 @@ export const teamFunctions = [
   'kleva_team_member_role(uuid,text,integer)',
   'kleva_team_member_revoke(uuid,integer)',
 ];
+export const analyticsFunctions = [
+  'kleva_merchant_analytics(timestamptz,timestamptz,text,text)',
+];
 export const websiteWidgetFunctions = [
   'kleva_website_widget_list()',
   'kleva_website_widget_create(text,text)',
@@ -209,7 +212,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...teamFunctions, ...websiteWidgetFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...teamFunctions, ...websiteWidgetFunctions, ...analyticsFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

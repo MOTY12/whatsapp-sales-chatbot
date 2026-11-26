@@ -43,7 +43,7 @@ function localDateParts(date: Date, timezone: string) {
   return { year: value('year'), month: value('month'), day: value('day') };
 }
 
-function zonedMidnightToUtc(
+export function zonedMidnightToUtc(
   year: number,
   month: number,
   day: number,

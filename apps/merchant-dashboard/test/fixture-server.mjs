@@ -376,6 +376,33 @@ const server = createServer(async (req, res) => {
       return json(200, SECOND_BUSINESS);
     return json(404, { message: 'Not found.' });
   }
+  const analyticsMatch = url.pathname.match(
+    /^\/merchant\/businesses\/([0-9a-f-]+)\/analytics$/i,
+  );
+  if (analyticsMatch && req.method === 'GET') {
+    if (!hasSession || !created || analyticsMatch[1] !== BUSINESS_ID)
+      return json(404, { message: 'Not found.' });
+    if (!['owner', 'editor'].includes(fixtureRole))
+      return json(403, { message: 'Analytics access required.' });
+    const from = url.searchParams.get('from') ?? '2026-11-01';
+    const to = url.searchParams.get('to') ?? '2026-11-30';
+    return json(200, {
+      generatedAt: '2026-11-25T10:00:00.000Z',
+      range: { from, to, toExclusive: '2026-12-01T00:00:00.000Z', timezone: 'Africa/Lagos' },
+      engagement: { inboundConversations: 2, inboundMessages: 3, acceptedReplies: 2, activeConversations: 1, awaitingResponse: 0, resolvedEvents: 1, reopenedEvents: 0, trend: [{ date: from, conversations: 2 }] },
+      responses: { aiOnly: 1, humanOnly: 1, mixed: 0, unanswered: 0, answered: 2, medianFirstResponseSeconds: 42, medianAiFirstResponseSeconds: 20, medianHumanFirstResponseSeconds: 65 },
+      ai: { failedGenerations: 0, insufficientEvidence: 0, suppressed: 0, eligible: 1, accepted: 1, acceptanceRate: 100 },
+      handoffs: { recordedEvents: 1, conversations: 1, awaitingHuman: 0, reasons: [] },
+      sales: { leadsCreated: 1, qualifiedLeads: 1, qualificationRate: 100, cohortWon: 0, cohortConversionRate: 0, openOpportunities: 1, won: 0, lost: 0, recordedValuesByCurrency: [], leadTrend: [], revenueAvailability: 'UNAVAILABLE_NO_RECORDED_VALUES' },
+      knowledge: { occurrences: 0, topics: 0, openTopics: 0, reviewedTopics: 0, topTopics: [], publishedImprovements: 0, failedIndexing: 0, completedEvaluations: 0, evaluationCases: 0, groundedValidCases: 0 },
+      usage: [],
+      team: { canView: fixtureRole === 'owner', agents: [] },
+      channels: [{ channel: 'WEBSITE', inboundConversations: 2, acceptedAiResponses: 1, humanResponses: 1, medianFirstResponseSeconds: 42, leadsCreated: 1, qualifiedLeads: 1, recordedConversions: 0 }],
+      monthlyAllowances: { whatsappOutbound: { limit: 1000, quotaCounted: 0, remaining: 1000 }, aiInputTokens: { limit: 100000, quotaCounted: 0, remaining: 100000 }, aiOutputTokens: { limit: 50000, quotaCounted: 0, remaining: 50000 }, embeddings: { limit: 100000, quotaCounted: 0, remaining: 100000 } },
+      trendGrouping: 'daily',
+      availability: { estimatedModelCost: 'UNAVAILABLE_MODEL_PRICING_NOT_CONFIGURED' },
+    });
+  }
   const teamMatch = url.pathname.match(
     /^\/merchant\/businesses\/([0-9a-f-]+)\/team(?:\/([0-9a-f-]+|invitations|audit)(?:\/(resend|revoke))?)?$/i,
   );

@@ -199,6 +199,8 @@ describe('MerchantAssistantService', () => {
       expect.stringMatching(/^playground:/),
       expect.any(Number),
       300,
+      undefined,
+      'PLAYGROUND',
     );
     expect(commit).toHaveBeenCalledWith(
       businessId,

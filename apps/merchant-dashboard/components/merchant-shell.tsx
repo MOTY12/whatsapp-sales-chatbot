@@ -14,6 +14,7 @@ const items = [
   ['AI Assistant', '/dashboard/assistant', '✦'],
   ['Learning gaps', '/dashboard/learning', '◎'],
   ['Leads', '/dashboard/leads', '◉'],
+  ['Analytics', '/dashboard/analytics', '▥'],
   ['Settings', '/dashboard/settings', '⚙'],
 ] as const;
 

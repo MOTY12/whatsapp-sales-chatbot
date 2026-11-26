@@ -270,6 +270,7 @@ describe('PostgreSQL migration baseline', () => {
         'merchant_onboarding_progress_account_id_fkey',
         'merchant_password_credentials_account_id_fkey',
         'whatsapp_signup_attempts_business_id_fkey',
+        'whatsapp_outbound_messages_actor_account_id_fkey',
         'whatsapp_signup_attempts_account_id_fkey',
         'fk_whatsapp_pending_attempt_tenant',
         'fk_whatsapp_pending_operation_tenant',

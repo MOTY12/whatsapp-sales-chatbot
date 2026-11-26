@@ -956,6 +956,7 @@ export class WebsiteChatService {
     conversationId: string,
     text: string,
     idempotencyKey: string,
+    actorAccountId?: string,
   ) {
     if (!idempotencyUuid.test(idempotencyKey) || !validText(text, 4096))
       throw new BadRequestException('A valid reply is required.');
@@ -997,6 +998,7 @@ export class WebsiteChatService {
           JSON.stringify({
             authorizationKind: 'HUMAN',
             controlVersion: conversation.control_version,
+            ...(actorAccountId ? { actorAccountId } : {}),
           }),
         ],
       );
