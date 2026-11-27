@@ -13,6 +13,7 @@ import type { DataSource, EntityManager } from 'typeorm';
 import {
   aiConfig,
   applicationEnvironment,
+  websiteAbuseConfig,
   websiteChatMaintenanceConfig,
 } from '../config/env';
 import {
@@ -350,6 +351,16 @@ export class WebsiteChatService {
     };
   }
 
+  async publicWidgetAbuseIdentity(
+    publicId: string,
+    originHeader?: string,
+    forwardedOrigin?: string,
+  ) {
+    const origin = normalizeWebsiteOrigin(forwardedOrigin ?? originHeader);
+    const widget = await this.requireWidget(publicId, origin);
+    return { businessId: widget.business_id, widgetId: widget.widget_id };
+  }
+
   async createSession(
     publicId: string,
     originHeader: string | undefined,
@@ -361,7 +372,10 @@ export class WebsiteChatService {
     const clientHash = digest(
       `${widget.widget_id}\0${remoteAddress ?? 'unknown'}`,
     );
-    await this.consumeRate(clientHash, 6);
+    await this.consumeRate(
+      clientHash,
+      websiteAbuseConfig().sessionRateLimitPerMinute,
+    );
     const credential = randomBytes(32).toString('base64url');
     const credentialHash = digest(credential);
     const visitorId = randomUUID();
@@ -441,7 +455,10 @@ export class WebsiteChatService {
     const rateHash = digest(
       `message\0${session.widget_id}\0${session.credential_hash}`,
     );
-    await this.consumeRate(rateHash, 20);
+    await this.consumeRate(
+      rateHash,
+      websiteAbuseConfig().messageRateLimitPerMinute,
+    );
     const newMessageId = randomUUID();
     const text = input.text.trim();
     const result = await this.database.transaction(async (manager) => {
@@ -769,6 +786,7 @@ export class WebsiteChatService {
       type: 'session.revoked',
       businessId: session.business_id,
       conversationId: session.conversation_id,
+      targetSessionId: session.session_id,
     });
     return { ended: true };
   }
@@ -835,7 +853,10 @@ export class WebsiteChatService {
       originHeader,
       forwardedOrigin,
     );
-    await this.consumeRate(digest(`${session.session_id}\0typing`), 60);
+    await this.consumeRate(
+      digest(`${session.session_id}\0typing`),
+      websiteAbuseConfig().typingRateLimitPerMinute,
+    );
     return {
       accepted: await this.realtime.publishTyping({
         businessId: session.business_id,

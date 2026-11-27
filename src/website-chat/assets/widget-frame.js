@@ -6,7 +6,7 @@
   const apiBase = `${window.location.origin}/public/widgets/${encodeURIComponent(widgetId)}`;
   const root = document.getElementById('widget-root');
   const tokenKey = `kleva.website.${widgetId}.${siteOrigin}`;
-  const state = { config: null, token: '', cursor: null, open: false, sending: false, contactSaved: false, unread: 0, loaded: false, timer: 0, eventController: null, eventRetry: 0, realtimeState: 'connecting', typingActor: '', typingTimer: 0, pendingSend: null, sendError: '' };
+  const state = { config: null, token: '', cursor: null, open: false, sending: false, contactSaved: false, unread: 0, loaded: false, timer: 0, eventController: null, eventRetryTimer: 0, eventRetry: 0, realtimeState: 'connecting', typingActor: '', typingTimer: 0, pendingSend: null, sendError: '' };
   const storage = {
     get(key) { try { return localStorage.getItem(key); } catch { return null; } },
     set(key, value) { try { localStorage.setItem(key, value); } catch { /* Storage may be disabled in embedded contexts. */ } },
@@ -72,8 +72,8 @@
     const availability = config.availability === 'CLOSED'
       ? `${config.configuration.offlineMessage}${config.aiEnabled ? ' The AI assistant can still answer questions.' : ''}`
       : config.aiEnabled ? 'AI assistant available · A person can join anytime' : 'Messages stay here for the business to review';
-    const connectionLabel = state.realtimeState === 'connected' ? 'Connected' : state.realtimeState === 'connecting' ? 'Connecting…' : 'Reconnecting…';
-    shell.append(el('div', 'status', `${connectionLabel} · ${availability}`));
+    const connectionLabel = state.realtimeState === 'connected' ? 'Connected' : state.realtimeState === 'connecting' ? 'Connecting…' : state.realtimeState === 'offline' ? 'Offline · reconnecting' : 'Reconnecting…';
+    const connectionStatus = el('div', 'status', `${connectionLabel} · ${availability}`); connectionStatus.setAttribute('role', 'status'); connectionStatus.setAttribute('aria-live', 'polite'); shell.append(connectionStatus);
 
     if (config.configuration.requireContact && !state.contactSaved) {
       shell.append(el('p', 'offline', 'Before chatting, share your contact details with your consent.'));
@@ -173,10 +173,11 @@
   async function connectEvents() {
     if (!state.token) return;
     const controller = new AbortController(); state.eventController = controller;
+    let connectedAt = 0; let retryAfterMs = 0;
     try {
       const response = await fetch(`${apiBase}/events`, { headers: { Authorization: `Bearer ${state.token}`, 'X-Kleva-Site-Origin': siteOrigin, Accept: 'text/event-stream' }, cache: 'no-store', credentials: 'omit', signal: controller.signal });
-      if (!response.ok || !response.body) throw new Error('realtime unavailable');
-      state.eventRetry = 0; state.realtimeState = 'connected'; render();
+      if (!response.ok || !response.body) { retryAfterMs = Math.min(60000, Math.max(0, Number(response.headers.get('retry-after') || 0) * 1000)); throw new Error('realtime unavailable'); }
+      connectedAt = Date.now(); state.realtimeState = 'connected'; render();
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let pending = '';
       while (!controller.signal.aborted) {
         const { done, value } = await reader.read(); if (done) break;
@@ -192,7 +193,7 @@
           if (data) {
             try {
               const event = JSON.parse(data);
-              if (eventName === 'session.revoked') { state.token = ''; storage.remove(tokenKey); showNotice('This chat session has ended. Refresh the page to start again.'); controller.abort(); break; }
+              if (eventName === 'session.revoked') { state.token = ''; storage.remove(tokenKey); if (state.eventRetryTimer) window.clearTimeout(state.eventRetryTimer); state.eventRetryTimer = 0; showNotice('This chat session has ended. Refresh the page to start again.'); controller.abort(); break; }
               if (eventName === 'typing.started' && ['assistant','human'].includes(event.actor)) { state.typingActor = event.actor; if (state.typingTimer) window.clearTimeout(state.typingTimer); state.typingTimer = window.setTimeout(() => { state.typingActor = ''; if (state.open) render(); }, 6000); if (state.open) render(); }
               if (eventName === 'typing.stopped' && state.typingActor === event.actor) { state.typingActor = ''; if (state.typingTimer) window.clearTimeout(state.typingTimer); if (state.open) render(); }
               if (['message.created','message.updated','conversation.updated','conversation.resolved','conversation.reopened','conversation.control.changed'].includes(eventName)) await refresh().catch(() => undefined);
@@ -201,10 +202,15 @@
           match = /\r?\n\r?\n/.exec(pending);
         }
       }
-    } catch { if (!controller.signal.aborted) { state.eventRetry = Math.min(state.eventRetry + 1, 6); state.realtimeState = 'reconnecting'; } }
+    } catch { /* The durable message poll below remains available during an SSE outage. */ }
+    if (state.eventController === controller) state.eventController = null;
     if (!controller.signal.aborted && state.token) {
-      const delay = Math.min(30000, 500 * 2 ** state.eventRetry) + Math.random() * 300;
-      window.setTimeout(() => connectEvents(), delay); if (state.open) render();
+      if (connectedAt && Date.now() - connectedAt >= 30000) state.eventRetry = 0;
+      state.eventRetry = Math.min(state.eventRetry + 1, 6);
+      state.realtimeState = state.eventRetry >= 4 ? 'offline' : 'reconnecting';
+      const delay = Math.max(retryAfterMs, Math.min(30000, 500 * 2 ** state.eventRetry) + Math.random() * 300);
+      if (state.eventRetryTimer) window.clearTimeout(state.eventRetryTimer);
+      state.eventRetryTimer = window.setTimeout(() => { state.eventRetryTimer = 0; void connectEvents(); }, delay); if (state.open) render();
     }
   }
   async function start() {

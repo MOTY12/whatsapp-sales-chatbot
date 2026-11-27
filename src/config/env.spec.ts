@@ -10,6 +10,7 @@ import {
   usageConfig,
   whatsappCredentialConfig,
   whatsappSignupRuntimeConfig,
+  websiteAbuseConfig,
 } from './env';
 
 const database = {
@@ -360,5 +361,34 @@ describe('environment configuration', () => {
     expect(() =>
       redisConfig({ NODE_ENV: 'production', REDIS_PASSWORD: 'replace_me' }),
     ).toThrow('REDIS_PASSWORD');
+  });
+
+  it('validates bounded website abuse defaults and exact trusted proxy addresses', () => {
+    expect(websiteAbuseConfig({})).toMatchObject({
+      rateLimitEnabled: true,
+      sessionRateLimitPerMinute: 10,
+      messageRateLimitPerMinute: 20,
+      sseMaxConnectionsPerSession: 4,
+      sseLeaseTtlSeconds: 90,
+      sseLeaseRenewSeconds: 30,
+    });
+    expect(
+      websiteAbuseConfig({
+        WEBSITE_SESSION_RATE_LIMIT_PER_MINUTE: '15',
+        WEBSITE_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
+      }).trustedProxyIps,
+    ).toEqual(new Set(['127.0.0.1', '::1']));
+    expect(() =>
+      websiteAbuseConfig({ WEBSITE_SSE_LEASE_TTL_SECONDS: '2' }),
+    ).toThrow('WEBSITE_SSE_LEASE_TTL_SECONDS');
+    expect(() =>
+      websiteAbuseConfig({
+        WEBSITE_SSE_LEASE_TTL_SECONDS: '30',
+        WEBSITE_SSE_LEASE_RENEW_SECONDS: '30',
+      }),
+    ).toThrow('WEBSITE_SSE_LEASE_RENEW_SECONDS');
+    expect(() =>
+      websiteAbuseConfig({ WEBSITE_TRUSTED_PROXY_IPS: '127.0.0.1/8' }),
+    ).toThrow('WEBSITE_TRUSTED_PROXY_IPS');
   });
 });

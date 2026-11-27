@@ -9,19 +9,26 @@ import {
   Req,
   Res,
   Header,
-  HttpException,
+  UseFilters,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { websiteAbuseConfig } from '../config/env';
 import { WebsiteChatService } from './website-chat.service';
 import {
   WebsiteRealtimeService,
   type WebsiteRealtimeEvent,
 } from './website-realtime.service';
+import {
+  WebsiteRateLimitException,
+  WebsiteRateLimitFilter,
+} from './website-abuse.exception';
+import { websiteClientIp } from './website-client-ip';
 
 @Controller('public')
+@UseFilters(WebsiteRateLimitFilter)
 export class WebsiteChatController {
   constructor(
     private readonly chat: WebsiteChatService,
@@ -58,46 +65,77 @@ export class WebsiteChatController {
 
   @Get('widgets/:publicId/config')
   @Header('Cache-Control', 'no-store')
-  config(
-    @Param('publicId') publicId: string,
-    @Headers('origin') origin: string | undefined,
-    @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
-  ) {
-    return this.chat.publicConfiguration(publicId, origin, siteOrigin);
-  }
-
-  @Post('widgets/:publicId/sessions')
-  @Header('Cache-Control', 'no-store')
-  createSession(
+  async config(
     @Param('publicId') publicId: string,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
     @Req() request: Request,
   ) {
-    return this.chat.createSession(
+    const abuse = websiteAbuseConfig();
+    const identity = await this.chat.publicWidgetAbuseIdentity(
       publicId,
       origin,
       siteOrigin,
-      request.socket.remoteAddress,
     );
+    const clientIp = websiteClientIp(
+      request.socket.remoteAddress,
+      request.get('x-forwarded-for'),
+    );
+    await this.realtime.consumeRateLimit(
+      'config',
+      [identity.widgetId, clientIp],
+      abuse.configRateLimitPerMinute,
+    );
+    await this.limitBusiness(identity.businessId);
+    return this.chat.publicConfiguration(publicId, origin, siteOrigin);
+  }
+
+  @Post('widgets/:publicId/sessions')
+  @Header('Cache-Control', 'no-store')
+  async createSession(
+    @Param('publicId') publicId: string,
+    @Headers('origin') origin: string | undefined,
+    @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
+    @Req() request: Request,
+  ) {
+    const abuse = websiteAbuseConfig();
+    const clientIp = websiteClientIp(
+      request.socket.remoteAddress,
+      request.get('x-forwarded-for'),
+    );
+    const identity = await this.chat.publicWidgetAbuseIdentity(
+      publicId,
+      origin,
+      siteOrigin,
+    );
+    await this.realtime.consumeRateLimit(
+      'session',
+      [identity.businessId, identity.widgetId, clientIp],
+      abuse.sessionRateLimitPerMinute,
+    );
+    await this.limitBusiness(identity.businessId);
+    return this.chat.createSession(publicId, origin, siteOrigin, clientIp);
   }
 
   @Get('widgets/:publicId/messages')
   @Header('Cache-Control', 'no-store')
-  messages(
+  async messages(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
     @Query('after') after: string | undefined,
   ) {
-    return this.chat.messages(
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
-      after,
+      'read',
+      websiteAbuseConfig().readRateLimitPerMinute,
     );
+    return this.chat.messages(publicId, token, origin, siteOrigin, after);
   }
 
   @Get('widgets/:publicId/events')
@@ -116,14 +154,39 @@ export class WebsiteChatController {
       origin,
       siteOrigin,
     );
-    let release: () => void;
+    let releaseLocal: () => void;
     try {
-      release = this.realtime.reserveConnection(
+      releaseLocal = this.realtime.reserveConnection(
         `visitor:${context.sessionId}`,
-        4,
+        websiteAbuseConfig().sseMaxConnectionsPerSession,
       );
     } catch {
-      throw new HttpException('Too many chat connections.', 429);
+      throw new WebsiteRateLimitException(30);
+    }
+    let lease: Awaited<
+      ReturnType<WebsiteRealtimeService['acquireConnectionLease']>
+    >;
+    try {
+      const abuse = websiteAbuseConfig();
+      await this.realtime.consumeRateLimit(
+        'sse_reconnect',
+        [context.businessId, context.sessionId],
+        abuse.reconnectRateLimitPerMinute,
+      );
+      await this.limitBusiness(context.businessId);
+      lease = await this.realtime.acquireConnectionLease(
+        context.sessionId,
+        abuse.sseMaxConnectionsPerSession,
+        abuse.sseLeaseTtlSeconds,
+      );
+    } catch (error) {
+      releaseLocal();
+      throw error;
+    }
+    if (request.aborted || response.destroyed) {
+      releaseLocal();
+      await lease.release();
+      return;
     }
     response.status(200).set({
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -137,17 +200,27 @@ export class WebsiteChatController {
     const timers: {
       heartbeat?: ReturnType<typeof setInterval>;
       revalidate?: ReturnType<typeof setInterval>;
+      leaseRenewal?: ReturnType<typeof setInterval>;
     } = {};
     const cleanup = () => {
       if (closed) return;
       closed = true;
       clearInterval(timers.heartbeat);
       clearInterval(timers.revalidate);
+      clearInterval(timers.leaseRenewal);
       unsubscribe?.();
-      release();
+      releaseLocal();
+      void lease.release();
     };
     const writeFrame = (frame: string) => {
-      if (!closed && !response.write(frame)) response.end();
+      if (!closed && !response.destroyed && !response.writableEnded) {
+        try {
+          response.write(frame);
+        } catch {
+          cleanup();
+          response.destroy();
+        }
+      }
     };
     const onEvent = (event: WebsiteRealtimeEvent) => {
       const projection = {
@@ -163,24 +236,33 @@ export class WebsiteChatController {
       );
       if (event.type === 'session.revoked') response.end();
     };
+    let subscribing: Promise<boolean> | undefined;
     const connect = async (): Promise<boolean> => {
       if (closed) return false;
       if (unsubscribe) return true;
-      try {
-        unsubscribe = await this.realtime.subscribe(
+      if (subscribing) return subscribing;
+      subscribing = this.realtime
+        .subscribe(
           {
             businessId: context.businessId,
             conversationId: context.conversationId,
+            visitorSessionId: context.sessionId,
           },
           onEvent,
-        );
-        return true;
-      } catch {
-        // Durable history polling remains active during Redis outages.
-        return false;
-      }
+        )
+        .then((createdUnsubscribe) => {
+          if (closed) createdUnsubscribe();
+          else unsubscribe = createdUnsubscribe;
+          return !closed;
+        })
+        .catch(() => false)
+        .finally(() => {
+          subscribing = undefined;
+        });
+      return subscribing;
     };
     response.on('close', cleanup);
+    response.on('finish', cleanup);
     request.on('aborted', cleanup);
     const realtimeReady = await connect();
     if (closed) return;
@@ -200,6 +282,12 @@ export class WebsiteChatController {
       }
     }, 15000);
     timers.heartbeat.unref();
+    timers.leaseRenewal = setInterval(() => {
+      void lease.renew().then((renewed) => {
+        if (!renewed && !closed) response.end();
+      });
+    }, websiteAbuseConfig().sseLeaseRenewSeconds * 1000);
+    timers.leaseRenewal.unref();
     let validating = false;
     timers.revalidate = setInterval(() => {
       if (closed || validating) return;
@@ -212,6 +300,9 @@ export class WebsiteChatController {
             response.end();
           }
         })
+        .catch(() => {
+          if (!closed) response.end();
+        })
         .finally(() => {
           validating = false;
         });
@@ -221,75 +312,89 @@ export class WebsiteChatController {
 
   @Post('widgets/:publicId/messages')
   @Header('Cache-Control', 'no-store')
-  submitMessage(
+  async submitMessage(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
     @Body() body: unknown,
   ) {
-    return this.chat.submitMessage(
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
-      body,
+      'message',
+      websiteAbuseConfig().messageRateLimitPerMinute,
     );
+    return this.chat.submitMessage(publicId, token, origin, siteOrigin, body);
   }
 
   @Post('widgets/:publicId/contact')
   @Header('Cache-Control', 'no-store')
-  contact(
+  async contact(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
     @Body() body: unknown,
   ) {
-    return this.chat.submitContact(
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
-      body,
+      'contact',
+      websiteAbuseConfig().contactRateLimitPerMinute,
     );
+    return this.chat.submitContact(publicId, token, origin, siteOrigin, body);
   }
 
   @Post('widgets/:publicId/handoff')
   @Header('Cache-Control', 'no-store')
-  handoff(
+  async handoff(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
   ) {
-    return this.chat.requestHandoff(
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
+      'handoff',
+      websiteAbuseConfig().handoffRateLimitPerMinute,
     );
+    return this.chat.requestHandoff(publicId, token, origin, siteOrigin);
   }
 
   @Post('widgets/:publicId/session/end')
   @Header('Cache-Control', 'no-store')
-  end(
+  async end(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
     @Headers('x-kleva-site-origin') siteOrigin: string | undefined,
   ) {
-    return this.chat.endSession(
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
+      'session_end',
+      websiteAbuseConfig().sessionEndRateLimitPerMinute,
     );
+    return this.chat.endSession(publicId, token, origin, siteOrigin);
   }
 
   @Post('widgets/:publicId/typing')
   @Header('Cache-Control', 'no-store')
-  visitorTyping(
+  async visitorTyping(
     @Param('publicId') publicId: string,
     @Headers('authorization') authorization: string | undefined,
     @Headers('origin') origin: string | undefined,
@@ -300,12 +405,52 @@ export class WebsiteChatController {
       body && typeof body === 'object' && !Array.isArray(body)
         ? (body as { active?: unknown }).active
         : undefined;
+    const token = this.bearer(authorization);
+    await this.limitVisitorRequest(
+      publicId,
+      token,
+      origin,
+      siteOrigin,
+      'typing',
+      websiteAbuseConfig().typingRateLimitPerMinute,
+    );
     return this.chat.publishVisitorTyping(
       publicId,
-      this.bearer(authorization),
+      token,
       origin,
       siteOrigin,
       active,
+    );
+  }
+
+  private async limitVisitorRequest(
+    publicId: string,
+    token: string,
+    origin: string | undefined,
+    siteOrigin: string | undefined,
+    category: string,
+    limit: number,
+  ) {
+    const identity = await this.chat.visitorEventContext(
+      publicId,
+      token,
+      origin,
+      siteOrigin,
+    );
+    await this.realtime.consumeRateLimit(
+      category,
+      [identity.businessId, identity.sessionId],
+      limit,
+    );
+    await this.limitBusiness(identity.businessId);
+    return identity;
+  }
+
+  private limitBusiness(businessId: string) {
+    return this.realtime.consumeRateLimit(
+      'business_traffic',
+      [businessId],
+      websiteAbuseConfig().businessRateLimitPerMinute,
     );
   }
 

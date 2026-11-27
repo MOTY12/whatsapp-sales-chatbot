@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation remains in progress because the full regression run has two failing suites (conversation-memory assertions and the outbound WhatsApp local-provider fixture). The new analytics browser smoke test passes. The backend uses the operational PostgreSQL database and the existing restricted merchant role. There is no warehouse, Redis cache, pricing table, or external clustering provider. The migration is additive (`1760000000036-MerchantAnalytics`). Costs remain explicitly unavailable because no model-specific pricing configuration exists.
+Verified locally on 2026-11-26. The complete PostgreSQL/Redis integration suite, including analytics, conversation memory and outbound WhatsApp, passes. The backend uses the operational PostgreSQL database and the existing restricted merchant role. There is no warehouse, Redis cache, pricing table, or external clustering provider. The migration is additive (`1760000000036-MerchantAnalytics`). Costs remain explicitly unavailable because no model-specific pricing configuration exists.
 
 ## Request contract
 
@@ -50,9 +50,9 @@ No Redis cache is used; authorized response caching would add tenant invalidatio
 
 The overview uses a small same-day subset for owner/editor and links to `/dashboard/analytics`. The full analytics page supports presets, custom dates, channel selection, responsive tables, small CSS/SVG-style bar trends, loading skeleton, empty and error states, and explicit unavailable labels. No charting dependency was added. The analytics page performs one aggregate query per server-rendered request; refresh is an explicit new request.
 
-## Local verification (2026-11-25)
+## Local verification (2026-11-26)
 
-`npm test -- --runInBand`: 29 suites / 139 tests passed. Dashboard component tests: 11 files / 38 tests passed. Dashboard typecheck, lint, and production build passed. Playwright browser suite: 26 tests passed, including the analytics page mobile viewport and date/channel filter smoke test. Focused disposable PostgreSQL suites for readiness, baseline migrations, tenant/auth integration, and analytics: 4 suites / 44 tests passed. The full PostgreSQL/Redis integration run completed 20 of 22 suites (137 of 140 tests); the remaining failures are two conversation-memory assertions and one local WhatsApp provider fixture assertion. These failures remain under investigation and are not counted as analytics acceptance passes. The analytics-specific PostgreSQL suite passes 4 tests, including migration rollback/reapply, aggregate query, restricted-role denial, and tenant membership behavior.
+`npm test -- --runInBand`: 30 suites / 143 tests passed. Dashboard component tests: 11 files / 38 tests passed. Dashboard typecheck, lint, and production build passed. Playwright browser suite: 26 tests passed, including the analytics page mobile viewport and date/channel filter smoke test. The complete disposable PostgreSQL/Redis integration suite passed 23 suites / 144 tests, including analytics migration rollback/reapply, aggregate query, restricted-role denial, tenant membership behavior, and a 1,000-message fixture. The report function measured 19.593 ms in the recorded `EXPLAIN ANALYZE` run. This small fixture is a sanity check, not a representative production benchmark.
 
 ## Manual verification
 

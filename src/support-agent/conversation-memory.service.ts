@@ -74,7 +74,7 @@ export class ConversationMemoryService {
           FROM public.messages
           WHERE "businessId"=$1 AND "conversationId"=$2
             AND direction IN ('inbound','outbound')
-            AND ("createdAt",id)<($3::timestamptz,$4::uuid)
+            AND ("createdAt",id)<($3::timestamp,$4::uuid)
           ORDER BY "createdAt" DESC,id DESC LIMIT $5`,
         [
           run.business_id,

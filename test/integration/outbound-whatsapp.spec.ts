@@ -86,20 +86,15 @@ describe('durable WhatsApp outbound messages', () => {
        VALUES ($1,$2,$3,'pilot-merchant-v1',now(),now(),'ACTIVE',now(),'integration-fixture','evidence:fixture')`,
       [businessId, connectionId, pilotAccount.id],
     );
+    const envelope = await credentialCipher.encrypt(
+      'fixture-access-token',
+      businessId,
+      connectionId,
+    );
     await admin.query(
       `INSERT INTO public.whatsapp_credentials (business_id, connection_id, envelope)
        VALUES ($1,$2,$3)`,
-      [
-        businessId,
-        connectionId,
-        JSON.stringify(
-          credentialCipher.encrypt(
-            'fixture-access-token',
-            businessId,
-            connectionId,
-          ),
-        ),
-      ],
+      [businessId, connectionId, JSON.stringify(envelope)],
     );
     await admin.query(
       `INSERT INTO public.customers (id, "businessId", name, phone, "whatsappId", source)

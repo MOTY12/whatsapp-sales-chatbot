@@ -6,6 +6,7 @@ import {
   appConfig,
   merchantAuthConfig,
   merchantEmailAuthConfig,
+  websiteAbuseConfig,
   whatsappCredentialConfig,
 } from './config/env';
 import { ApplicationLogger, correlateRequest } from './config/logging';
@@ -18,6 +19,7 @@ async function bootstrap() {
     // so failures are reported before Nest wraps them as a generic startup error.
     merchantAuthConfig();
     merchantEmailAuthConfig();
+    websiteAbuseConfig();
     whatsappCredentialConfig();
   } catch (error) {
     // Configuration errors report variable names and expected formats.

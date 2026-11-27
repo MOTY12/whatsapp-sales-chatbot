@@ -1,4 +1,5 @@
 import { X509Certificate } from 'node:crypto';
+import { isIP } from 'node:net';
 import { checkServerIdentity, type ConnectionOptions } from 'node:tls';
 import type { LogLevel } from '@nestjs/common';
 import type { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
@@ -283,6 +284,125 @@ export function redisConfig(env = process.env) {
     host: env.REDIS_HOST?.trim() || 'localhost',
     port: port(env, 'REDIS_PORT', 6379),
     password,
+  };
+}
+
+export function websiteAbuseConfig(env = process.env) {
+  const integer = (
+    name: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ) => {
+    const raw = env[name]?.trim();
+    if (!raw) return fallback;
+    const value = Number(raw);
+    if (
+      !/^\d+$/.test(raw) ||
+      !Number.isInteger(value) ||
+      value < min ||
+      value > max
+    )
+      throw new Error(`${name} must be an integer from ${min} to ${max}.`);
+    return value;
+  };
+  const trustedProxyIps = (env.WEBSITE_TRUSTED_PROXY_IPS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (trustedProxyIps.some((value) => !isIP(value))) {
+    throw new Error(
+      'WEBSITE_TRUSTED_PROXY_IPS must be a comma-separated list of IP addresses.',
+    );
+  }
+  const sseLeaseTtlSeconds = integer(
+    'WEBSITE_SSE_LEASE_TTL_SECONDS',
+    90,
+    30,
+    600,
+  );
+  const sseLeaseRenewSeconds = integer(
+    'WEBSITE_SSE_LEASE_RENEW_SECONDS',
+    30,
+    10,
+    300,
+  );
+  if (sseLeaseRenewSeconds >= sseLeaseTtlSeconds) {
+    throw new Error(
+      'WEBSITE_SSE_LEASE_RENEW_SECONDS must be less than WEBSITE_SSE_LEASE_TTL_SECONDS.',
+    );
+  }
+  return {
+    rateLimitEnabled: flag(env, 'WEBSITE_RATE_LIMIT_ENABLED', true),
+    sessionRateLimitPerMinute: integer(
+      'WEBSITE_SESSION_RATE_LIMIT_PER_MINUTE',
+      10,
+      1,
+      120,
+    ),
+    messageRateLimitPerMinute: integer(
+      'WEBSITE_MESSAGE_RATE_LIMIT_PER_MINUTE',
+      20,
+      1,
+      300,
+    ),
+    configRateLimitPerMinute: integer(
+      'WEBSITE_CONFIG_RATE_LIMIT_PER_MINUTE',
+      60,
+      1,
+      600,
+    ),
+    readRateLimitPerMinute: integer(
+      'WEBSITE_READ_RATE_LIMIT_PER_MINUTE',
+      60,
+      1,
+      600,
+    ),
+    businessRateLimitPerMinute: integer(
+      'WEBSITE_BUSINESS_RATE_LIMIT_PER_MINUTE',
+      1200,
+      100,
+      100000,
+    ),
+    contactRateLimitPerMinute: integer(
+      'WEBSITE_CONTACT_RATE_LIMIT_PER_MINUTE',
+      5,
+      1,
+      60,
+    ),
+    handoffRateLimitPerMinute: integer(
+      'WEBSITE_HANDOFF_RATE_LIMIT_PER_MINUTE',
+      5,
+      1,
+      60,
+    ),
+    sessionEndRateLimitPerMinute: integer(
+      'WEBSITE_SESSION_END_RATE_LIMIT_PER_MINUTE',
+      10,
+      1,
+      120,
+    ),
+    typingRateLimitPerMinute: integer(
+      'WEBSITE_TYPING_RATE_LIMIT_PER_MINUTE',
+      60,
+      1,
+      600,
+    ),
+    reconnectRateLimitPerMinute: integer(
+      'WEBSITE_SSE_RECONNECT_RATE_LIMIT_PER_MINUTE',
+      12,
+      1,
+      120,
+    ),
+    sseMaxConnectionsPerSession: integer(
+      'WEBSITE_SSE_MAX_CONNECTIONS_PER_SESSION',
+      4,
+      1,
+      20,
+    ),
+    sseLeaseTtlSeconds,
+    sseLeaseRenewSeconds,
+    trustedProxyIps: new Set(trustedProxyIps.map((ip) => ip.toLowerCase())),
   };
 }
 
