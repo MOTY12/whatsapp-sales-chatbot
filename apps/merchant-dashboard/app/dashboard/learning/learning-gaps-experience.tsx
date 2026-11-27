@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KnowledgeGap, LearningSuggestion } from '@/lib/api';
+import type { KnowledgeFaq, KnowledgeGap, LearningSuggestion } from '@/lib/api';
 import styles from './learning.module.css';
 
 type Props = {
@@ -53,6 +53,14 @@ function dateLabel(value: string) {
     : 'Recently';
 }
 
+function normalizeQuestion(value: string) {
+  return value
+    .toLocaleLowerCase('en-NG')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 const categoryLabels: Record<KnowledgeGap['category'], string> = {
   MISSING_KNOWLEDGE: 'Missing business information',
   UNSUPPORTED_REQUEST: 'Unsupported request',
@@ -73,6 +81,10 @@ export function LearningGapsExperience({
   const [loading, setLoading] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<LearningSuggestion[]>([]);
+  const [publishedFaqs, setPublishedFaqs] = useState<KnowledgeFaq[]>([]);
+  const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(
+    null,
+  );
   const [editingGap, setEditingGap] = useState<KnowledgeGap | null>(null);
   const [draftQuestion, setDraftQuestion] = useState('');
   const [draftAnswer, setDraftAnswer] = useState('');
@@ -99,7 +111,81 @@ export function LearningGapsExperience({
     )
       .then((result) => setSuggestions(result.items ?? []))
       .catch(() => undefined);
+    void request<KnowledgeFaq[]>(`/api/knowledge/${businessId}/faqs`)
+      .then((items) =>
+        setPublishedFaqs(
+          items.filter(
+            (faq) =>
+              faq.published_revision !== null && !faq.has_unpublished_changes,
+          ),
+        ),
+      )
+      .catch(() => setPublishedFaqs([]));
   }, [businessId]);
+
+  async function saveSuggestion(suggestion: LearningSuggestion) {
+    setPendingId(suggestion.id);
+    setError(null);
+    try {
+      await request(
+        `/api/learning/${businessId}/suggestions/${suggestion.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            expectedVersion: suggestion.version,
+            question:
+              draftQuestions[suggestion.id] ?? suggestion.proposed_question,
+            answer: draftAnswers[suggestion.id] ?? suggestion.proposed_answer,
+          }),
+        },
+      );
+      const result = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(result.items ?? []);
+      setEditingSuggestionId(null);
+      setNotice(
+        'Suggestion updated. Review any possible FAQ conflict before approving it.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'Suggestion could not be saved.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function retainExistingAnswer(suggestion: LearningSuggestion) {
+    setPendingId(suggestion.id);
+    setError(null);
+    try {
+      await request(
+        `/api/learning/${businessId}/suggestions/${suggestion.id}/dismiss`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason: 'RETAIN_EXISTING_ANSWER' }),
+        },
+      );
+      const result = await request<{ items: LearningSuggestion[] }>(
+        `/api/learning/${businessId}/suggestions`,
+      );
+      setSuggestions(result.items ?? []);
+      setNotice(
+        'The existing published answer was retained. The suggestion was dismissed.',
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'The suggestion could not be dismissed.',
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   async function createSuggestion() {
     if (!editingGap) return;
@@ -349,73 +435,50 @@ export function LearningGapsExperience({
         {suggestions.length === 0 ? (
           <p>No suggestions yet. Create one from a reviewed question.</p>
         ) : (
-          suggestions.map((suggestion) => (
-            <article className={styles.gap} key={suggestion.id}>
-              <span className={styles.status}>
-                {suggestion.status.replaceAll('_', ' ').toLowerCase()}
-              </span>
-              <h3>{suggestion.proposed_question}</h3>
-              <p>{suggestion.proposed_answer}</p>
-              {suggestion.status === 'PENDING_REVIEW' && (
-                <button
-                  type="button"
-                  disabled={pendingId === suggestion.id}
-                  onClick={() => void approveSuggestion(suggestion)}
-                >
-                  {pendingId === suggestion.id
-                    ? 'Approving…'
-                    : 'Approve and index'}
-                </button>
-              )}
-              {suggestion.status === 'INDEXING' && (
-                <p role="status">
-                  Approved; indexing in progress. This answer is not live yet.
-                </p>
-              )}
-              {suggestion.status === 'PUBLISHED' && (
-                <>
-                  <p role="status">Published and available to the assistant.</p>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() =>
-                      void request<{ items: Array<{ status: string }> }>(
-                        `/api/learning/${businessId}/suggestions/${suggestion.id}/evaluations`,
-                      )
-                        .then((result) =>
-                          setEvaluationStatus(
-                            result.items[0]?.status ?? 'PENDING',
-                          ),
-                        )
-                        .catch((failure) =>
-                          setError(
-                            failure instanceof Error
-                              ? failure.message
-                              : 'Evaluation could not be loaded.',
-                          ),
-                        )
-                    }
-                  >
-                    View retrieval evaluation
-                  </button>
-                </>
-              )}
-              {evaluationStatus && (
-                <p role="status">
-                  Retrieval replay status: {evaluationStatus}. This replay does
-                  not generate an answer or validate grounding/citations.
-                </p>
-              )}
-              {suggestion.status === 'INDEXING_FAILED' && (
-                <p role="alert">
-                  Indexing failed. Existing published knowledge remains active.
-                </p>
-              )}
-              {suggestion.status === 'DRAFT' &&
-                suggestion.origin === 'AI_ASSISTED' && (
+          suggestions.map((suggestion) => {
+            const conflict = publishedFaqs.find(
+              (faq) =>
+                normalizeQuestion(faq.question) ===
+                  normalizeQuestion(suggestion.proposed_question) &&
+                faq.answer.trim() !== suggestion.proposed_answer.trim(),
+            );
+            return (
+              <article className={styles.gap} key={suggestion.id}>
+                <span className={styles.status}>
+                  {suggestion.status.replaceAll('_', ' ').toLowerCase()}
+                </span>
+                {suggestion.status === 'PENDING_REVIEW' && conflict && (
+                  <div className={styles.conflictNotice} role="alert">
+                    <strong>Possible FAQ conflict</strong>
+                    <p>
+                      Reason: this suggestion has the same normalized question
+                      as a published FAQ, but a different answer. This is a
+                      deterministic duplicate-question warning, not proof that
+                      either answer is correct.
+                    </p>
+                    <p>
+                      <strong>Current published answer:</strong>{' '}
+                      {conflict.answer}
+                    </p>
+                    <p>
+                      <strong>Proposed answer:</strong>{' '}
+                      {suggestion.proposed_answer}
+                    </p>
+                    <p>
+                      Published FAQ revision {conflict.published_revision} ·
+                      source {conflict.id}
+                    </p>
+                    <Link
+                      href={`/dashboard/knowledge?businessId=${encodeURIComponent(businessId)}#faq-${encodeURIComponent(conflict.id)}`}
+                    >
+                      Review the published FAQ
+                    </Link>
+                  </div>
+                )}
+                {editingSuggestionId === suggestion.id ? (
                   <div className={styles.suggestionDraft}>
                     <label>
-                      Review question
+                      Proposed question
                       <input
                         value={
                           draftQuestions[suggestion.id] ??
@@ -431,7 +494,7 @@ export function LearningGapsExperience({
                       />
                     </label>
                     <label>
-                      Review answer
+                      Proposed answer
                       <textarea
                         value={
                           draftAnswers[suggestion.id] ??
@@ -450,16 +513,160 @@ export function LearningGapsExperience({
                     <button
                       type="button"
                       disabled={pendingId === suggestion.id}
-                      onClick={() => void submitAiDraft(suggestion)}
+                      onClick={() => void saveSuggestion(suggestion)}
                     >
                       {pendingId === suggestion.id
-                        ? 'Submitting…'
-                        : 'Submit reviewed draft'}
+                        ? 'Saving…'
+                        : 'Save reviewed suggestion'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => setEditingSuggestionId(null)}
+                    >
+                      Cancel editing
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h3>{suggestion.proposed_question}</h3>
+                    <p>{suggestion.proposed_answer}</p>
+                  </>
+                )}
+                {suggestion.status === 'PENDING_REVIEW' && (
+                  <div className={styles.actions}>
+                    {editingSuggestionId !== suggestion.id && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => setEditingSuggestionId(suggestion.id)}
+                      >
+                        Edit suggestion
+                      </button>
+                    )}
+                    {conflict && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={pendingId === suggestion.id}
+                        onClick={() => void retainExistingAnswer(suggestion)}
+                      >
+                        Keep existing answer
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={
+                        pendingId === suggestion.id ||
+                        editingSuggestionId === suggestion.id
+                      }
+                      onClick={() => void approveSuggestion(suggestion)}
+                    >
+                      {pendingId === suggestion.id
+                        ? 'Approving…'
+                        : conflict
+                          ? 'Approve replacement and index'
+                          : 'Approve and index'}
                     </button>
                   </div>
                 )}
-            </article>
-          ))
+                {suggestion.status === 'INDEXING' && (
+                  <p role="status">
+                    Approved; indexing in progress. This answer is not live yet.
+                  </p>
+                )}
+                {suggestion.status === 'PUBLISHED' && (
+                  <>
+                    <p role="status">
+                      Published and available to the assistant.
+                    </p>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() =>
+                        void request<{ items: Array<{ status: string }> }>(
+                          `/api/learning/${businessId}/suggestions/${suggestion.id}/evaluations`,
+                        )
+                          .then((result) =>
+                            setEvaluationStatus(
+                              result.items[0]?.status ?? 'PENDING',
+                            ),
+                          )
+                          .catch((failure) =>
+                            setError(
+                              failure instanceof Error
+                                ? failure.message
+                                : 'Evaluation could not be loaded.',
+                            ),
+                          )
+                      }
+                    >
+                      View retrieval evaluation
+                    </button>
+                  </>
+                )}
+                {evaluationStatus && (
+                  <p role="status">
+                    Retrieval replay status: {evaluationStatus}. This replay
+                    does not generate an answer or validate grounding/citations.
+                  </p>
+                )}
+                {suggestion.status === 'INDEXING_FAILED' && (
+                  <p role="alert">
+                    Indexing failed. Existing published knowledge remains
+                    active.
+                  </p>
+                )}
+                {suggestion.status === 'DRAFT' &&
+                  suggestion.origin === 'AI_ASSISTED' && (
+                    <div className={styles.suggestionDraft}>
+                      <label>
+                        Review question
+                        <input
+                          value={
+                            draftQuestions[suggestion.id] ??
+                            suggestion.proposed_question
+                          }
+                          onChange={(event) =>
+                            setDraftQuestions((current) => ({
+                              ...current,
+                              [suggestion.id]: event.target.value,
+                            }))
+                          }
+                          maxLength={500}
+                        />
+                      </label>
+                      <label>
+                        Review answer
+                        <textarea
+                          value={
+                            draftAnswers[suggestion.id] ??
+                            suggestion.proposed_answer
+                          }
+                          onChange={(event) =>
+                            setDraftAnswers((current) => ({
+                              ...current,
+                              [suggestion.id]: event.target.value,
+                            }))
+                          }
+                          maxLength={5000}
+                          rows={4}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={pendingId === suggestion.id}
+                        onClick={() => void submitAiDraft(suggestion)}
+                      >
+                        {pendingId === suggestion.id
+                          ? 'Submitting…'
+                          : 'Submit reviewed draft'}
+                      </button>
+                    </div>
+                  )}
+              </article>
+            );
+          })
         )}
       </section>
 

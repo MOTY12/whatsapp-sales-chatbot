@@ -35,6 +35,15 @@ export const merchantPolicyTables = [
   'merchant_business_invitations',
   'merchant_team_audit',
   'merchant_team_invitation_attempts',
+  'commercial_pilot_enrollments',
+  'commercial_pilot_agreements',
+  'commercial_pilot_invoices',
+  'commercial_pilot_payments',
+  'commercial_pilot_entitlement_events',
+  'commercial_pilot_audit_events',
+  'commercial_pilot_packages',
+  'commercial_pilot_package_versions',
+  'commercial_pilot_capacity',
 ];
 
 const identityFunctions = [
@@ -173,6 +182,11 @@ export const teamFunctions = [
 export const analyticsFunctions = [
   'kleva_merchant_analytics(timestamptz,timestamptz,text,text)',
 ];
+export const commercialFunctions = [
+  'kleva_commercial_read()',
+  'kleva_commercial_readiness()',
+  'kleva_commercial_offer_accept(uuid,uuid)',
+];
 export const websiteWidgetFunctions = [
   'kleva_website_widget_list()',
   'kleva_website_widget_create(text,text)',
@@ -212,7 +226,7 @@ export async function grantMerchantAccess(
       `GRANT SELECT ("businessId", "accountId", role, status) ON public.business_members TO "${role}"`,
     );
     await manager.query(
-      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...teamFunctions, ...websiteWidgetFunctions, ...analyticsFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
+      `GRANT EXECUTE ON FUNCTION ${[...sessionFunctions, ...onboardingFunctions, ...secureWhatsAppFunctions, ...learningFunctions, ...teamFunctions, ...websiteWidgetFunctions, ...analyticsFunctions, ...commercialFunctions].map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,
     );
     await manager.query(
       `GRANT EXECUTE ON FUNCTION ${embeddedWhatsAppFunctions.map((fn) => `public.${fn}`).join(', ')} TO "${role}"`,

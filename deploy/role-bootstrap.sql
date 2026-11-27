@@ -17,6 +17,27 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_backup') THEN
     CREATE ROLE kleva_backup LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_package_manager') THEN
+    CREATE ROLE kleva_commercial_package_manager NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_enrollment_manager') THEN
+    CREATE ROLE kleva_commercial_enrollment_manager NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_invoice_manager') THEN
+    CREATE ROLE kleva_commercial_invoice_manager NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_payment_recorder') THEN
+    CREATE ROLE kleva_commercial_payment_recorder NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_payment_confirmer') THEN
+    CREATE ROLE kleva_commercial_payment_confirmer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_entitlement_manager') THEN
+    CREATE ROLE kleva_commercial_entitlement_manager NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kleva_commercial_capacity_manager') THEN
+    CREATE ROLE kleva_commercial_capacity_manager NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
 END
 $$;
 

@@ -193,6 +193,8 @@ export class KnowledgeIndexingWorkerService {
         rows[0].business_id,
         idempotencyKey,
         tokenCount,
+        'knowledge_embedding_tokens',
+        'KNOWLEDGE_INDEXING',
       );
       let response: EmbeddingResponse;
       try {
@@ -242,15 +244,29 @@ export class KnowledgeIndexingWorkerService {
         tokenCount: item.chunk.tokenCount,
         embedding: response.vectors[index],
       }));
-      await this.database.query(
-        'SELECT public.kleva_knowledge_chunks_save($1,$2::jsonb)',
-        [generationId, JSON.stringify(saved)],
-      );
-      await this.usage.commitKnowledgeEmbeddingTokens(
-        rows[0].business_id,
-        idempotencyKey,
-        actualTokens,
-      );
+      try {
+        await this.database.transaction(async (manager) => {
+          await manager.query(
+            'SELECT public.kleva_knowledge_chunks_save($1,$2::jsonb)',
+            [generationId, JSON.stringify(saved)],
+          );
+          await this.usage.commitKnowledgeEmbeddingTokens(
+            rows[0].business_id,
+            idempotencyKey,
+            actualTokens,
+            'knowledge_embedding_tokens',
+            manager,
+          );
+        });
+      } catch {
+        await this.usage
+          .markKnowledgeEmbeddingTokensUncertain(
+            rows[0].business_id,
+            idempotencyKey,
+          )
+          .catch(() => undefined);
+        throw new Error('KNOWLEDGE_INDEX_BATCH_FINALIZATION_FAILED');
+      }
     }
     const [activated] = await this.database.query<
       Array<{ kleva_knowledge_index_activate: boolean }>

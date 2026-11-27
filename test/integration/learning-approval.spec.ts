@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { DeterministicEmbeddingProvider } from '../../src/knowledge/embedding-provider';
+import { UnifiedKnowledgeRetrievalService } from '../../src/knowledge/unified-knowledge-retrieval.service';
+import { UsageService } from '../../src/metering/usage.service';
+import { LearningEvaluationWorkerService } from '../../src/learning/learning-evaluation-worker.service';
+import type { OutboxOperation } from '../../src/database/entities/outbox-operation.entity';
 import { seedTenant } from './fixtures';
 import { applyMigrations, createIntegrationDatabase } from './postgres';
 
@@ -14,9 +19,18 @@ describe('merchant-approved learning publication', () => {
     ReturnType<typeof database.merchantCredentials>
   >;
   let accountId: string;
+  let originalSemanticEnabled: string | undefined;
+  let originalOpenAiKey: string | undefined;
+  let originalMinimumSimilarity: string | undefined;
   const digest = 'learning-approval-session-digest';
 
   beforeAll(async () => {
+    originalSemanticEnabled = process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED;
+    originalOpenAiKey = process.env.OPENAI_API_KEY;
+    originalMinimumSimilarity = process.env.KNOWLEDGE_SEMANTIC_MIN_SIMILARITY;
+    process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED = 'true';
+    process.env.OPENAI_API_KEY = 'integration-fixture-only';
+    process.env.KNOWLEDGE_SEMANTIC_MIN_SIMILARITY = '-1';
     database = await createIntegrationDatabase();
     admin = await database.migrator();
     await applyMigrations(admin);
@@ -64,6 +78,16 @@ describe('merchant-approved learning publication', () => {
     await merchant?.destroy();
     await runtime?.destroy();
     await database?.close();
+    if (originalSemanticEnabled === undefined)
+      delete process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED;
+    else
+      process.env.KNOWLEDGE_SEMANTIC_SEARCH_ENABLED = originalSemanticEnabled;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    if (originalMinimumSimilarity === undefined)
+      delete process.env.KNOWLEDGE_SEMANTIC_MIN_SIMILARITY;
+    else
+      process.env.KNOWLEDGE_SEMANTIC_MIN_SIMILARITY = originalMinimumSimilarity;
   });
 
   it('keeps staged FAQ private until complete index activation publishes it atomically', async () => {
@@ -281,5 +305,72 @@ describe('merchant-approved learning publication', () => {
       );
     });
     expect(secondApprove.generation_id).toBe(generationId);
+
+    const [evaluationRun] = await admin.query<{ id: string }[]>(
+      `SELECT id FROM public.learning_evaluation_runs
+       WHERE suggestion_id=$1 AND approved_revision_id=$2 ORDER BY created_at DESC LIMIT 1`,
+      [suggestion.id, staged.revision],
+    );
+    expect(evaluationRun?.id).toBeTruthy();
+    const retrieval = new UnifiedKnowledgeRetrievalService(
+      runtime,
+      new DeterministicEmbeddingProvider(),
+      new UsageService(runtime),
+    );
+    const evaluationWorker = new LearningEvaluationWorkerService(
+      runtime,
+      retrieval,
+    );
+    await evaluationWorker.execute({
+      metadata: { evaluationRunId: evaluationRun.id },
+      attempts: 0,
+    } as unknown as OutboxOperation);
+
+    const [evaluation] = await admin.query<
+      {
+        status: string;
+        before_outcome: string;
+        after_outcome: string;
+        after_evidence: Array<{
+          revisionId: string;
+          generationId: string;
+        }>;
+      }[]
+    >(
+      `SELECT r.status,e.before_outcome,e.after_outcome,e.after_evidence
+       FROM public.learning_evaluation_runs r
+       JOIN public.learning_evaluation_results e ON e.run_id=r.id AND e.business_id=r.business_id
+       WHERE r.id=$1`,
+      [evaluationRun.id],
+    );
+    expect(evaluation.status).toBe('COMPLETED');
+    expect(evaluation.before_outcome).toBe('COMPARABLE_BASELINE_UNAVAILABLE');
+    expect({
+      outcome: evaluation.after_outcome,
+      evidence: evaluation.after_evidence,
+    }).toMatchObject({
+      outcome: 'APPROVED_REVISION_RETRIEVED',
+      evidence: [
+        expect.objectContaining({
+          revisionId: staged.revision,
+          generationId,
+        }),
+      ],
+    });
+    expect(evaluation.after_evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          revisionId: staged.revision,
+          generationId,
+        }),
+      ]),
+    );
+    const [evaluationUsage] = await admin.query<{ count: number }[]>(
+      `SELECT count(*)::int AS count FROM public.usage_reservations
+       WHERE business_id=$1 AND category='playground_embedding_tokens'
+         AND usage_purpose='EVALUATION'`,
+      [tenant.business.id],
+    );
+    expect(evaluationUsage.count).toBeGreaterThan(0);
   });
 });

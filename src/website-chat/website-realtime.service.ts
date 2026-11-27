@@ -126,6 +126,7 @@ export class WebsiteRealtimeService
 {
   private readonly logger = new Logger(WebsiteRealtimeService.name);
   private publisher?: Redis;
+  private publisherConnecting?: Promise<void>;
   private subscriber?: Redis;
   private subscriberReady?: Promise<void>;
   private readonly listeners = new Map<
@@ -437,7 +438,20 @@ export class WebsiteRealtimeService
       });
       this.publisher.on('error', () => undefined);
     }
-    if (this.publisher.status === 'wait') await this.publisher.connect();
+    if (this.publisher.status === 'wait') {
+      this.publisherConnecting ??= this.publisher
+        .connect()
+        .then(() => undefined)
+        .finally(() => {
+          this.publisherConnecting = undefined;
+        });
+    }
+    if (this.publisher.status === 'connecting' && this.publisherConnecting)
+      await this.publisherConnecting;
+    else if (this.publisher.status === 'wait' && this.publisherConnecting)
+      await this.publisherConnecting;
+    else if (this.publisher.status !== 'ready')
+      throw new Error('WEBSITE_REDIS_NOT_READY');
   }
 
   private async sampleDistributedLeases() {

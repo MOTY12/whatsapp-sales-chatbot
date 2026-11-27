@@ -17,7 +17,7 @@ export type RetrievalRequest = {
   businessId: string;
   query: string;
   limit?: number;
-  purpose?: 'live' | 'playground';
+  purpose?: 'live' | 'playground' | 'evaluation';
   requestId?: string;
   /** Current customer question for query embedding; the lexical query may include bounded context. */
   semanticQuery?: string;
@@ -382,14 +382,21 @@ export class UnifiedKnowledgeRetrievalService {
       // outcome conservatively accounts for the additional request.
       key = `semantic-query:${purpose}:${requestId}:${randomUUID()}`;
       const usageCategory =
-        purpose === 'playground'
+        purpose === 'playground' || purpose === 'evaluation'
           ? 'playground_embedding_tokens'
           : 'live_embedding_tokens';
+      const usagePurpose =
+        purpose === 'evaluation'
+          ? 'EVALUATION'
+          : purpose === 'playground'
+            ? 'PLAYGROUND'
+            : 'LIVE_CUSTOMER';
       await this.usage.reserveKnowledgeEmbeddingTokens(
         request.businessId,
         key,
         tokenCount,
         usageCategory,
+        usagePurpose,
       );
       let response: EmbeddingResponse;
       try {
@@ -451,7 +458,7 @@ export class UnifiedKnowledgeRetrievalService {
     } catch (error) {
       const purpose = request.purpose ?? 'live';
       const category =
-        purpose === 'playground'
+        purpose === 'playground' || purpose === 'evaluation'
           ? 'playground_embedding_tokens'
           : 'live_embedding_tokens';
       if (key)

@@ -17,6 +17,15 @@ const expectedTables = [
   'business_usage_limits',
   'businesses',
   'channel_connections',
+  'commercial_pilot_agreements',
+  'commercial_pilot_audit_events',
+  'commercial_pilot_capacity',
+  'commercial_pilot_enrollments',
+  'commercial_pilot_entitlement_events',
+  'commercial_pilot_invoices',
+  'commercial_pilot_package_versions',
+  'commercial_pilot_packages',
+  'commercial_pilot_payments',
   'conversation_control_audit',
   'conversation_inbox_audit',
   'conversation_inbox_reads',
@@ -126,10 +135,11 @@ describe('PostgreSQL migration baseline', () => {
       WHERE n.nspname='public' AND p.proname IN (
         'kleva_whatsapp_provision_read','kleva_whatsapp_provision_checkpoint',
         'kleva_whatsapp_provision_finish','kleva_whatsapp_provision_fail'
+        ,'kleva_commercial_invoice_status_refresh'
       )
       ORDER BY p.proname
     `);
-    expect(workerFunctions).toHaveLength(4);
+    expect(workerFunctions).toHaveLength(5);
     expect(workerFunctions.every(({ allowed }) => allowed)).toBe(true);
 
     const foreignKeys = await source.query<{ constraint_name: string }[]>(`
@@ -167,6 +177,17 @@ describe('PostgreSQL migration baseline', () => {
         'business_pilot_enrollments_connection_id_fkey',
         'business_pilot_enrollments_merchant_account_id_fkey',
         'business_pilot_enrollments_revoked_by_account_id_fkey',
+        'commercial_pilot_package_versions_package_id_fkey',
+        'commercial_pilot_enrollments_business_id_fkey',
+        'commercial_pilot_enrollments_package_version_id_fkey',
+        'commercial_pilot_enrollments_accepted_by_fkey',
+        'commercial_pilot_agreements_account_id_fkey',
+        'commercial_pilot_agreements_business_id_enrollment_id_fkey',
+        'commercial_pilot_invoices_package_version_id_fkey',
+        'commercial_pilot_invoices_business_id_enrollment_id_fkey',
+        'commercial_pilot_payments_business_id_invoice_id_fkey',
+        'commercial_pilot_entitlement_eve_business_id_enrollment_id_fkey',
+        'commercial_pilot_audit_events_business_id_enrollment_id_fkey',
         'conversation_control_audit_business_id_conversation_id_fkey',
         'conversation_control_audit_actor_account_id_fkey',
         'conversation_inbox_audit_business_id_conversation_id_fkey',
@@ -340,6 +361,14 @@ describe('PostgreSQL migration baseline', () => {
     );
 
     const { username } = await database.merchantCredentials(source);
+    const [commercialAcl] = await source.query<
+      { canRead: boolean; canReadTables: boolean }[]
+    >(
+      `SELECT has_function_privilege($1,'public.kleva_commercial_readiness()','EXECUTE') AS "canRead",
+        has_table_privilege($1,'public.commercial_pilot_enrollments','SELECT') AS "canReadTables"`,
+      [username],
+    );
+    expect(commercialAcl).toEqual({ canRead: true, canReadTables: false });
     for (const name of [...expectedMigrations].reverse()) {
       const [latest] = await source.query<{ name: string }[]>(
         'SELECT name FROM migrations ORDER BY id DESC LIMIT 1',

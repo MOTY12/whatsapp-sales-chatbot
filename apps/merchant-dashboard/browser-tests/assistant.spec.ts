@@ -85,6 +85,9 @@ test('tests grounded and unknown questions without creating customer activity', 
   await expect(
     page.getByText(/Product · Classic leather handbag/),
   ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Open source in Knowledge Base' }).first(),
+  ).toHaveAttribute('href', /dashboard\/products\?businessId=.*#product-/);
 
   await page
     .getByLabel('Test customer message')
@@ -96,7 +99,12 @@ test('tests grounded and unknown questions without creating customer activity', 
     ),
   ).toBeVisible();
   await expect(page.getByText('Grounded answer').last()).toBeVisible();
-  await expect(page.getByText('Do you deliver to Ikeja?').first()).toBeVisible();
+  await expect(
+    page.getByText('Do you deliver to Ikeja?').first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Open source in Knowledge Base' }).last(),
+  ).toHaveAttribute('href', /dashboard\/knowledge\?businessId=.*#faq-/);
 
   await page
     .getByLabel('Test customer message')

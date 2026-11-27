@@ -324,7 +324,11 @@ export function KnowledgeDocuments({ businessId }: Props) {
           <p className={styles.documentHelp}>No documents uploaded yet.</p>
         ) : (
           documents.map((document) => (
-            <article className={styles.documentCard} key={document.id}>
+            <article
+              id={`document-${document.id}`}
+              className={styles.documentCard}
+              key={document.id}
+            >
               <div className={styles.documentCardTop}>
                 <div>
                   <h3>{document.title}</h3>

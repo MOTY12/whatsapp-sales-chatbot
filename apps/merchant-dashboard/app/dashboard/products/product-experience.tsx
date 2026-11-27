@@ -354,6 +354,7 @@ export function ProductExperience({
           <div className={styles.faqList}>
             {visible.map((product) => (
               <button
+                id={`product-${product.id}`}
                 key={product.id}
                 type="button"
                 className={`${styles.faqItem} ${selectedId === product.id ? styles.selected : ''}`}

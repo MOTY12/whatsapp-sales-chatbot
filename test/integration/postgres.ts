@@ -71,6 +71,17 @@ export async function createIntegrationDatabase() {
   let createdMigrationRole = false;
   let createdRuntimeRole = false;
   const merchantRoles: string[] = [];
+  const commercialOperatorRoles: string[] = [];
+  const createdCommercialGroups: string[] = [];
+  const commercialGroups = [
+    'kleva_commercial_package_manager',
+    'kleva_commercial_enrollment_manager',
+    'kleva_commercial_invoice_manager',
+    'kleva_commercial_payment_recorder',
+    'kleva_commercial_payment_confirmer',
+    'kleva_commercial_entitlement_manager',
+    'kleva_commercial_capacity_manager',
+  ];
 
   async function close() {
     const cleanupErrors: unknown[] = [];
@@ -94,6 +105,12 @@ export async function createIntegrationDatabase() {
         );
       }
       for (const role of merchantRoles) {
+        await attempt(() => control.query(`DROP ROLE "${role}"`));
+      }
+      for (const role of commercialOperatorRoles) {
+        await attempt(() => control.query(`DROP ROLE "${role}"`));
+      }
+      for (const role of createdCommercialGroups) {
         await attempt(() => control.query(`DROP ROLE "${role}"`));
       }
       if (createdRuntimeRole) {
@@ -218,6 +235,45 @@ export async function createIntegrationDatabase() {
           password,
           identityUsername,
           identityPassword,
+        };
+      },
+      async commercialOperator(migrator: DataSource) {
+        const username = 'kleva_commercial_operator_' + suffix;
+        const password = randomBytes(24).toString('hex');
+        for (const group of commercialGroups) {
+          const [exists] = await control.query<{ exists: boolean }[]>(
+            'SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1) AS exists',
+            [group],
+          );
+          if (!exists.exists) {
+            await control.query(`CREATE ROLE "${group}" NOLOGIN`);
+            createdCommercialGroups.push(group);
+          }
+        }
+        await control.query(
+          `CREATE ROLE "${username}" LOGIN PASSWORD '${password}'`,
+        );
+        commercialOperatorRoles.push(username);
+        await control.query(
+          `GRANT CONNECT ON DATABASE "${database}" TO "${username}"`,
+        );
+        for (const group of commercialGroups)
+          await control.query(`GRANT "${group}" TO "${username}"`);
+        const admin = await connect({});
+        try {
+          await admin.query(`GRANT USAGE ON SCHEMA public TO "${username}"`);
+        } finally {
+          await admin.destroy();
+        }
+        await migrator.query(
+          `GRANT EXECUTE ON FUNCTION public.kleva_commercial_create_package(text,text,text,numeric,text,integer,text[],jsonb,integer,jsonb), public.kleva_commercial_package_version_create(uuid,text,text,numeric,text,integer,text[],jsonb,integer,jsonb), public.kleva_commercial_package_approve(uuid), public.kleva_commercial_offer_create(uuid,uuid,uuid,text,text), public.kleva_commercial_approve(uuid,timestamptz), public.kleva_commercial_activate(uuid), public.kleva_commercial_invoice_create(uuid,text,timestamptz,text), public.kleva_commercial_invoice_issue(uuid), public.kleva_commercial_payment_record(uuid,numeric,text,text,text,timestamptz,text), public.kleva_commercial_payment_confirm(uuid), public.kleva_commercial_payment_reverse(uuid,text), public.kleva_commercial_provision(uuid,uuid), public.kleva_commercial_capacity_set(integer,integer,integer,integer,integer,integer,integer,integer) TO "${username}"`,
+        );
+        return {
+          host: config.host,
+          port: config.port,
+          database,
+          username,
+          password,
         };
       },
       async grantRuntimeAccess(migrator: DataSource) {

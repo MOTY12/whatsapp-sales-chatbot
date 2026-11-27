@@ -36,3 +36,13 @@ Only a business owner can submit. The server requires `activation_ready`, checks
 ## Rollout notes
 
 Apply migration `1760000000028-AgentActivationAndMemory` before deploying the code that reads the readiness function or summary table. It adds tenant-scoped durable conversation summaries and operator activation checks. Keep `AI_RESPONSES_ENABLED=false` until staging verifies merchant opt-in, operator approval, current Meta assets, customer opt-out handling, model behavior and rollback controls. This API does not prove external Meta or model-provider eligibility.
+
+## Separate commercial pilot account
+
+Commercial offers, invoices and payments are a separate domain from WhatsApp AI activation. See [commercial pilot API and operations](../kleva-omnichannel/commercial-pilot.md).
+
+- `GET /merchant/businesses/:businessId/commercial` returns only the authenticated tenant's commercial account, offer acceptance evidence, invoice/payment history and current entitlements.
+- `GET /merchant/businesses/:businessId/commercial/readiness` returns backend-derived setup blockers scoped to the enrollment's selected channels. A website-only package does not require Meta assets; that result does not activate the website assistant.
+- `POST /merchant/businesses/:businessId/commercial/offers/:offerId/accept` requires the existing merchant session, CSRF protection, owner permission and a request key. It records agreement acceptance atomically and does not approve a WhatsApp pilot or enable AI.
+
+Commercial payment status and commercial enrollment status do not replace the WhatsApp pilot endpoints above. Merchant payment claims cannot confirm invoices. Commercial operator mutations are available only through the restricted operator CLI and permission groups; no operator HTTP API is exposed. Local integration evidence is separate from approved terms, actual merchant consent, external payment settlement and staging QA.

@@ -26,6 +26,8 @@
     "tenant:preflight": "npm run build && node dist/database/tenant-preflight.js",
     "pilot:grant-operator": "npm run build && node dist/database/grant-pilot-operator.js",
     "pilot:approve": "npm run build && node dist/database/approve-pilot.js",
+    "commercial:operator": "npm run build && node dist/database/commercial-operator.js",
+    "commercial:grant-operator": "npm run build && node dist/database/grant-commercial-operator.js",
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:run:locked": "npm run build && node dist/database/migration-runner.js",
     "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js",

@@ -31,4 +31,4 @@ The merchant can list documents, see extraction status and a bounded first-page 
 
 ## Known boundary
 
-Scanned image PDFs need OCR in a later milestone. KNOWLEDGE-003 owns semantic chunking, embeddings and reindexing. Bucket provisioning, service identity, exact dashboard CORS origin, TLS, backup policy and any organization-specific retention period are infrastructure decisions that must be completed outside the application.
+Scanned image PDFs need OCR in a later milestone. KNOWLEDGE-003 owns semantic chunking, embeddings and reindexing. The implementation pins exact S3 object versions and checksums, but live S3-compatible PUT/HEAD/version retrieval and cleanup have not been verified in this work session. Bucket provisioning, service identity, exact dashboard CORS origin, TLS, backup policy and any organization-specific retention period are infrastructure decisions that must be completed outside the application.

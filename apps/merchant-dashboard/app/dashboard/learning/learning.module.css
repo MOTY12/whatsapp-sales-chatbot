@@ -102,6 +102,23 @@
   font-size: 13px;
   line-height: 1.5;
 }
+.conflictNotice {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #e5c98a;
+  border-radius: 9px;
+  background: #fff9e9;
+  color: #59471f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.conflictNotice p {
+  margin: 7px 0;
+}
+.conflictNotice a {
+  color: #185d40;
+  font-weight: 650;
+}
 .redacted {
   margin: 0;
   color: #7d8982;

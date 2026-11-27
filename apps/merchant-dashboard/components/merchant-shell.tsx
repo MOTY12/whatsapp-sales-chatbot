@@ -15,6 +15,7 @@ const items = [
   ['Learning gaps', '/dashboard/learning', '◎'],
   ['Leads', '/dashboard/leads', '◉'],
   ['Analytics', '/dashboard/analytics', '▥'],
+  ['Plan & Billing', '/dashboard/commercial', '◫'],
   ['Settings', '/dashboard/settings', '⚙'],
 ] as const;
 

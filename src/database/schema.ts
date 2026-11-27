@@ -86,6 +86,8 @@ import { MerchantTeamInvitationAttempt } from './entities/merchant-team-invitati
 import { MerchantTeamManagement1760000000034 } from './migrations/1760000000034-MerchantTeamManagement';
 import { DurableWhatsAppProvisioning1760000000035 } from './migrations/1760000000035-DurableWhatsAppProvisioning';
 import { MerchantAnalytics1760000000036 } from './migrations/1760000000036-MerchantAnalytics';
+import { LearningEvaluationRevisionFence1760000000037 } from './migrations/1760000000037-LearningEvaluationRevisionFence';
+import { CommercialPilot1760000000038 } from './migrations/1760000000038-CommercialPilot';
 
 export const databaseEntities = [
   Business,
@@ -170,4 +172,6 @@ export const databaseMigrations = [
   MerchantTeamManagement1760000000034,
   DurableWhatsAppProvisioning1760000000035,
   MerchantAnalytics1760000000036,
+  LearningEvaluationRevisionFence1760000000037,
+  CommercialPilot1760000000038,
 ];

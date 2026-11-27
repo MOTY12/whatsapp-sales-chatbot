@@ -322,4 +322,60 @@ describe('pgvector knowledge ingestion and hybrid retrieval', () => {
     expect(saved.count).toBe(complete.expected_chunk_count);
     expect(saved.distinct_count).toBe(complete.expected_chunk_count);
   });
+
+  it('atomically finalizes saved chunks and usage, then retries a failed finalization conservatively', async () => {
+    const faq = await createFaq(
+      businessA,
+      'Returns after delivery',
+      'Contact the shop within seven days to request a return.',
+    );
+    const generation = await createGeneration(businessA, faq);
+    const failingUsage = {
+      reserveKnowledgeEmbeddingTokens: (
+        ...args: Parameters<UsageService['reserveKnowledgeEmbeddingTokens']>
+      ) => usage.reserveKnowledgeEmbeddingTokens(...args),
+      commitKnowledgeEmbeddingTokens: async () => {
+        throw new Error('fixture commit failure');
+      },
+      markKnowledgeEmbeddingTokensUncertain: (
+        ...args: Parameters<
+          UsageService['markKnowledgeEmbeddingTokensUncertain']
+        >
+      ) => usage.markKnowledgeEmbeddingTokensUncertain(...args),
+    } as unknown as UsageService;
+    const failingFinalization = new KnowledgeIndexingWorkerService(
+      runtime,
+      failingUsage,
+      new DeterministicEmbeddingProvider(),
+    );
+
+    await expect(execute(generation, failingFinalization)).rejects.toThrow(
+      'KNOWLEDGE_INDEX_BATCH_FINALIZATION_FAILED',
+    );
+    const [rolledBack] = await admin.query<
+      Array<{ chunks: number; status: string; purpose: string }>
+    >(
+      `SELECT (SELECT count(*)::int FROM public.knowledge_chunks WHERE generation_id=$1) chunks,
+              g.status, u.usage_purpose purpose
+       FROM public.knowledge_index_generations g
+       JOIN public.usage_reservations u ON u.business_id=g.business_id
+       WHERE g.id=$1 AND u.category='knowledge_embedding_tokens'`,
+      [generation],
+    );
+    expect(rolledBack).toMatchObject({
+      chunks: 0,
+      status: 'INDEXING',
+      purpose: 'KNOWLEDGE_INDEXING',
+    });
+
+    await execute(generation, indexing, 1);
+    const [recovered] = await admin.query<
+      Array<{ status: string; chunks: number }>
+    >(
+      `SELECT g.status,(SELECT count(*)::int FROM public.knowledge_chunks WHERE generation_id=g.id) chunks
+       FROM public.knowledge_index_generations g WHERE g.id=$1`,
+      [generation],
+    );
+    expect(recovered).toEqual({ status: 'ACTIVE', chunks: 1 });
+  });
 });

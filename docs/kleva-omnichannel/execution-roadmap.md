@@ -466,21 +466,22 @@ V1 mapping and adaptation. Use the same merchant-approved publishing workflow. L
 - **Database and API.** Additive suggestion, immutable version/decision and evaluation run/result tables; tenant-scoped list/detail/create/edit/submit/approve/dismiss/retry routes.
 - **Dependencies.** LEARNING-001, KNOWLEDGE-003. **External services.** Local fixtures or the services already provisioned by dependencies.
 - **Security.** No customer input becomes authoritative without explicit review and publisher provenance.
-- **Acceptance and required tests.** Disposable migration rollback/reapply, staged approval exclusion, failure preservation, retry and atomic publish tests pass. Competing publication, AI/evaluation worker, quota and dashboard browser acceptance remain open.
+- **Acceptance and required tests.** Disposable migration rollback/reapply, staged approval exclusion, failure preservation, retry and atomic publish tests pass. This increment adds a synthetic evaluation harness, dedicated EVALUATION usage purpose, exact source/revision/generation replay, stale evaluation fencing and per-run advisory-lock recovery. FAQ/document/product conflict detection and resolution UX, full dashboard browser journey, authorized live-provider evaluation, and staging object-store checks remain open.
 - **Verify.** npm run test:integration -- learning-approval and npm --prefix apps/dashboard test -- learning.
 - **Done.** Not complete. Keep LEARNING-002 IN_PROGRESS until all listed acceptance tests and release checks pass.
 
 ### PILOT-001 · Prepare paid pilot and manual collection · Small
 
-- **Objective.** Define a merchant cap, NGN quote, support coverage, billing event evidence and collection workflow.
-- **Reuse and likely changes.** Reuse analytics, usage and operational runbooks → pilot release docs.
-- **Implementation.** Define a merchant cap, NGN quote, support coverage, billing event evidence and collection workflow.
-- **Database and API.** Manual invoice reference in audited billing record. No automated charge route.
-- **Dependencies.** ANALYTICS-001, METER-001, OPS-001. **External services.** Pilot merchants, payment/invoice process and support owner.
-- **Security.** Consent and contract review, separate provider charges and Kleva invoices.
-- **Acceptance and required tests.** At least one consenting pilot merchant completes setup and agrees price and cap. Reconcile sample invoice, cap and cost ledger.
-- **Verify.** Complete the pilot collection checklist and attach reviewed evidence.
-- **Done.** Pilot operator has an agreed merchant quote, cap, collection method and support owner, with an auditable invoice rehearsal.
+- **Objective.** Prepare configurable commercial offers, owner acceptance, bounded capacity, manual invoice/payment reconciliation and auditable entitlements without changing existing WhatsApp activation gates.
+- **Reuse and likely changes.** Reuse merchant authorization/RLS, `UsageService`, pilot runbooks and the durable worker; add a separate commercial domain and merchant Plan & Billing view.
+- **Implementation.** Add package version snapshots, separate commercial enrollment/agreement records, owner-only offer acceptance, readiness by selected channels, restricted operator CLI, exact NGN amounts, invoices, confirmed payment history, idempotent allowance provisioning and safe overdue/expiry maintenance. Website-only commercial readiness remains independent of Meta assets. Payment or package status never activates AI.
+- **Database and API.** Add migration `1760000000038-CommercialPilot`; merchant APIs read the commercial account and checklist and accept an offered agreement. Operator mutations use narrowly grouped PostgreSQL permissions and the commercial CLI; no ordinary merchant admin endpoints or automated charges.
+- **Dependencies.** ANALYTICS-001, METER-001, OPS-001. **External services.** Approved prices/legal text, pilot merchants, collection evidence and support owner.
+- **Security.** Forced RLS, tenant-scoped keys, no merchant direct table access, separately granted operator capabilities, audit provenance, transactional payment reconciliation, and no secret or customer content in commercial records.
+- **Acceptance and required tests.** Disposable PostgreSQL tests verify website-only/WhatsApp-independent readiness, owner vs. employee/cross-tenant acceptance, immutable offer snapshots, invoice partial/full payments, overpayment rejection, entitlement idempotency, expiry and isolation. Real merchant acceptance, payment evidence, approved terms and expiry restrictions are separate release evidence.
+- **Verify.** `npm run test:integration -- --runInBand` against disposable PostgreSQL, backend and dashboard regression suites, lint/typecheck/build, then complete [commercial acceptance checklist](commercial-acceptance-checklist.md).
+- **Status.** Commercial data/API/merchant page/operator CLI foundation implemented and locally verified. IN_PROGRESS: no approved commercial terms, operator dashboard, notifications, suspend/renew workflow or approved service restriction policy; no real merchant/payment evidence. See [commercial pilot architecture](commercial-pilot.md).
+- **Done.** Only after an authorized operator has approved terms and capacity, an actual merchant owner has accepted them, an invoice/payment rehearsal has been reconciled, support and expiry policies are approved, and applicable staging/release evidence is attached.
 
 ### OPS-002 · Enforce retention, deletion and restore controls · Medium
 

@@ -25,6 +25,8 @@ import { MerchantLeadsService } from './merchant-leads.service';
 import { MerchantSalesPolicyController } from './merchant-sales-policy.controller';
 import { MerchantPilotController } from './merchant-pilot.controller';
 import { MerchantPilotService } from './merchant-pilot.service';
+import { MerchantCommercialController } from './merchant-commercial.controller';
+import { MerchantCommercialService } from './merchant-commercial.service';
 import { MerchantPasswordAuthService } from './merchant-password-auth.service';
 import { EmailModule } from '../Email/email.module';
 import { AssistantModule } from '../assistant/assistant.module';
@@ -74,6 +76,7 @@ import {
     MerchantLeadsController,
     MerchantSalesPolicyController,
     MerchantPilotController,
+    MerchantCommercialController,
     MerchantAssistantController,
     MerchantLearningController,
     MerchantLearningSuggestionsController,
@@ -97,6 +100,7 @@ import {
     ProductService,
     MerchantLeadsService,
     MerchantPilotService,
+    MerchantCommercialService,
     MerchantAssistantService,
     MerchantLearningService,
     MerchantWebsiteWidgetService,

@@ -1,0 +1,9 @@
+# Learning suggestion approval and evaluation
+
+Learning suggestions remain merchant-reviewed drafts. Owners/editors can create or edit a question and answer, submit it, and explicitly approve an immutable version. Approval stages an FAQ revision and index generation; live retrieval continues to use the old published revision until the approved generation is complete. Publication and activation are atomic and fenced against a concurrent edit or independent publication. Failed indexing leaves the previous published FAQ active.
+
+`LearningEvaluationRevisionFence1760000000037` adds a narrow runtime function that reads the approved suggestion version, FAQ revision and generation and checks whether that revision remains current. The worker locks each run using a PostgreSQL advisory lock, uses the evaluation retrieval purpose, and reports `APPROVED_REVISION_RETRIEVED` only when source ID, revision ID and generation ID all match. Superseded runs do not retrieve against newer data. A worker crash releases the lock so a durable retry can resume a `RUNNING` run; result writes are idempotent.
+
+The old lexical-overlap diagnostic is not treated as comparable to current retrieval. Where historical generation snapshots are unavailable, the result states `COMPARABLE_BASELINE_UNAVAILABLE`. This worker verifies retrieval provenance only; it does not generate an answer or establish answer correctness, groundedness or citation validity.
+
+The learning dashboard surfaces a conservative exact normalized-question collision against published FAQs and lets an owner/editor edit, retain the current answer, or explicitly approve a replacement. It does not infer contradictions from semantic similarity. Document, product-description, operating-hour, policy, price, currency, SKU and availability conflicts, and differently worded FAQ conflicts, remain unimplemented. Do not approve a suggested FAQ as an override for structured product price, currency, SKU or availability.

@@ -32,6 +32,18 @@ describe('distributed website abuse protection', () => {
     ).rejects.toBeInstanceOf(WebsiteRateLimitException);
   });
 
+  it('shares Redis publisher initialization between bootstrap metrics and the first public request', async () => {
+    const starting = new WebsiteRealtimeService();
+    starting.onApplicationBootstrap();
+    try {
+      await expect(
+        starting.consumeRateLimit('startup-race', [randomUUID()], 2),
+      ).resolves.toBeUndefined();
+    } finally {
+      starting.beforeApplicationShutdown();
+    }
+  });
+
   it('enforces each identity dimension independently without incrementing partial buckets', async () => {
     const sharedIp = randomUUID();
     await first.consumeRateLimit('dimension-test', ['widget-a', sharedIp], 1);

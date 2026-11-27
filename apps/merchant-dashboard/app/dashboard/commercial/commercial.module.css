@@ -1,0 +1,32 @@
+.tableWrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.tableWrap table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.tableWrap th,
+.tableWrap td {
+  padding: 12px;
+  border-bottom: 1px solid #edf0ee;
+  vertical-align: middle;
+}
+.tableWrap th {
+  color: var(--muted);
+  font-weight: 600;
+  background: #fafbfa;
+}
+.tableWrap tr:last-child td {
+  border-bottom: 0;
+}
+@media (max-width: 680px) {
+  .tableWrap table {
+    min-width: 600px;
+  }
+}

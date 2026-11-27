@@ -354,6 +354,7 @@ export function KnowledgeExperience({
           <div className={styles.faqList} aria-label="FAQ entries">
             {visible.map((faq) => (
               <button
+                id={`faq-${faq.id}`}
                 key={faq.id}
                 type="button"
                 className={`${styles.faqItem} ${faq.id === selectedId ? styles.selected : ''}`}

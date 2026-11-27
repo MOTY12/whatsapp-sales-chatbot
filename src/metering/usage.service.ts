@@ -269,6 +269,7 @@ export class UsageService {
     idempotencyKey: string,
     tokens: number,
     category: UsageCategory = 'knowledge_embedding_tokens',
+    purpose?: UsagePurpose,
   ): Promise<UsageReservation> {
     safeAmount(tokens, 'Embedding token reservation', false);
     this.assertEmbeddingCategory(category);
@@ -278,6 +279,7 @@ export class UsageService {
       idempotencyKey,
       { [category]: tokens },
       defaultReservationSeconds,
+      purpose,
     );
     return reservation;
   }
@@ -287,12 +289,13 @@ export class UsageService {
     idempotencyKey: string,
     actualTokens: number,
     category: UsageCategory = 'knowledge_embedding_tokens',
+    transactionManager?: EntityManager,
   ): Promise<UsageReservation> {
     this.assertEmbeddingCategory(category);
     this.validateBusinessId(businessId);
     const key = keyValue(idempotencyKey);
     safeAmount(actualTokens, 'Embedding token usage');
-    return this.database.transaction(async (manager) => {
+    const commit = async (manager: EntityManager) => {
       await this.lockLimitConfiguration(manager, businessId);
       await this.lockCategories(manager, businessId, [category]);
       const [row] = await this.findReservations(
@@ -314,7 +317,10 @@ export class UsageService {
       return this.toReservation(
         await this.commitTokenRow(manager, row, actualTokens),
       );
-    });
+    };
+    return transactionManager
+      ? commit(transactionManager)
+      : this.database.transaction(commit);
   }
 
   async markKnowledgeEmbeddingTokensUncertain(

@@ -424,25 +424,41 @@ export function AssistantExperience({
                   {entry.result.sources.length > 0 && (
                     <div className={styles.sources}>
                       <strong>Published sources used</strong>
-                      {entry.result.sources.map((source) => (
+                      {entry.result.sources.map((source, index) => (
                         <div
                           key={`${source.id}:${source.revisionId}`}
                           className={styles.source}
                         >
                           <span>
+                            {`Citation ${index + 1} · Source ID ${source.id} · `}
                             {source.type === 'FAQ'
                               ? 'FAQ'
                               : source.type === 'PRODUCT'
                                 ? 'Product'
                                 : 'PDF'}{' '}
                             · {source.title}
-                            {' · '}{(source.retrievalMethod ?? 'LEXICAL').toLocaleLowerCase().replace('_', ' ')}
-                            {' · Revision '}{source.revisionId}
+                            {' · '}
+                            {(source.retrievalMethod ?? 'LEXICAL')
+                              .toLocaleLowerCase()
+                              .replace('_', ' ')}
+                            {' · Revision '}
+                            {source.revisionId}
                             {source.pageNumber
                               ? ` · Page ${source.pageNumber}`
                               : ''}
                           </span>
                           <small>{source.excerpt}</small>
+                          <a
+                            href={
+                              source.type === 'PRODUCT'
+                                ? `/dashboard/products?businessId=${encodeURIComponent(businessId)}#product-${encodeURIComponent(source.id)}`
+                                : source.type === 'DOCUMENT'
+                                  ? `/dashboard/knowledge?businessId=${encodeURIComponent(businessId)}#document-${encodeURIComponent(source.id)}`
+                                  : `/dashboard/knowledge?businessId=${encodeURIComponent(businessId)}#faq-${encodeURIComponent(source.id)}`
+                            }
+                          >
+                            Open source in Knowledge Base
+                          </a>
                         </div>
                       ))}
                     </div>

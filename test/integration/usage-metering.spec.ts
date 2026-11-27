@@ -90,6 +90,35 @@ describe('tenant usage metering with PostgreSQL', () => {
     expect(summary.categories.playground_embedding_tokens.remaining).toBe(1);
   });
 
+  it('attributes learning evaluation embeddings separately without changing quota accounting', async () => {
+    await usage.setBusinessLimits(businessA, limits(10, 100, 100, 50, 5));
+    const reservation = await usage.reserveKnowledgeEmbeddingTokens(
+      businessA,
+      'learning-evaluation-embedding',
+      3,
+      'playground_embedding_tokens',
+      'EVALUATION',
+    );
+    await usage.commitKnowledgeEmbeddingTokens(
+      businessA,
+      'learning-evaluation-embedding',
+      2,
+      'playground_embedding_tokens',
+    );
+    expect(reservation.category).toBe('playground_embedding_tokens');
+    const rows = await admin.query<
+      { usage_purpose: string; consumed_amount: number }[]
+    >(
+      `SELECT usage_purpose,consumed_amount FROM public.usage_reservations
+       WHERE business_id=$1 AND idempotency_key=$2`,
+      [businessA, 'learning-evaluation-embedding'],
+    );
+    expect(rows).toEqual([{ usage_purpose: 'EVALUATION', consumed_amount: 2 }]);
+    const summary = await usage.getUsageSummary(businessA);
+    expect(summary.categories.playground_embedding_tokens.consumed).toBe(2);
+    expect(summary.categories.playground_embedding_tokens.remaining).toBe(3);
+  });
+
   it('reserves inside quota, rejects excess, and serializes concurrent boundary requests', async () => {
     await usage.setBusinessLimits(businessA, limits(2));
     const first = await usage.reserveWhatsAppMessage(businessA, 'send-one');

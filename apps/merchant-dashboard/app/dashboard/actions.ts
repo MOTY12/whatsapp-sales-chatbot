@@ -167,6 +167,19 @@ export async function logout() {
   redirect('/login');
 }
 
+export async function acceptCommercialOffer(form: FormData) {
+  const businessId = String(form.get('businessId') ?? '');
+  const offerId = String(form.get('offerId') ?? '');
+  if (!/^[0-9a-f-]{36}$/i.test(businessId) || !/^[0-9a-f-]{36}$/i.test(offerId))
+    redirect('/dashboard/commercial?result=error');
+  try {
+    await api.acceptCommercialOffer(businessId, offerId, randomUUID());
+  } catch {
+    redirect(`/dashboard/commercial?businessId=${encodeURIComponent(businessId)}&result=error`);
+  }
+  redirect(`/dashboard/commercial?businessId=${encodeURIComponent(businessId)}&result=accepted`);
+}
+
 export async function newBusinessKey() {
   return randomUUID();
 }

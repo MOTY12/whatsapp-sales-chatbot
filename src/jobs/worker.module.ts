@@ -159,6 +159,21 @@ export class WorkerRuntime
     } catch {
       this.logger.warn('Knowledge upload cleanup failed.');
     }
+    try {
+      const [result] = await this.database.query<
+        { result: { overdueInvoices?: number; expiredPilots?: number } }[]
+      >('SELECT public.kleva_commercial_invoice_status_refresh() AS result');
+      const overdueInvoices = Number(result?.result?.overdueInvoices ?? 0);
+      const expiredPilots = Number(result?.result?.expiredPilots ?? 0);
+      if (overdueInvoices || expiredPilots)
+        this.logger.log({
+          event: 'commercial.pilot.maintenance',
+          overdueInvoices,
+          expiredPilots,
+        });
+    } catch {
+      this.logger.warn({ event: 'commercial.pilot.maintenance_unavailable' });
+    }
   }
 
   private async writeHeartbeat(): Promise<void> {

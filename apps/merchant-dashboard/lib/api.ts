@@ -6,6 +6,48 @@ export type Membership = {
   role: 'owner' | 'editor' | 'agent';
 };
 export type Identity = { accountId: string; memberships: Membership[] };
+export type CommercialAccount = {
+  enrollment: {
+    id: string;
+    package_key: string;
+    package_version: number;
+    package_name: string;
+    agreed_price: string;
+    currency: string;
+    pilot_days: number;
+    channels: string[];
+    allowances: Record<string, number>;
+    per_request_ai_tokens: number;
+    support_coverage: Record<string, unknown>;
+    agreement_version: string;
+    status: string;
+    accepted_at: string | null;
+    pilot_start_at: string | null;
+    pilot_end_at: string | null;
+  } | null;
+  invoices: Array<{
+    id: string;
+    invoice_reference: string;
+    currency: string;
+    amount: string;
+    paid_amount: string;
+    due_at: string;
+    status: string;
+    description: string;
+    created_at: string;
+  }>;
+  payments: Array<{
+    id: string;
+    invoice_id: string;
+    currency: string;
+    amount: string;
+    method: string;
+    external_reference: string;
+    received_at: string;
+    status: string;
+  }>;
+  entitlement_events: Array<{ created_at: string }>;
+};
 export type MerchantAnalyticsReport = {
   generatedAt: string;
   range: { from: string; to: string; toExclusive: string; timezone: string };
@@ -743,6 +785,23 @@ export const api = {
       `/merchant/businesses/${encodeURIComponent(id)}/analytics${suffix}`,
     );
   },
+  commercial: (id: string) =>
+    request<CommercialAccount>(
+      `/merchant/businesses/${encodeURIComponent(id)}/commercial`,
+    ),
+  commercialReadiness: (id: string) =>
+    request<{
+      enrollmentStatus: string | null;
+      checklist: Record<string, boolean>;
+      blockers: string[];
+      aiActivationIsSeparate: boolean;
+      websiteWidgetInstallationVerificationAvailable: boolean;
+    }>(`/merchant/businesses/${encodeURIComponent(id)}/commercial/readiness`),
+  acceptCommercialOffer: (businessId: string, offerId: string, requestKey: string) =>
+    request(`/merchant/businesses/${encodeURIComponent(businessId)}/commercial/offers/${encodeURIComponent(offerId)}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ requestKey }),
+    }),
   team: (
     id: string,
     status = 'active',
