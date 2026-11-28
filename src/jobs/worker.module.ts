@@ -46,6 +46,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { KnowledgeDocumentIngestionService } from '../knowledge/knowledge-document-ingestion.service';
 import { KnowledgeIndexingWorkerService } from '../knowledge/knowledge-indexing.service';
 import { LearningEvaluationWorkerService } from '../learning/learning-evaluation-worker.service';
+import { KnowledgeGapRetentionService } from '../learning/knowledge-gap-retention.service';
 import { WhatsAppProvisioningService } from '../channels/secure-whatsapp/whatsapp-provisioning.service';
 import { CredentialCipherModule } from '../channels/secure-whatsapp/credential-cipher.module';
 import { MetaWhatsAppVerifier } from '../channels/secure-whatsapp/meta-verifier';
@@ -210,6 +211,7 @@ export class WorkerRuntime
   ],
   providers: [
     WorkerRuntime,
+    KnowledgeGapRetentionService,
     WhatsAppResponseIntentDispatcher,
     KnowledgeDocumentIngestionService,
     WhatsAppProvisioningService,
